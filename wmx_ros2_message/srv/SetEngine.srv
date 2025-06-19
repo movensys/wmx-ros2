@@ -1,0 +1,6 @@
+bool data # engine start or stop
+string path # WMX path
+string name # device name
+---
+bool success   # indicate successful run of triggered engine
+string message # response messages
