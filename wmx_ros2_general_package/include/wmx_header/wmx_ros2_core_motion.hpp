@@ -30,9 +30,9 @@ public:
     char errString_[256];
 
 private:
-    //WMX3Api wmx3Lib_;    
-    //CoreMotion wmx3LibCm_;
-    //CoreMotionStatus cmStatus_;      
+    WMX3Api wmx3Lib_;    
+    CoreMotion wmx3LibCm_;    
+    CoreMotionStatus cmStatus_;
 
     /*
     void setAxisStatus();
@@ -58,5 +58,3 @@ private:
 };
 
 #endif  // WMX_ROS2_ENGINE_HPP
-
-
