@@ -38,11 +38,16 @@ private:
     WMX3Api wmx3Lib_;      
     
     rclcpp::Service<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineService_ = 
-                    this->create_service<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine", std::bind(&WmxEngine::setEngine, this, _1, _2));
+                    this->create_service<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine", 
+                    std::bind(&WmxEngine::setEngine, this, _1, _2));
+
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_ =
-                    this->create_service<std_srvs::srv::SetBool>("/wmx/engine/set_comm", std::bind(&WmxEngine::setComm, this, _1, _2));
+                    this->create_service<std_srvs::srv::SetBool>("/wmx/engine/set_comm", 
+                    std::bind(&WmxEngine::setComm, this, _1, _2));
+    
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr getEngineStatusService_ = 
-                    this->create_service<std_srvs::srv::Trigger>("/wmx/engine/get_engine_status", std::bind(&WmxEngine::getEngineStatus, this, _1, _2));
+                    this->create_service<std_srvs::srv::Trigger>("/wmx/engine/get_engine_status", 
+                    std::bind(&WmxEngine::getEngineStatus, this, _1, _2));
 
     void stopEngine();
     void stopCommunication();
