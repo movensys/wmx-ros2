@@ -1,5 +1,5 @@
-#ifndef ENGINE_HPP
-#define ENGINE_HPP
+#ifndef WMX_ROS2_ENGINE_HPP
+#define WMX_ROS2_ENGINE_HPP
 
 #include <iostream>
 #include <memory>
@@ -25,10 +25,10 @@ using std::placeholders::_2;
 using namespace wmx3Api;
 using namespace std;
 
-class WmxEngine : public rclcpp::Node {
+class WmxRos2Engine : public rclcpp::Node {
 public:
-    WmxEngine(); 
-    ~WmxEngine(); 
+    WmxRos2Engine(); 
+    ~WmxRos2Engine(); 
 
 private:
     int err_;
@@ -39,15 +39,15 @@ private:
     
     rclcpp::Service<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineService_ = 
                     this->create_service<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine", 
-                    std::bind(&WmxEngine::setEngine, this, _1, _2));
+                    std::bind(&WmxRos2Engine::setEngine, this, _1, _2));
 
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_ =
                     this->create_service<std_srvs::srv::SetBool>("/wmx/engine/set_comm", 
-                    std::bind(&WmxEngine::setComm, this, _1, _2));
+                    std::bind(&WmxRos2Engine::setComm, this, _1, _2));
     
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr getEngineStatusService_ = 
                     this->create_service<std_srvs::srv::Trigger>("/wmx/engine/get_engine_status", 
-                    std::bind(&WmxEngine::getEngineStatus, this, _1, _2));
+                    std::bind(&WmxRos2Engine::getEngineStatus, this, _1, _2));
 
     void stopEngine();
     void stopCommunication();
@@ -60,4 +60,4 @@ private:
                     std::shared_ptr<std_srvs::srv::Trigger::Response> response);   
 };
 
-#endif  // ENGINE_HPP
+#endif  // WMX_ROS2_ENGINE_HPP

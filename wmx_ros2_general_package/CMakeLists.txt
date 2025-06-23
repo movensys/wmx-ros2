@@ -21,11 +21,11 @@ find_package(std_srvs REQUIRED)
 
 include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
 link_directories(/opt/lmx/lib)
-add_library(wmx_engine_lib include/wmx_header/engine.cpp)
+add_library(wmx_ros2_engine_lib include/wmx_header/wmx_ros2_engine.cpp)
 
-set_target_properties(wmx_engine_lib PROPERTIES LINKER_LANGUAGE CXX)
-ament_target_dependencies(wmx_engine_lib rclcpp wmx_ros2_message std_srvs)
-target_link_libraries(wmx_engine_lib wmx3api imdll)
+set_target_properties(wmx_ros2_engine_lib PROPERTIES LINKER_LANGUAGE CXX)
+ament_target_dependencies(wmx_ros2_engine_lib rclcpp wmx_ros2_message std_srvs)
+target_link_libraries(wmx_ros2_engine_lib wmx3api imdll)
 
 install(DIRECTORY
   src
@@ -34,8 +34,8 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
-add_executable(wmx_engine_node src/wmx_engine_node.cpp)
-target_link_libraries(wmx_engine_node wmx_engine_lib)
+add_executable(wmx_ros2_engine_node src/wmx_ros2_engine_node.cpp)
+target_link_libraries(wmx_ros2_engine_node wmx_ros2_engine_lib)
 
 #add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
 #ament_target_dependencies(wmx_core_motion_node rclcpp)
@@ -48,7 +48,7 @@ target_link_libraries(wmx_engine_node wmx_engine_lib)
 #target_link_libraries(wmx_engine_example wmx3api imdll)
 
 install(TARGETS 
-  wmx_engine_node
+wmx_ros2_engine_node
   #wmx_core_motion_node 
 
   #wmx_engine_example

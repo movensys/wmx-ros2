@@ -1,13 +1,13 @@
-#include "engine.hpp"
+#include "wmx_ros2_engine.hpp"
 
 #include <thread>
 #include <chrono>
 
-WmxEngine::WmxEngine() : Node("wmx_engine_node") {  
+WmxRos2Engine::WmxRos2Engine() : Node("wmx_engine_node") {  
     RCLCPP_INFO(this->get_logger(), "wmx_engine_node is ready");
 }
 
-WmxEngine::~WmxEngine(){
+WmxRos2Engine::~WmxRos2Engine(){
     RCLCPP_INFO(this->get_logger(), "Stop wmx_engine_node");
 
     stopCommunication();
@@ -18,7 +18,7 @@ WmxEngine::~WmxEngine(){
     RCLCPP_INFO(this->get_logger(), "wmx_engine_node stopped");
 }
 
-void WmxEngine::getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+void WmxRos2Engine::getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
                                 std::shared_ptr<std_srvs::srv::Trigger::Response> response){
     wmx3Api::EngineStatus status; 
     wmx3Lib_.GetEngineStatus(&status);
@@ -38,7 +38,7 @@ void WmxEngine::getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigger::Re
     response->message = status_str;
 }
 
-void WmxEngine::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+void WmxRos2Engine::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                           std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
     if (request->data) {
         err_ = wmx3Lib_.StartCommunication(INFINITE);
@@ -75,7 +75,7 @@ void WmxEngine::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> r
     }
 } 
 
-void WmxEngine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
+void WmxRos2Engine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
                           std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response) {
     if (request->data) {
         err_ = wmx3Lib_.CreateDevice(request->path.c_str(), DeviceType::DeviceTypeNormal, INFINITE);
@@ -113,7 +113,7 @@ void WmxEngine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine
     }
 } 
 
-void WmxEngine::stopEngine(){
+void WmxRos2Engine::stopEngine(){
     err_ = wmx3Lib_.CloseDevice();
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -124,7 +124,7 @@ void WmxEngine::stopEngine(){
     }
 }
 
-void WmxEngine::stopCommunication(){
+void WmxRos2Engine::stopCommunication(){
     err_ = wmx3Lib_.StopCommunication(INFINITE);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
