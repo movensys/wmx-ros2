@@ -22,9 +22,11 @@ sudo systemctl enable amr_ros2_interface.service
 sudo systemctl start amr_ros2_interface.service
 sudo systemctl restart amr_ros2_interface.service
 ```
+
 ```
 journalctl -u amr_ros2_interface.service -f
 ```
+
 ```
 sudo systemctl stop amr_ros2_interface.service
 sudo systemctl disable amr_ros2_interface.service
