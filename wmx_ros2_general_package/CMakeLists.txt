@@ -19,12 +19,13 @@ find_package(std_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED) 
 find_package(std_srvs REQUIRED)
 
-include_directories(
-  /opt/lmx/include
-  /opt/lmx/sample/Header
-)
-
+include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
 link_directories(/opt/lmx/lib)
+add_library(wmx_engine_lib include/wmx_header/engine.cpp)
+
+set_target_properties(wmx_engine_lib PROPERTIES LINKER_LANGUAGE CXX)
+ament_target_dependencies(wmx_engine_lib rclcpp wmx_ros2_message std_srvs)
+target_link_libraries(wmx_engine_lib wmx3api imdll)
 
 install(DIRECTORY
   src
@@ -34,8 +35,7 @@ install(DIRECTORY
 )
 
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
-ament_target_dependencies(wmx_engine_node rclcpp wmx_ros2_message std_srvs)   
-target_link_libraries(wmx_engine_node wmx3api imdll)
+target_link_libraries(wmx_engine_node wmx_engine_lib)
 
 #add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
 #ament_target_dependencies(wmx_core_motion_node rclcpp)
