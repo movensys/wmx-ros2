@@ -11,6 +11,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "wmx_ros2_message/srv/set_engine.hpp"
+#include "std_srvs/srv/set_bool.hpp"
 
 #include "WMX3Api.h"
 
@@ -33,23 +34,24 @@ private:
     WMX3Api wmx3Lib_;      
     
     rclcpp::Service<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineService_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_;
 
     void stopEngine();
     void stopCommunication();
 
-    //void startCommunication();
-    //void restartEngine();
-    //void restartCommunication();
     //void getEngineStatus();
 
     void setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
                     std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response);
+    void setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                        std::shared_ptr<std_srvs::srv::SetBool::Response> response);                
 };
 
 WmxEngine::WmxEngine() : Node("wmx_engine_node") {  
     RCLCPP_INFO(this->get_logger(), "Start wmx_engine_node");
 
     setEngineService_ = this->create_service<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine", std::bind(&WmxEngine::setEngine, this, _1, _2));
+    setCommService_ = this->create_service<std_srvs::srv::SetBool>("/wmx/engine/set_comm", std::bind(&WmxEngine::setComm, this, _1, _2));
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
     RCLCPP_INFO(this->get_logger(), "wmx_engine_node is ready");
@@ -65,6 +67,43 @@ WmxEngine::~WmxEngine(){
 
     RCLCPP_INFO(this->get_logger(), "wmx_engine_node stopped");
 }
+
+void WmxEngine::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                          std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
+    if (request->data) {
+        err_ = wmx3Lib_.StartCommunication(INFINITE);
+
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            snprintf(buffer_, sizeof(buffer_), "Failed to start communication. Error=%d (%s)", err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+            response->success = false;
+            response->message = std::string(buffer_); 
+        } 
+        else {
+            snprintf(buffer_, sizeof(buffer_), "Communication is started");
+            RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+            response->success = true;
+            response->message = std::string(buffer_);
+        }
+    } 
+    else {
+        err_ = wmx3Lib_.StopCommunication(INFINITE);;
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            snprintf(buffer_, sizeof(buffer_), "Failed to stop communication. Error=%d (%s)", err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+            response->success = false;
+            response->message = std::string(buffer_);
+        } 
+        else {
+            snprintf(buffer_, sizeof(buffer_), "Communication is stopped");
+            RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+            response->success = true;
+            response->message = std::string(buffer_);
+        }
+    }
+} 
 
 void WmxEngine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
                           std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response) {
@@ -94,7 +133,8 @@ void WmxEngine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine
             RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
             response->success = false;
             response->message = std::string(buffer_);
-        } else {
+        } 
+        else {
             snprintf(buffer_, sizeof(buffer_), "Device stopped");
             RCLCPP_INFO(this->get_logger(), "%s", buffer_);
             response->success = true;
@@ -102,19 +142,6 @@ void WmxEngine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine
         }
     }
 } 
-
-/*
-void WmxEngine::startCommunication(){
-    err_ = wmx3Lib_.StartCommunication(INFINITE);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to start communication. Error=%d (%s)", err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Start communication");
-    }
-}
-*/
 
 void WmxEngine::stopEngine(){
     err_ = wmx3Lib_.CloseDevice();

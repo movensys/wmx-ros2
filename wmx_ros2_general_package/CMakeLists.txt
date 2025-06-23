@@ -17,6 +17,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED) 
+find_package(std_srvs REQUIRED)
 
 include_directories(
   /opt/lmx/include
@@ -33,7 +34,7 @@ install(DIRECTORY
 )
 
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
-ament_target_dependencies(wmx_engine_node rclcpp wmx_ros2_message)   
+ament_target_dependencies(wmx_engine_node rclcpp wmx_ros2_message std_srvs)   
 target_link_libraries(wmx_engine_node wmx3api imdll)
 
 #add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
@@ -43,7 +44,7 @@ target_link_libraries(wmx_engine_node wmx3api imdll)
 
 
 add_executable(wmx_engine_example example/wmx_engine_example.cpp)
-ament_target_dependencies(wmx_engine_example rclcpp wmx_ros2_message)   
+ament_target_dependencies(wmx_engine_example rclcpp wmx_ros2_message std_srvs)   
 target_link_libraries(wmx_engine_example wmx3api imdll)
 
 install(TARGETS 
