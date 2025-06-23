@@ -3,19 +3,17 @@
 #include <thread>
 #include <chrono>
 
-WmxRos2Engine::WmxRos2Engine() : Node("wmx_engine_node") {  
-    RCLCPP_INFO(this->get_logger(), "wmx_engine_node is ready");
+WmxRos2Engine::WmxRos2Engine() : Node("wmx_ros2_engine_node") {  
+    RCLCPP_INFO(this->get_logger(), "wmx_ros2_engine_node is ready");
 }
 
 WmxRos2Engine::~WmxRos2Engine(){
-    RCLCPP_INFO(this->get_logger(), "Stop wmx_engine_node");
-
     stopCommunication();
     stopEngine();
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
-    RCLCPP_INFO(this->get_logger(), "wmx_engine_node stopped");
+    RCLCPP_INFO(this->get_logger(), "wmx_ros2_engine_node stopped");
 }
 
 void WmxRos2Engine::getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,

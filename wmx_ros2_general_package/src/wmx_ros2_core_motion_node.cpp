@@ -28,8 +28,8 @@ public:
 
 private:
     WMX3Api wmx3Lib_;    
-    CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;    
+    CoreMotionStatus cmStatus_;
 
     /*
     void setAxisStatus();
