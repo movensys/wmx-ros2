@@ -43,15 +43,15 @@ target_link_libraries(wmx_engine_node wmx3api imdll)
 
 
 
-add_executable(wmx_engine_example example/wmx_engine_example.cpp)
-ament_target_dependencies(wmx_engine_example rclcpp wmx_ros2_message std_srvs)   
-target_link_libraries(wmx_engine_example wmx3api imdll)
+#add_executable(wmx_engine_example example/wmx_engine_example.cpp)
+#ament_target_dependencies(wmx_engine_example rclcpp wmx_ros2_message std_srvs)   
+#target_link_libraries(wmx_engine_example wmx3api imdll)
 
 install(TARGETS 
   wmx_engine_node
   #wmx_core_motion_node 
 
-  wmx_engine_example
+  #wmx_engine_example
   DESTINATION lib/${PROJECT_NAME}
 )
 
