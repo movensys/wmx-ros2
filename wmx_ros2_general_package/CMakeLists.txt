@@ -16,15 +16,23 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(wmx_ros2_message REQUIRED) 
 find_package(std_srvs REQUIRED)
+find_package(wmx_ros2_message REQUIRED) 
 
-include_directories(
-  /opt/lmx/include
-  /opt/lmx/sample/Header
-)
-
+include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
 link_directories(/opt/lmx/lib)
+
+add_library(wmx_ros2_engine_lib include/wmx_header/wmx_ros2_engine.cpp)
+add_library(wmx_ros2_core_motion_lib include/wmx_header/wmx_ros2_core_motion.cpp)
+
+set_target_properties(wmx_ros2_engine_lib PROPERTIES LINKER_LANGUAGE CXX)
+set_target_properties(wmx_ros2_core_motion_lib PROPERTIES LINKER_LANGUAGE CXX)
+
+ament_target_dependencies(wmx_ros2_engine_lib rclcpp wmx_ros2_message std_srvs)
+ament_target_dependencies(wmx_ros2_core_motion_lib rclcpp wmx_ros2_message std_srvs)
+
+target_link_libraries(wmx_ros2_engine_lib wmx3api imdll)
+target_link_libraries(wmx_ros2_core_motion_lib coremotionapi wmx3api imdll)
 
 install(DIRECTORY
   src
@@ -33,25 +41,23 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
-add_executable(wmx_engine_node src/wmx_engine_node.cpp)
-ament_target_dependencies(wmx_engine_node rclcpp wmx_ros2_message std_srvs)   
-target_link_libraries(wmx_engine_node wmx3api imdll)
+add_executable(wmx_ros2_engine_node src/wmx_ros2_engine_node.cpp)
+target_link_libraries(wmx_ros2_engine_node wmx_ros2_engine_lib)
 
-#add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
-#ament_target_dependencies(wmx_core_motion_node rclcpp)
-#target_link_libraries(wmx_core_motion_node wmx3api coremotionapi imdll)
+add_executable(wmx_ros2_core_motion_node src/wmx_ros2_core_motion_node.cpp)
+target_link_libraries(wmx_ros2_core_motion_node wmx_ros2_core_motion_lib)
 
 
 
-add_executable(wmx_engine_example example/wmx_engine_example.cpp)
-ament_target_dependencies(wmx_engine_example rclcpp wmx_ros2_message std_srvs)   
-target_link_libraries(wmx_engine_example wmx3api imdll)
+#add_executable(wmx_ros2_general_example example/wmx_ros2_general_example.cpp)
+#ament_target_dependencies(wmx_ros2_general_example rclcpp wmx_ros2_message std_srvs)   
+#target_link_libraries(wmx_ros2_general_example wmx3api imdll)
 
 install(TARGETS 
-  wmx_engine_node
-  #wmx_core_motion_node 
+  wmx_ros2_engine_node
+  wmx_ros2_core_motion_node
 
-  wmx_engine_example
+  #wmx_ros2_general_example
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -1,74 +1,42 @@
-#include <iostream>
-#include <memory>
-#include <string>
-#include <vector>
-#include <algorithm>
-#include <cmath>
-#include <bits/stdc++.h>
-#include <vector>
-#include <chrono>
+#include "wmx_ros2_engine.hpp"
+
 #include <thread>
+#include <chrono>
 
-#include "rclcpp/rclcpp.hpp"
-#include "wmx_ros2_message/srv/set_engine.hpp"
-#include "std_srvs/srv/set_bool.hpp"
-
-#include "WMX3Api.h"
-
-using std::placeholders::_1;
-using std::placeholders::_2;
-
-using namespace wmx3Api;
-using namespace std;
-
-class WmxEngine : public rclcpp::Node {
-public:
-    WmxEngine(); 
-    ~WmxEngine(); 
-
-private:
-    int err_;
-    char errString_[256];
-    char buffer_[512];
-
-    WMX3Api wmx3Lib_;      
-    
-    rclcpp::Service<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineService_;
-    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_;
-
-    void stopEngine();
-    void stopCommunication();
-
-    //void getEngineStatus();
-
-    void setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
-                    std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response);
-    void setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                        std::shared_ptr<std_srvs::srv::SetBool::Response> response);                
-};
-
-WmxEngine::WmxEngine() : Node("wmx_engine_node") {  
-    RCLCPP_INFO(this->get_logger(), "Start wmx_engine_node");
-
-    setEngineService_ = this->create_service<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine", std::bind(&WmxEngine::setEngine, this, _1, _2));
-    setCommService_ = this->create_service<std_srvs::srv::SetBool>("/wmx/engine/set_comm", std::bind(&WmxEngine::setComm, this, _1, _2));
-
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    RCLCPP_INFO(this->get_logger(), "wmx_engine_node is ready");
+WmxRos2Engine::WmxRos2Engine() : Node("wmx_ros2_engine_node") {  
+    RCLCPP_INFO(this->get_logger(), "wmx_ros2_engine_node is ready");
 }
 
-WmxEngine::~WmxEngine(){
-    RCLCPP_INFO(this->get_logger(), "Stop wmx_engine_node");
-
+WmxRos2Engine::~WmxRos2Engine(){
     stopCommunication();
     stopEngine();
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
-    RCLCPP_INFO(this->get_logger(), "wmx_engine_node stopped");
+    RCLCPP_INFO(this->get_logger(), "wmx_ros2_engine_node stopped");
 }
 
-void WmxEngine::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+void WmxRos2Engine::getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+                                std::shared_ptr<std_srvs::srv::Trigger::Response> response){
+    wmx3Api::EngineStatus status; 
+    wmx3Lib_.GetEngineStatus(&status);
+
+    std::string status_str;
+
+    switch (status.state) { 
+        case wmx3Api::EngineState::Idle:           status_str = "Idle"; break;
+        case wmx3Api::EngineState::Running:        status_str = "Running"; break;
+        case wmx3Api::EngineState::Communicating:  status_str = "Communicating"; break;
+        case wmx3Api::EngineState::Shutdown:       status_str = "Shutdown"; break;
+        case wmx3Api::EngineState::Unknown:        status_str = "Unknown"; break;
+        default:                                   status_str = "Invalid"; break;
+    }
+
+    response->success = true;
+    response->message = status_str;
+}
+
+void WmxRos2Engine::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                           std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
     if (request->data) {
         err_ = wmx3Lib_.StartCommunication(INFINITE);
@@ -105,7 +73,7 @@ void WmxEngine::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> r
     }
 } 
 
-void WmxEngine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
+void WmxRos2Engine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
                           std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response) {
     if (request->data) {
         err_ = wmx3Lib_.CreateDevice(request->path.c_str(), DeviceType::DeviceTypeNormal, INFINITE);
@@ -143,7 +111,7 @@ void WmxEngine::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine
     }
 } 
 
-void WmxEngine::stopEngine(){
+void WmxRos2Engine::stopEngine(){
     err_ = wmx3Lib_.CloseDevice();
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -154,7 +122,7 @@ void WmxEngine::stopEngine(){
     }
 }
 
-void WmxEngine::stopCommunication(){
+void WmxRos2Engine::stopCommunication(){
     err_ = wmx3Lib_.StopCommunication(INFINITE);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -163,11 +131,4 @@ void WmxEngine::stopCommunication(){
     else{
         RCLCPP_INFO(this->get_logger(), "Communication stopped");
     }
-}
-
-int main(int argc, char * argv[]) {
-    rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<WmxEngine>());
-    rclcpp::shutdown();
-    return 0;
 }
