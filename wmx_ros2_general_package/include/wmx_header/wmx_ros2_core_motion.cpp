@@ -102,3 +102,21 @@ void WmxRos2CoreMotion::setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::S
         }
     }
 }
+
+void WmxRos2CoreMotion::clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
+    err_ = wmx3LibCm_.axisControl->ClearAmpAlarm(request->index);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        snprintf(buffer_, sizeof(buffer_), "Failed to clear alarm axis %d. Error=%d (%s)", request->index, err_, errString_);
+        RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+        response->success = false;
+        response->message = std::string(buffer_); 
+    } 
+    else {
+        snprintf(buffer_, sizeof(buffer_), "Clear alarm axis %d", request->index);
+        RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+        response->success = true;
+        response->message = std::string(buffer_);
+    }
+}
