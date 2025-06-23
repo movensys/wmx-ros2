@@ -1,0 +1,5 @@
+int32 index # axis index
+int32 mode # 0: position, 1: velocity
+---
+bool success   # indicate successful run
+string message # response messages

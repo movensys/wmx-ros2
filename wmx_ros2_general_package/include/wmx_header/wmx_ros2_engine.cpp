@@ -13,7 +13,7 @@ WmxRos2Engine::~WmxRos2Engine(){
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
-    RCLCPP_INFO(this->get_logger(), "wmx_ros2_engine_node stopped");
+    RCLCPP_INFO(this->get_logger(), "wmx_ros2_engine_node is stopped");
 }
 
 void WmxRos2Engine::getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,

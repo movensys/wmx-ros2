@@ -13,11 +13,16 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
+#include "wmx_ros2_message/srv/set_axis.hpp"
+#include "wmx_ros2_message/srv/set_axis_mode.hpp"
+#include "wmx_ros2_message/msg/axis_velocity.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 
 using std::placeholders::_1;
+using std::placeholders::_2;
+
 using namespace wmx3Api;
 using namespace std;
 
@@ -25,36 +30,37 @@ class WmxRos2CoreMotion : public rclcpp::Node {
 public:
     WmxRos2CoreMotion(); 
     ~WmxRos2CoreMotion(); 
-    
-    int err_;
-    char errString_[256];
 
 private:
+    int err_;
+    char errString_[256];
+    char buffer_[512];
+
     WMX3Api wmx3Lib_;    
     CoreMotion wmx3LibCm_;    
     CoreMotionStatus cmStatus_;
 
-    /*
-    void setAxisStatus();
-    void getAxisStatus();
-    void clearAlarm();
-    void getArmStatus();
+    wmx3Api::Velocity::VelCommand velocity_ = wmx3Api::Velocity::VelCommand();
 
-    void setAxisMode();
-    void getAxisMode();
-    void setAxisPolarity();
-    void getAxisPolarity();
-    void setAxisGearRatio();
-    void getAxisGearRatio();
-    void setAxisEncoderMode();
-    void getAxisEncoderMode();
+    rclcpp::Subscription<wmx_ros2_message::msg::AxisVelocity>::SharedPtr axisVelSub_ = 
+                    this->create_subscription<wmx_ros2_message::msg::AxisVelocity>("/wmx/axis/velocity",
+                    1, std::bind(&WmxRos2CoreMotion::axisVelCallback, this, _1));
 
-    void setHoming();
-    void getHoming();
+    rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisOnService_ = 
+                    this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_axis_on", 
+                    std::bind(&WmxRos2CoreMotion::setAxisOn, this, _1, _2));    
     
-    void setAxisPosition();
-    void setAxisVelocity();
-    */
+    rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisModeService_ = 
+                    this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_mode", 
+                    std::bind(&WmxRos2CoreMotion::setAxisMode, this, _1, _2));    
+    
+    void axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg);
+
+    void setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+    
+    void setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
+                    std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response);
 };
 
-#endif  // WMX_ROS2_ENGINE_HPP
+#endif  // WMX_ROS2_CORE_MOTION_HPP

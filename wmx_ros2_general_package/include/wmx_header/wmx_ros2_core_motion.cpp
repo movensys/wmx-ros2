@@ -8,8 +8,97 @@ WmxRos2CoreMotion::WmxRos2CoreMotion() : Node("wmx_ros2_core_motion_node"), wmx3
 }
 
 WmxRos2CoreMotion::~WmxRos2CoreMotion(){
-    RCLCPP_INFO(this->get_logger(), "Stop wmx_ros2_core_motion_node");
-
-    std::this_thread::sleep_for(std::chrono::seconds(1));
     RCLCPP_INFO(this->get_logger(), "wmx_ros2_core_motion_node is stopped");
+}
+
+void WmxRos2CoreMotion::axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg) {
+    velocity_.axis = msg->index;
+    velocity_.profile.velocity = msg->velocity;
+    velocity_.profile.type = ProfileType::T::Trapezoidal; //msg->profile
+    velocity_.profile.acc = msg->acc;
+    velocity_.profile.dec = msg->dec;
+
+    err_ = wmx3LibCm_.velocity->StartVel(&velocity_);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to move velocity motor %d. Error=%d (%s)", msg->index, err_, errString_);
+    }
+}
+
+void WmxRos2CoreMotion::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response){
+    
+    if(request->mode == 0){
+        err_ = wmx3LibCm_.axisControl->SetAxisCommandMode(request->index, AxisCommandMode::Position);
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            snprintf(buffer_, sizeof(buffer_), "Failed to set axis %d to Position mode. Error=%d (%s)", request->index, err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+            response->success = false;
+            response->message = std::string(buffer_); 
+        } 
+        else {
+            snprintf(buffer_, sizeof(buffer_), "Set axis %d in Position mode", request->index);
+            RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+            response->success = true;
+            response->message = std::string(buffer_);
+        }
+    }
+    else if(request->mode == 1){
+        err_ = wmx3LibCm_.axisControl->SetAxisCommandMode(request->index, AxisCommandMode::Velocity);
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            snprintf(buffer_, sizeof(buffer_), "Failed to set axis %d to Velocity mode. Error=%d (%s)", request->index, err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+            response->success = false;
+            response->message = std::string(buffer_); 
+        } 
+        else {
+            snprintf(buffer_, sizeof(buffer_), "Set axis %d in Velocity mode", request->index);
+            RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+            response->success = true;
+            response->message = std::string(buffer_);
+        }
+    }
+    else{
+        snprintf(buffer_, sizeof(buffer_), "Wrong axis %d mode", request->index);
+        RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+        response->success = false;
+        response->message = std::string(buffer_);
+    }
+}
+
+void WmxRos2CoreMotion::setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
+    err_ = wmx3LibCm_.axisControl->SetServoOn(request->index, request->data);
+    if (request->data) {
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            snprintf(buffer_, sizeof(buffer_), "Failed to set axis %d on. Error=%d (%s)", request->index, err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+            response->success = false;
+            response->message = std::string(buffer_); 
+        } 
+        else {
+            snprintf(buffer_, sizeof(buffer_), "Set axis %d on", request->index);
+            RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+            response->success = true;
+            response->message = std::string(buffer_);
+        }
+    }
+    else{
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            snprintf(buffer_, sizeof(buffer_), "Failed to set axis %d off. Error=%d (%s)", request->index, err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+            response->success = false;
+            response->message = std::string(buffer_); 
+        } 
+        else {
+            snprintf(buffer_, sizeof(buffer_), "Set axis %d off", request->index);
+            RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+            response->success = true;
+            response->message = std::string(buffer_);
+        }
+    }
 }
