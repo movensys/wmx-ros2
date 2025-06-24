@@ -4,11 +4,48 @@
 #include <chrono>
 
 WmxRos2CoreMotion::WmxRos2CoreMotion() : Node("wmx_ros2_core_motion_node"), wmx3LibCm_(&wmx3Lib_) {  
+    axisStatePeriod_ = std::chrono::milliseconds(1000 / rate_);
+    axisStateTimer_ = this->create_wall_timer(axisStatePeriod_, std::bind(&WmxRos2CoreMotion::axisStateStep, this));
+
     RCLCPP_INFO(this->get_logger(), "wmx_ros2_core_motion_node is ready");
 }
 
 WmxRos2CoreMotion::~WmxRos2CoreMotion(){
     RCLCPP_INFO(this->get_logger(), "wmx_ros2_core_motion_node is stopped");
+}
+
+void WmxRos2CoreMotion::axisStateStep(){
+    wmx3LibCm_.GetStatus(&cmStatus_);
+
+    axisStateMsg_.amp_alarm.clear();
+    axisStateMsg_.servo_on.clear();
+    axisStateMsg_.home_done.clear();
+    axisStateMsg_.in_pos.clear();
+    axisStateMsg_.negative_ls.clear();
+    axisStateMsg_.positive_ls.clear();
+    axisStateMsg_.home_switch.clear();
+    axisStateMsg_.pos_cmd.clear();
+    axisStateMsg_.velocity_cmd.clear();
+    axisStateMsg_.actual_pos.clear();
+    axisStateMsg_.actual_velocity.clear();
+    axisStateMsg_.actual_torque.clear();
+
+    for (int i = 0; i < 10; ++i) {
+        axisStateMsg_.amp_alarm.push_back(cmStatus_.axesStatus[i].ampAlarm);
+        axisStateMsg_.servo_on.push_back(cmStatus_.axesStatus[i].servoOn);
+        axisStateMsg_.home_done.push_back(cmStatus_.axesStatus[i].homeDone);
+        axisStateMsg_.in_pos.push_back(cmStatus_.axesStatus[i].inPos);
+        axisStateMsg_.negative_ls.push_back(cmStatus_.axesStatus[i].negativeLS);
+        axisStateMsg_.positive_ls.push_back(cmStatus_.axesStatus[i].positiveLS);
+        axisStateMsg_.home_switch.push_back(cmStatus_.axesStatus[i].homeSwitch);
+
+        axisStateMsg_.pos_cmd.push_back(cmStatus_.axesStatus[i].posCmd);
+        axisStateMsg_.velocity_cmd.push_back(cmStatus_.axesStatus[i].velocityCmd);
+        axisStateMsg_.actual_pos.push_back(cmStatus_.axesStatus[i].actualPos);
+        axisStateMsg_.actual_velocity.push_back(cmStatus_.axesStatus[i].actualVelocity);
+        axisStateMsg_.actual_torque.push_back(cmStatus_.axesStatus[i].actualTorque);
+    }
+    axisStatePub_->publish(axisStateMsg_);
 }
 
 void WmxRos2CoreMotion::axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg) {

@@ -17,6 +17,7 @@
 #include "wmx_ros2_message/srv/set_axis_mode.hpp"
 #include "wmx_ros2_message/srv/set_axis_gear_ratio.hpp"
 #include "wmx_ros2_message/msg/axis_velocity.hpp"
+#include "wmx_ros2_message/msg/axis_state.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
@@ -37,11 +38,19 @@ private:
     char errString_[256];
     char buffer_[512];
 
+    const int rate_ = 100;
+    std::chrono::milliseconds axisStatePeriod_;
+    rclcpp::TimerBase::SharedPtr axisStateTimer_;
+    wmx_ros2_message::msg::AxisState axisStateMsg_;
+
     WMX3Api wmx3Lib_;    
     CoreMotion wmx3LibCm_;    
     CoreMotionStatus cmStatus_;
 
     wmx3Api::Velocity::VelCommand velocity_ = wmx3Api::Velocity::VelCommand();
+
+    rclcpp::Publisher<wmx_ros2_message::msg::AxisState>::SharedPtr axisStatePub_ = 
+                    this->create_publisher<wmx_ros2_message::msg::AxisState>("/wmx/axis/state", 1); 
 
     rclcpp::Subscription<wmx_ros2_message::msg::AxisVelocity>::SharedPtr axisVelSub_ = 
                     this->create_subscription<wmx_ros2_message::msg::AxisVelocity>("/wmx/axis/velocity",
@@ -58,8 +67,6 @@ private:
     rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisModeService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_mode", 
                     std::bind(&WmxRos2CoreMotion::setAxisMode, this, _1, _2));    
-
-       
                     
     rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisPolarityService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_polarity", 
@@ -85,6 +92,8 @@ private:
 
     void setAxisGearRatio(const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
                     std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response);
+
+    void axisStateStep();
 };
 
 #endif  // WMX_ROS2_CORE_MOTION_HPP

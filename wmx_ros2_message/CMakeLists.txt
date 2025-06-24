@@ -23,6 +23,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetAxisGearRatio.srv"
 
   "msg/AxisVelocity.msg"
+  "msg/AxisState.msg"
 )
 
 install(DIRECTORY
