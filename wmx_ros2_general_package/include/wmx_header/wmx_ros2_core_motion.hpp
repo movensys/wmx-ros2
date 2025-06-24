@@ -51,13 +51,15 @@ private:
                     this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_axis_on", 
                     std::bind(&WmxRos2CoreMotion::setAxisOn, this, _1, _2));    
     
+    rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmService_ = 
+                    this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/clear_alarm", 
+                    std::bind(&WmxRos2CoreMotion::clearAlarm, this, _1, _2)); 
+
     rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisModeService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_mode", 
                     std::bind(&WmxRos2CoreMotion::setAxisMode, this, _1, _2));    
 
-    rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmService_ = 
-                    this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/clear_alarm", 
-                    std::bind(&WmxRos2CoreMotion::clearAlarm, this, _1, _2));    
+       
                     
     rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisPolarityService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_polarity", 
