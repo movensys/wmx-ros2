@@ -1,11 +1,11 @@
 # Request
 int32 axis_index
-float64 target_position
+float64 target_pose
 ---
 # Result
 bool success
-float64 final_position
+float64 final_pose
 string message
 ---
 # Feedback
-float64 current_position
+float64 current_pose
