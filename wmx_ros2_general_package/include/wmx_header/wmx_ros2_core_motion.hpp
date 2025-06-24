@@ -57,6 +57,10 @@ private:
     rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/clear_alarm", 
                     std::bind(&WmxRos2CoreMotion::clearAlarm, this, _1, _2));    
+                    
+    rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisPolarityService_ = 
+                    this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_polarity", 
+                    std::bind(&WmxRos2CoreMotion::setAxisPolarity, this, _1, _2));    
     
     void axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg);
 
@@ -68,6 +72,9 @@ private:
 
     void clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
                     std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+
+    void setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
+                    std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response);
 };
 
 #endif  // WMX_ROS2_CORE_MOTION_HPP
