@@ -24,6 +24,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
   "msg/AxisVelocity.msg"
   "msg/AxisState.msg"
+  
+  "action/AxisPosition.action"
 )
 
 install(DIRECTORY
