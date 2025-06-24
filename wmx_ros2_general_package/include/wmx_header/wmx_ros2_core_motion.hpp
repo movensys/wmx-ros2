@@ -15,6 +15,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "wmx_ros2_message/srv/set_axis.hpp"
 #include "wmx_ros2_message/srv/set_axis_mode.hpp"
+#include "wmx_ros2_message/srv/set_axis_gear_ratio.hpp"
 #include "wmx_ros2_message/msg/axis_velocity.hpp"
 
 #include "WMX3Api.h"
@@ -62,6 +63,10 @@ private:
                     this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_polarity", 
                     std::bind(&WmxRos2CoreMotion::setAxisPolarity, this, _1, _2));    
     
+    rclcpp::Service<wmx_ros2_message::srv::SetAxisGearRatio>::SharedPtr setAxisGearRatioService_ = 
+                    this->create_service<wmx_ros2_message::srv::SetAxisGearRatio>("/wmx/axis/set_axis_gear_ratio", 
+                    std::bind(&WmxRos2CoreMotion::setAxisGearRatio, this, _1, _2));
+    
     void axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg);
 
     void setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
@@ -75,6 +80,9 @@ private:
 
     void setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
                     std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response);
+
+    void setAxisGearRatio(const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
+                    std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response);
 };
 
 #endif  // WMX_ROS2_CORE_MOTION_HPP

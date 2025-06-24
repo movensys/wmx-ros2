@@ -122,7 +122,7 @@ void WmxRos2CoreMotion::clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::
 }
 
 void WmxRos2CoreMotion::setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
-    std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response){
+                std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response){
     
     if (request->mode == 1 || request->mode==-1) {
         err_ = wmx3LibCm_.config->SetAxisPolarity(request->index, request->mode);
@@ -146,4 +146,22 @@ void WmxRos2CoreMotion::setAxisPolarity(const std::shared_ptr<wmx_ros2_message::
         response->success = false;
         response->message = std::string(buffer_);
     }
+}
+
+void WmxRos2CoreMotion::setAxisGearRatio(const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response){
+    err_ = wmx3LibCm_.config->SetGearRatio(request->index, request->numerator, request->denumerator);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        snprintf(buffer_, sizeof(buffer_), "Failed to set gear ratio axis %d. Error=%d (%s)", request->index, err_, errString_);
+        RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+        response->success = false;
+        response->message = std::string(buffer_); 
+    } 
+    else {
+        snprintf(buffer_, sizeof(buffer_), "Set gear ratio axis %d", request->index);
+        RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+        response->success = true;
+        response->message = std::string(buffer_);
+    }  
 }
