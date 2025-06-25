@@ -51,10 +51,10 @@ void WmxRos2General::axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::
     }
 }
 
-void WmxRos2General::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
-                std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response){
+void WmxRos2General::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
     
-    if(request->mode == 0){
+    if(request->data == 0){
         err_ = wmx3LibCm_.axisControl->SetAxisCommandMode(request->index, AxisCommandMode::Position);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -70,7 +70,7 @@ void WmxRos2General::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::Se
             response->message = std::string(buffer_);
         }
     }
-    else if(request->mode == 1){
+    else if(request->data == 1){
         err_ = wmx3LibCm_.axisControl->SetAxisCommandMode(request->index, AxisCommandMode::Velocity);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -147,20 +147,20 @@ void WmxRos2General::clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::Set
     }
 }
 
-void WmxRos2General::setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
-                std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response){
+void WmxRos2General::setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
     
-    if (request->mode == 1 || request->mode==-1) {
-        err_ = wmx3LibCm_.config->SetAxisPolarity(request->index, request->mode);
+    if (request->data == 1 || request->data==-1) {
+        err_ = wmx3LibCm_.config->SetAxisPolarity(request->index, request->data);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-            snprintf(buffer_, sizeof(buffer_), "Failed to set axis polarity %d: %d. Error=%d (%s)", request->index, request->mode, err_, errString_);
+            snprintf(buffer_, sizeof(buffer_), "Failed to set axis polarity %d: %d. Error=%d (%s)", request->index, request->data, err_, errString_);
             RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
             response->success = false;
             response->message = std::string(buffer_); 
         } 
         else {
-            snprintf(buffer_, sizeof(buffer_), "Set axis polrity %d: %d", request->index, request->mode);
+            snprintf(buffer_, sizeof(buffer_), "Set axis polarity %d: %d", request->index, request->data);
             RCLCPP_INFO(this->get_logger(), "%s", buffer_);
             response->success = true;
             response->message = std::string(buffer_);

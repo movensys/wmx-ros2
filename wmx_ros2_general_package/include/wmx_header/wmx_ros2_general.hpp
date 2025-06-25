@@ -18,7 +18,6 @@
 
 #include "wmx_ros2_message/srv/set_engine.hpp"
 #include "wmx_ros2_message/srv/set_axis.hpp"
-#include "wmx_ros2_message/srv/set_axis_mode.hpp"
 #include "wmx_ros2_message/srv/set_axis_gear_ratio.hpp"
 #include "wmx_ros2_message/msg/axis_velocity.hpp"
 #include "wmx_ros2_message/msg/axis_state.hpp"
@@ -54,7 +53,7 @@ private:
     wmx3Api::Velocity::VelCommand velocity_ = wmx3Api::Velocity::VelCommand();
     
     rclcpp::Service<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineService_ = 
-                    this->create_service<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine", 
+                    this->create_service<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_device", 
                     std::bind(&WmxRos2General::setEngine, this, _1, _2));
 
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_ =
@@ -62,7 +61,7 @@ private:
                     std::bind(&WmxRos2General::setComm, this, _1, _2));
     
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr getEngineStatusService_ = 
-                    this->create_service<std_srvs::srv::Trigger>("/wmx/engine/get_engine_status", 
+                    this->create_service<std_srvs::srv::Trigger>("/wmx/engine/get_status", 
                     std::bind(&WmxRos2General::getEngineStatus, this, _1, _2));
     
     rclcpp::Publisher<wmx_ros2_message::msg::AxisState>::SharedPtr axisStatePub_ = 
@@ -73,23 +72,23 @@ private:
                     1, std::bind(&WmxRos2General::axisVelCallback, this, _1));
 
     rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisOnService_ = 
-                    this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_axis_on", 
+                    this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_on", 
                     std::bind(&WmxRos2General::setAxisOn, this, _1, _2));    
     
     rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/clear_alarm", 
                     std::bind(&WmxRos2General::clearAlarm, this, _1, _2)); 
 
-    rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisModeService_ = 
-                    this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_mode", 
+    rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisModeService_ = 
+                    this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_mode", 
                     std::bind(&WmxRos2General::setAxisMode, this, _1, _2));    
                     
-    rclcpp::Service<wmx_ros2_message::srv::SetAxisMode>::SharedPtr setAxisPolarityService_ = 
-                    this->create_service<wmx_ros2_message::srv::SetAxisMode>("/wmx/axis/set_axis_polarity", 
+    rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisPolarityService_ = 
+                    this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_polarity", 
                     std::bind(&WmxRos2General::setAxisPolarity, this, _1, _2));    
     
     rclcpp::Service<wmx_ros2_message::srv::SetAxisGearRatio>::SharedPtr setAxisGearRatioService_ = 
-                    this->create_service<wmx_ros2_message::srv::SetAxisGearRatio>("/wmx/axis/set_axis_gear_ratio", 
+                    this->create_service<wmx_ros2_message::srv::SetAxisGearRatio>("/wmx/axis/set_gear_ratio", 
                     std::bind(&WmxRos2General::setAxisGearRatio, this, _1, _2));
 
     void stopEngine();
@@ -108,14 +107,14 @@ private:
     void setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
                     std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
                     
-    void setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
-                    std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response);
+    void setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
                 
     void clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
                     std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
                 
-    void setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
-                    std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response);
+    void setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
                 
     void setAxisGearRatio(const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
                     std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response);    
