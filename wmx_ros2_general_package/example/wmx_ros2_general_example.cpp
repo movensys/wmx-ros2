@@ -5,6 +5,8 @@
 #include "wmx_ros2_message/srv/set_axis.hpp"
 #include "wmx_ros2_message/srv/set_axis_gear_ratio.hpp"
 
+#include "wmx_ros2_message/msg/axis_velocity.hpp"
+
 #include <chrono>
 #include <memory>
 #include <string>
@@ -12,6 +14,8 @@
 
 using namespace std::chrono_literals;
 using namespace std;
+
+wmx_ros2_message::msg::AxisVelocity axisVelMsg_;
 
 void setEngine(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetEngine>::SharedPtr client,
         bool data, const std::string & path, const std::string & name);
@@ -41,6 +45,9 @@ int main(int argc, char **argv)
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("wmx_ros2_general_test");
 
+  rclcpp::Publisher<wmx_ros2_message::msg::AxisVelocity>::SharedPtr axisVelPub_ = 
+                    node->create_publisher<wmx_ros2_message::msg::AxisVelocity>("/wmx/axis/velocity", 1); 
+  
   auto setEngineClient = node->create_client<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_device");
   auto setCommClient = node->create_client<std_srvs::srv::SetBool>("/wmx/engine/set_comm");
   auto getEngineStatusClient = node->create_client<std_srvs::srv::Trigger>("/wmx/engine/get_status");
@@ -76,6 +83,22 @@ int main(int argc, char **argv)
 
   setAxisOn(node, setAxisOnClient_, 0, 1); //set servo on
   rclcpp::sleep_for(std::chrono::seconds(1));
+
+  axisVelMsg_.index = 0;
+  axisVelMsg_.profile = "Trapezoidal";
+  axisVelMsg_.velocity = 1;
+  axisVelMsg_.acc = 0.5;
+  axisVelMsg_.dec = 0.5;
+  axisVelPub_->publish(axisVelMsg_);
+  rclcpp::sleep_for(std::chrono::seconds(5));
+
+  axisVelMsg_.index = 0;
+  axisVelMsg_.profile = "Trapezoidal";
+  axisVelMsg_.velocity = 0;
+  axisVelMsg_.acc = 0.5;
+  axisVelMsg_.dec = 0.5;
+  axisVelPub_->publish(axisVelMsg_);
+  rclcpp::sleep_for(std::chrono::seconds(5));
 
   setAxisOn(node, setAxisOnClient_, 0, 0); //set servo off
   rclcpp::sleep_for(std::chrono::seconds(1));
