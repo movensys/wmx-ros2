@@ -34,7 +34,7 @@ void setAxisPolarity(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<w
         int index, int data);
 
 void setClearAlarm(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
-        int index, int data);
+        int index);
 
 int main(int argc, char **argv)
 {
@@ -44,10 +44,12 @@ int main(int argc, char **argv)
   auto setEngineClient = node->create_client<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_device");
   auto setCommClient = node->create_client<std_srvs::srv::SetBool>("/wmx/engine/set_comm");
   auto getEngineStatusClient = node->create_client<std_srvs::srv::Trigger>("/wmx/engine/get_status");
+  
   auto setAxisOnClient_ = node->create_client<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_on");
   auto setAxisGearRatioClient_ = node->create_client<wmx_ros2_message::srv::SetAxisGearRatio>("/wmx/axis/set_gear_ratio");
   auto setAxisModeClient_ = node->create_client<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_mode");
   auto setAxisPolarityClient_ = node->create_client<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_polarity");
+  auto clearAlarmClient_ = node->create_client<wmx_ros2_message::srv::SetAxis>("/wmx/axis/clear_alarm");
 
   setEngine(node, setEngineClient, true, "/opt/lmx/", "wmx_ros2_general_test");  // Start engine
   rclcpp::sleep_for(std::chrono::seconds(1));
@@ -67,6 +69,8 @@ int main(int argc, char **argv)
   setAxisPolarity(node, setAxisPolarityClient_, 0, 1); //set axis polarity
   rclcpp::sleep_for(std::chrono::seconds(1));
 
+  setClearAlarm(node, clearAlarmClient_, 0); //clear alarm
+
   setAxisMode(node, setAxisModeClient_, 0, 1); //set axis mode
   rclcpp::sleep_for(std::chrono::seconds(1));
 
@@ -84,6 +88,34 @@ int main(int argc, char **argv)
 
   rclcpp::shutdown();
   return 0;
+}
+
+void setClearAlarm(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+  int index){
+
+  RCLCPP_INFO(node->get_logger(), "Calling /wmx/axis/clear_alarm");
+
+  auto request = std::make_shared<wmx_ros2_message::srv::SetAxis::Request>();
+  request->index = index;
+          
+  while (!client->wait_for_service(1s)) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(node->get_logger(), "Interrupted while waiting for the service. Exiting.");
+      return;
+    }
+    RCLCPP_INFO(node->get_logger(), "Service not available, waiting again...");
+  }
+          
+  auto result = client->async_send_request(request);
+          
+  if (rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_INFO(node->get_logger(), "Status: %s", result.get()->success ? "true" : "false");
+    RCLCPP_INFO(node->get_logger(), "Message: %s", result.get()->message.c_str());
+  } 
+  else {
+    RCLCPP_ERROR(node->get_logger(), "Failed to call service");
+  }
+  cout<<endl<<endl;
 }
 
 void setAxisPolarity(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
