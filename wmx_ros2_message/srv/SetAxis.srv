@@ -1,5 +1,5 @@
 int32 index # axis index
-bool data # start or stop
+int32 data # start or stop
 ---
 bool success   # indicate successful run
 string message # response messages

@@ -2,6 +2,7 @@
 #include "std_srvs/srv/set_bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "wmx_ros2_message/srv/set_engine.hpp"
+#include "wmx_ros2_message/srv/set_axis.hpp"
 
 #include <chrono>
 #include <memory>
@@ -19,6 +20,9 @@ void setComm(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<std_srvs:
 
 void getEngineStatus(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client);
 
+void setAxisOn(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+        int index, int data);
+
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
@@ -27,6 +31,7 @@ int main(int argc, char **argv)
   auto setEngineClient = node->create_client<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine");
   auto setCommClient = node->create_client<std_srvs::srv::SetBool>("/wmx/engine/set_comm");
   auto getEngineStatusClient = node->create_client<std_srvs::srv::Trigger>("/wmx/engine/get_engine_status");
+  auto setAxisOnClient_ = node->create_client<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_axis_on");
 
   setEngine(node, setEngineClient, true, "/opt/lmx/", "wmx_ros2_general_test");  // Start engine
   rclcpp::sleep_for(std::chrono::seconds(1));
@@ -39,6 +44,12 @@ int main(int argc, char **argv)
 
   getEngineStatus(node, getEngineStatusClient); //get engine status
   rclcpp::sleep_for(std::chrono::seconds(1));
+
+  setAxisOn(node, setAxisOnClient_, 0, 1); //set servo on
+  rclcpp::sleep_for(std::chrono::seconds(1));
+
+  setAxisOn(node, setAxisOnClient_, 0, 0); //set servo off
+  rclcpp::sleep_for(std::chrono::seconds(1));
   
   setComm(node, setCommClient, false);  // Stop comm
   rclcpp::sleep_for(std::chrono::seconds(1));
@@ -49,6 +60,36 @@ int main(int argc, char **argv)
   rclcpp::shutdown();
   return 0;
 }
+
+void setAxisOn(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+          int index, int data){
+
+  RCLCPP_INFO(node->get_logger(), "Calling /wmx/axis/set_axis_on");
+
+  auto request = std::make_shared<wmx_ros2_message::srv::SetAxis::Request>();
+  request->index = index;
+  request->data = data;
+          
+  while (!client->wait_for_service(1s)) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(node->get_logger(), "Interrupted while waiting for the service. Exiting.");
+      return;
+    }
+    RCLCPP_INFO(node->get_logger(), "Service not available, waiting again...");
+  }
+          
+  auto result = client->async_send_request(request);
+          
+  if (rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_INFO(node->get_logger(), "Status: %s", result.get()->success ? "true" : "false");
+    RCLCPP_INFO(node->get_logger(), "Message: %s", result.get()->message.c_str());
+  } 
+  else {
+    RCLCPP_ERROR(node->get_logger(), "Failed to call service");
+  }
+  cout<<endl<<endl;
+}
+
 
 void getEngineStatus(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client) {
   RCLCPP_INFO(node->get_logger(), "Calling /wmx/engine/get_engine_status");
