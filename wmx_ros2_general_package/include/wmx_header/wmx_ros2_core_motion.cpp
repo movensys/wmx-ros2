@@ -1,20 +1,9 @@
-#include "wmx_ros2_core_motion.hpp"
+#include "wmx_ros2_general.hpp"
 
 #include <thread>
 #include <chrono>
 
-WmxRos2CoreMotion::WmxRos2CoreMotion() : Node("wmx_ros2_core_motion_node"), wmx3LibCm_(&wmx3Lib_) {  
-    axisStatePeriod_ = std::chrono::milliseconds(1000 / rate_);
-    axisStateTimer_ = this->create_wall_timer(axisStatePeriod_, std::bind(&WmxRos2CoreMotion::axisStateStep, this));
-
-    RCLCPP_INFO(this->get_logger(), "wmx_ros2_core_motion_node is ready");
-}
-
-WmxRos2CoreMotion::~WmxRos2CoreMotion(){
-    RCLCPP_INFO(this->get_logger(), "wmx_ros2_core_motion_node is stopped");
-}
-
-void WmxRos2CoreMotion::axisStateStep(){
+void WmxRos2General::axisStateStep(){
     wmx3LibCm_.GetStatus(&cmStatus_);
 
     axisStateMsg_.amp_alarm.clear();
@@ -48,7 +37,7 @@ void WmxRos2CoreMotion::axisStateStep(){
     axisStatePub_->publish(axisStateMsg_);
 }
 
-void WmxRos2CoreMotion::axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg) {
+void WmxRos2General::axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg) {
     velocity_.axis = msg->index;
     velocity_.profile.velocity = msg->velocity;
     velocity_.profile.type = ProfileType::T::Trapezoidal; //msg->profile
@@ -62,10 +51,10 @@ void WmxRos2CoreMotion::axisVelCallback(const wmx_ros2_message::msg::AxisVelocit
     }
 }
 
-void WmxRos2CoreMotion::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
-                std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response){
+void WmxRos2General::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
     
-    if(request->mode == 0){
+    if(request->data == 0){
         err_ = wmx3LibCm_.axisControl->SetAxisCommandMode(request->index, AxisCommandMode::Position);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -81,7 +70,7 @@ void WmxRos2CoreMotion::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv:
             response->message = std::string(buffer_);
         }
     }
-    else if(request->mode == 1){
+    else if(request->data == 1){
         err_ = wmx3LibCm_.axisControl->SetAxisCommandMode(request->index, AxisCommandMode::Velocity);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -105,7 +94,7 @@ void WmxRos2CoreMotion::setAxisMode(const std::shared_ptr<wmx_ros2_message::srv:
     }
 }
 
-void WmxRos2CoreMotion::setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+void WmxRos2General::setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
                 std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
     err_ = wmx3LibCm_.axisControl->SetServoOn(request->index, request->data);
     if (request->data) {
@@ -140,7 +129,7 @@ void WmxRos2CoreMotion::setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::S
     }
 }
 
-void WmxRos2CoreMotion::clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+void WmxRos2General::clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
                 std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
     err_ = wmx3LibCm_.axisControl->ClearAmpAlarm(request->index);
     if (err_ != ErrorCode::None) {
@@ -158,20 +147,20 @@ void WmxRos2CoreMotion::clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::
     }
 }
 
-void WmxRos2CoreMotion::setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Request> request,
-                std::shared_ptr<wmx_ros2_message::srv::SetAxisMode::Response> response){
+void WmxRos2General::setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
     
-    if (request->mode == 1 || request->mode==-1) {
-        err_ = wmx3LibCm_.config->SetAxisPolarity(request->index, request->mode);
+    if (request->data == 1 || request->data==-1) {
+        err_ = wmx3LibCm_.config->SetAxisPolarity(request->index, request->data);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-            snprintf(buffer_, sizeof(buffer_), "Failed to set axis polarity %d: %d. Error=%d (%s)", request->index, request->mode, err_, errString_);
+            snprintf(buffer_, sizeof(buffer_), "Failed to set axis polarity %d: %d. Error=%d (%s)", request->index, request->data, err_, errString_);
             RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
             response->success = false;
             response->message = std::string(buffer_); 
         } 
         else {
-            snprintf(buffer_, sizeof(buffer_), "Set axis polrity %d: %d", request->index, request->mode);
+            snprintf(buffer_, sizeof(buffer_), "Set axis polarity %d: %d", request->index, request->data);
             RCLCPP_INFO(this->get_logger(), "%s", buffer_);
             response->success = true;
             response->message = std::string(buffer_);
@@ -185,7 +174,7 @@ void WmxRos2CoreMotion::setAxisPolarity(const std::shared_ptr<wmx_ros2_message::
     }
 }
 
-void WmxRos2CoreMotion::setAxisGearRatio(const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
+void WmxRos2General::setAxisGearRatio(const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
                 std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response){
     err_ = wmx3LibCm_.config->SetGearRatio(request->index, request->numerator, request->denumerator);
     if (err_ != ErrorCode::None) {

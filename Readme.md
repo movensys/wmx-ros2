@@ -14,6 +14,10 @@ ROS2 Foxy
 sudo -E bash -c "source /opt/ros/foxy/setup.bash && source install/setup.bash && ros2 launch wmx_ros2_general_package wmx_ros2_general.launch.py"
 ```
 
+```
+sudo -E bash -c "source /opt/ros/foxy/setup.bash && source install/setup.bash && ros2 run wmx_ros2_general_package wmx_ros2_general_example"
+```
+
 ## Service Configuration
 ```
 sudo cp amr_ros2_interface.service /lib/systemd/system
