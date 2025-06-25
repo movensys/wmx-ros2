@@ -1,11 +1,16 @@
 # Request
-int32 axis_index
-float64 target_pose
+int32 index
+float64 target
+float64 threshold
+string profile
+float64 velocity
+float64 acc
+float64 dec
 ---
 # Result
 bool success
-float64 final_pose
+float64 final
 string message
 ---
 # Feedback
-float64 current_pose
+float64 current
