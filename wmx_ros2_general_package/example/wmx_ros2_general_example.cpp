@@ -72,7 +72,7 @@ int main(int argc, char **argv)
 
   setAxisGearRatio(node, setAxisGearRatioClient_, 0, 8388608.0, 6.28319); //set gear ratio
   rclcpp::sleep_for(std::chrono::seconds(1));
-
+  
   setAxisPolarity(node, setAxisPolarityClient_, 0, 1); //set axis polarity
   rclcpp::sleep_for(std::chrono::seconds(1));
 
@@ -84,6 +84,7 @@ int main(int argc, char **argv)
   setAxisOn(node, setAxisOnClient_, 0, 1); //set servo on
   rclcpp::sleep_for(std::chrono::seconds(1));
 
+  RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/velocity 1 rad/s velocity");
   axisVelMsg_.index = 0;
   axisVelMsg_.profile = "Trapezoidal";
   axisVelMsg_.velocity = 1;
@@ -92,6 +93,7 @@ int main(int argc, char **argv)
   axisVelPub_->publish(axisVelMsg_);
   rclcpp::sleep_for(std::chrono::seconds(5));
 
+  RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/velocity 0 rad/s velocity");
   axisVelMsg_.index = 0;
   axisVelMsg_.profile = "Trapezoidal";
   axisVelMsg_.velocity = 0;
