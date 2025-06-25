@@ -1,83 +1,133 @@
 #include "rclcpp/rclcpp.hpp"
+#include "std_srvs/srv/set_bool.hpp"
+#include "std_srvs/srv/trigger.hpp"
 #include "wmx_ros2_message/srv/set_engine.hpp"
 
 #include <chrono>
-#include <cstdlib>
 #include <memory>
+#include <string>
+#include <iostream>
 
 using namespace std::chrono_literals;
+using namespace std;
 
-void startEngine(rclcpp::Node::SharedPtr node, rclcpp::Client<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineClient);
-void stopEngine(rclcpp::Node::SharedPtr node, rclcpp::Client<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineClient);
+void setEngine(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetEngine>::SharedPtr client,
+        bool data, const std::string & path, const std::string & name);
+
+void setComm(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr client,
+        bool data);
+
+void getEngineStatus(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client);
 
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-
-  auto node = rclcpp::Node::make_shared("wmx_engine_example");
+  auto node = rclcpp::Node::make_shared("wmx_ros2_general_test");
 
   auto setEngineClient = node->create_client<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_engine");
+  auto setCommClient = node->create_client<std_srvs::srv::SetBool>("/wmx/engine/set_comm");
+  auto getEngineStatusClient = node->create_client<std_srvs::srv::Trigger>("/wmx/engine/get_engine_status");
 
-  startEngine(node, setEngineClient);
+  setEngine(node, setEngineClient, true, "/opt/lmx/", "wmx_ros2_general_test");  // Start engine
+  rclcpp::sleep_for(std::chrono::seconds(1));
 
-  std::this_thread::sleep_for(std::chrono::seconds(3)); 
+  getEngineStatus(node, getEngineStatusClient); //get engine status
+  rclcpp::sleep_for(std::chrono::seconds(1));
+
+  setComm(node, setCommClient, true);  // Start comm
+  rclcpp::sleep_for(std::chrono::seconds(1));
+
+  getEngineStatus(node, getEngineStatusClient); //get engine status
+  rclcpp::sleep_for(std::chrono::seconds(1));
+  
+  setComm(node, setCommClient, false);  // Stop comm
+  rclcpp::sleep_for(std::chrono::seconds(1));
+  
+  setEngine(node, setEngineClient, false, "/opt/lmx/", "wmx_ros2_general_test"); // Stop engine
+  rclcpp::sleep_for(std::chrono::seconds(1));
 
   rclcpp::shutdown();
   return 0;
 }
 
-void startEngine(rclcpp::Node::SharedPtr node, rclcpp::Client<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineClient){
-  if (!setEngineClient->wait_for_service(5s)) {
-    RCLCPP_ERROR(node->get_logger(), "Service /wmx/engine/set_engine not available after waiting");
-    rclcpp::shutdown();
+void getEngineStatus(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client) {
+  RCLCPP_INFO(node->get_logger(), "Calling /wmx/engine/get_engine_status");
+
+  auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+  
+  while (!client->wait_for_service(1s)) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(node->get_logger(), "Interrupted while waiting for the service. Exiting.");
     return;
-  }
-
-  auto request = std::make_shared<wmx_ros2_message::srv::SetEngine::Request>();
-  request->data = true;
-  request->path = "/opt/lmx";
-  request->name = "wmx_ros2_general";
-
-  auto future_result = setEngineClient->async_send_request(request);
-
-  if (rclcpp::spin_until_future_complete(node, future_result, 5s) ==
-      rclcpp::FutureReturnCode::SUCCESS)
-  {
-    auto response = future_result.get();
-    if (response->success) {
-      RCLCPP_INFO(node->get_logger(), "Success: %s", response->message.c_str());
-    } else {
-      RCLCPP_ERROR(node->get_logger(), "Failure: %s", response->message.c_str());
     }
-  } 
-  else {
-    RCLCPP_ERROR(node->get_logger(), "Failed to call service /wmx/engine/set_engine");
+    RCLCPP_INFO(node->get_logger(), "Service not available, waiting again...");
   }
+
+  auto result = client->async_send_request(request);
+
+  if (rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_INFO(node->get_logger(), "Status: %s", result.get()->success ? "true" : "false");
+    RCLCPP_INFO(node->get_logger(), "Message: %s", result.get()->message.c_str());
+  }  
+  else {
+    RCLCPP_ERROR(node->get_logger(), "Failed to call service");
+  }
+  cout<<endl<<endl;
 }
 
-void stopEngine(rclcpp::Node::SharedPtr node, rclcpp::Client<wmx_ros2_message::srv::SetEngine>::SharedPtr setEngineClient){
-  if (!setEngineClient->wait_for_service(5s)) {
-    RCLCPP_ERROR(node->get_logger(), "Service /wmx/engine/set_engine not available after waiting");
-    rclcpp::shutdown();
-    return;
+
+void setComm(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr client,
+        bool data) {
+  RCLCPP_INFO(node->get_logger(), "Calling /wmx/engine/set_comm");
+
+  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
+  request->data = data;
+
+  while (!client->wait_for_service(1s)) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(node->get_logger(), "Interrupted while waiting for the service. Exiting.");
+      return;
+    }
+    RCLCPP_INFO(node->get_logger(), "Service not available, waiting again...");
   }
 
-  auto request = std::make_shared<wmx_ros2_message::srv::SetEngine::Request>();
-  request->data = false;
+  auto result = client->async_send_request(request);
 
-  auto future_result = setEngineClient->async_send_request(request);
-
-  if (rclcpp::spin_until_future_complete(node, future_result, 5s) ==
-      rclcpp::FutureReturnCode::SUCCESS)
-  {
-    auto response = future_result.get();
-    if (response->success) {
-      RCLCPP_INFO(node->get_logger(), "Success: %s", response->message.c_str());
-    } else {
-      RCLCPP_ERROR(node->get_logger(), "Failure: %s", response->message.c_str());
-    }
+  if (rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_INFO(node->get_logger(), "Status: %s", result.get()->success ? "true" : "false");
+    RCLCPP_INFO(node->get_logger(), "Message: %s", result.get()->message.c_str());
   } 
   else {
-    RCLCPP_ERROR(node->get_logger(), "Failed to call service /wmx/engine/set_engine");
+    RCLCPP_ERROR(node->get_logger(), "Failed to call service");
   }
+  cout<<endl<<endl;
+}
+
+void setEngine(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros2_message::srv::SetEngine>::SharedPtr client,
+        bool data, const std::string & path, const std::string & name) {
+  RCLCPP_INFO(node->get_logger(), "Calling /wmx/engine/set_engine");
+
+  auto request = std::make_shared<wmx_ros2_message::srv::SetEngine::Request>();
+  request->data = data;
+  request->path = path;
+  request->name = name;
+
+  while (!client->wait_for_service(1s)) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(node->get_logger(), "Interrupted while waiting for the service. Exiting.");
+      return;
+    }
+    RCLCPP_INFO(node->get_logger(), "Service not available, waiting again...");
+  }
+
+  auto result = client->async_send_request(request);
+
+  if (rclcpp::spin_until_future_complete(node, result) == rclcpp::FutureReturnCode::SUCCESS) {
+    RCLCPP_INFO(node->get_logger(), "Status: %s", result.get()->success ? "true" : "false");
+    RCLCPP_INFO(node->get_logger(), "Message: %s", result.get()->message.c_str());
+  } 
+  else {
+    RCLCPP_ERROR(node->get_logger(), "Failed to call service");
+  }
+  cout<<endl<<endl;
 }

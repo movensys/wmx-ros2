@@ -10,7 +10,11 @@ def generate_launch_description():
     #start_core_motion_node = Node(package='wmx_ros2_general_package', executable='wmx_core_motion_node', name='wmx_core_motion_node',
     #        output='screen')
 
+    #start_axis_pose_server = Node(package='wmx_ros2_general_package', executable='wmx_axis_pose_server', name='wmx_axis_pose_server',
+    #        output='screen')
+
     return LaunchDescription([
         start_engine_node,
-        #start_core_motion_node
+        #start_core_motion_node,
+        #start_axis_pose_server
     ])
