@@ -11,11 +11,15 @@ ROS2 Foxy
 
 ## Running
 ```
-sudo -E bash -c "source /opt/ros/foxy/setup.bash && source install/setup.bash && ros2 launch wmx_ros2_general_package wmx_ros2_general.launch.py"
+sudo --preserve-env=PATH --preserve-env=AMENT_PREFIX_PATH --preserve-env=RMW_IMPLEMENTATION \
+     --preserve-env=COLCON_PREFIX_PATH --preserve-env=PYTHONPATH \
+     --preserve-env=LD_LIBRARY_PATH --preserve-env=ROS_DISTRO \
+     --preserve-env=ROS_VERSION --preserve-env=ROS_PYTHON_VERSION \
+     bash -c "source /opt/ros/foxy/setup.bash && source install/setup.bash && ros2 launch wmx_ros2_general_package wmx_ros2_general.launch.py"
 ```
 
 ```
-sudo -E bash -c "source /opt/ros/foxy/setup.bash && source install/setup.bash && ros2 run wmx_ros2_general_package wmx_ros2_general_example"
+source /opt/ros/foxy/setup.bash && source install/setup.bash && ros2 run wmx_ros2_general_package wmx_ros2_general_example
 ```
 
 ## Service Configuration
