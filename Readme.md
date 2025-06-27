@@ -19,7 +19,7 @@ sudo --preserve-env=PATH --preserve-env=AMENT_PREFIX_PATH --preserve-env=RMW_IMP
 ```
 
 ```
-source /opt/ros/foxy/setup.bash && source install/setup.bash && ros2 run wmx_ros2_general_package wmx_ros2_general_example
+ros2 run wmx_ros2_general_package wmx_ros2_general_example
 ```
 
 ## Service Configuration
