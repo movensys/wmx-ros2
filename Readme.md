@@ -9,6 +9,8 @@ ROS2 Foxy
 
 ## Installation
 ```
+source /opt/ros/foxy/setup.bash
+source ~/wmx_ros2_ws/install/setup.bas
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=88
 ```
