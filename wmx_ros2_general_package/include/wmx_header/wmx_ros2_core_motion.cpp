@@ -37,6 +37,26 @@ void WmxRos2General::axisStateStep(){
     axisStatePub_->publish(axisStateMsg_);
 }
 
+void WmxRos2General::axisPoseCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg) {
+    
+    size_t axis_count = msg->index.size();
+    for(size_t i=0; i<axis_count; i++){
+        position_.axis = msg->index[i];
+        position_.target = msg->target[i];
+        position_.profile.velocity = msg->velocity[i];
+        position_.profile.type = ProfileType::T::Trapezoidal; //msg->profile[i]
+        position_.profile.acc = msg->acc[i];
+        position_.profile.dec = msg->dec[i];
+
+        err_ = wmx3LibCm_.motion->StartMov(&position_);
+    
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            RCLCPP_ERROR(this->get_logger(), "Failed to move position motor %d. Error=%d (%s)", msg->index[i], err_, errString_);
+        }
+    }
+}
+
 void WmxRos2General::axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg) {
     
     size_t axis_count = msg->index.size();
@@ -51,7 +71,7 @@ void WmxRos2General::axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::
     
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-            RCLCPP_ERROR(this->get_logger(), "Failed to move velocity motor %d. Error=%d (%s)", msg->index, err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "Failed to move velocity motor %d. Error=%d (%s)", msg->index[i], err_, errString_);
         }
     }
 }
@@ -133,6 +153,37 @@ void WmxRos2General::setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetA
     response->message = msg_stream.str();
 }
 
+
+void WmxRos2General::setHoming(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+                                    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){
+    bool all_success = true;
+    std::stringstream msg_stream;
+
+    size_t axis_count = request->index.size();
+    for (size_t i = 0; i < axis_count; ++i)
+    {
+        wmx3LibCm_.config->GetHomeParam(request->index[i], &homeParam_);
+        homeParam_.homeType = Config::HomeType::CurrentPos;
+        wmx3LibCm_.config->SetHomeParam(request->index[i], &homeParam_);
+        wmx3LibCm_.home->StartHome(request->index[i]);
+        wmx3LibCm_.motion->Wait(request->index[i]);
+
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            snprintf(buffer_, sizeof(buffer_), "Failed to homing axis %d. Error=%d (%s)", request->index[i], err_, errString_);
+            RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+            all_success = false;
+        }
+        else {
+            snprintf(buffer_, sizeof(buffer_), "Homing axis %d", request->index[i]);
+            RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+        }
+        msg_stream << buffer_ << "; ";
+    }
+
+    response->success = all_success;
+    response->message = msg_stream.str();
+}
 
 void WmxRos2General::clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
                                     std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response){

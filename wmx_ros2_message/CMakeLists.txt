@@ -23,12 +23,12 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
   "msg/AxisVelocity.msg"
   "msg/AxisState.msg"
-  
-  "action/AxisPose.action"
+  "msg/AxisPose.msg"
 )
 
 install(DIRECTORY
   srv
+  msg
   DESTINATION share/${PROJECT_NAME}/
 )
 
