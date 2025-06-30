@@ -88,12 +88,16 @@ int main(int argc, char **argv)
   setClearAlarm(node, clearAlarmClient_, {0, 1}); //clear alarm
   rclcpp::sleep_for(std::chrono::seconds(1));
   
-  setAxisMode(node, setAxisModeClient_, {0, 1}, {1, 1}); //set axis mode
-  rclcpp::sleep_for(std::chrono::seconds(1));
+  //setAxisMode(node, setAxisModeClient_, {0, 1}, {1, 1}); //set axis mode
+  //rclcpp::sleep_for(std::chrono::seconds(1));
 
   setAxisOn(node, setAxisOnClient_, {0, 1}, {1, 1}); //set servo on
   rclcpp::sleep_for(std::chrono::seconds(1));
 
+  setHoming(node, setHomingClient_, {0, 1}); //set homing
+  rclcpp::sleep_for(std::chrono::seconds(1));
+
+  /*
   RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/velocity 1 rad/s velocity");
   axisVelMsg_.index = {0, 1};
   axisVelMsg_.profile = "Trapezoidal";
@@ -111,6 +115,7 @@ int main(int argc, char **argv)
   axisVelMsg_.dec = {0.5, 0.5};
   axisVelPub_->publish(axisVelMsg_);
   rclcpp::sleep_for(std::chrono::seconds(5));
+  */
 
   setAxisOn(node, setAxisOnClient_, {0, 1}, {0, 0}); //set servo off
   rclcpp::sleep_for(std::chrono::seconds(1));
@@ -118,15 +123,15 @@ int main(int argc, char **argv)
   setAxisMode(node, setAxisModeClient_, {0, 1}, {0, 0}); //set axis mode
   rclcpp::sleep_for(std::chrono::seconds(1));
 
-  setHoming(node, setHomingClient_, {0, 1}); //set homing
+  setAxisOn(node, setAxisOnClient_, {0, 1}, {1, 1}); //set servo on
   rclcpp::sleep_for(std::chrono::seconds(1));
 
-  setAxisOn(node, setAxisOnClient_, {0, 1}, {1, 1}); //set servo on
+  setHoming(node, setHomingClient_, {0, 1}); //set homing
   rclcpp::sleep_for(std::chrono::seconds(1));
   
   RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/pose 5 rad");
   axisPoseMsg_.index = {0, 1};
-  axisPoseMsg_.target = {5, 5};
+  axisPoseMsg_.target = {5.0, 5.0};
   axisPoseMsg_.profile = "Trapezoidal";
   axisPoseMsg_.velocity = {1, 1};
   axisPoseMsg_.acc = {0.5, 0.5};
@@ -134,9 +139,9 @@ int main(int argc, char **argv)
   axisPosePub_->publish(axisPoseMsg_);
   rclcpp::sleep_for(std::chrono::seconds(10));
 
-  RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/pose 0 rad");
+  RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/pose -2 rad");
   axisPoseMsg_.index = {0, 1};
-  axisPoseMsg_.target = {0, 0};
+  axisPoseMsg_.target = {-2.0, -2.0};
   axisPoseMsg_.profile = "Trapezoidal";
   axisPoseMsg_.velocity = {1, 1};
   axisPoseMsg_.acc = {0.5, 0.5};

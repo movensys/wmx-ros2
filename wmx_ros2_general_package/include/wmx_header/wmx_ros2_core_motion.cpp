@@ -49,6 +49,8 @@ void WmxRos2General::axisPoseCallback(const wmx_ros2_message::msg::AxisPose::Sha
         position_.profile.dec = msg->dec[i];
 
         err_ = wmx3LibCm_.motion->StartMov(&position_);
+
+        cout<<position_.target<<endl;
     
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
