@@ -1,55 +1,7 @@
-# WMX_ROS2_Application
+# WMX ROS2 General Package
 
-## Dependencies 
-```
-Advantech MIC-713-OX4A1
-Ubuntu 20.04
-ROS2 Foxy 
-```
+## Subscriber
 
-## Installation
-```
-source /opt/ros/foxy/setup.bash
-source ~/wmx_ros2_ws/install/setup.bas
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export ROS_DOMAIN_ID=88
-```
+## Publisher
 
-## Running
-```
-sudo --preserve-env=PATH \
-     --preserve-env=AMENT_PREFIX_PATH \
-     --preserve-env=COLCON_PREFIX_PATH \
-     --preserve-env=PYTHONPATH \
-     --preserve-env=LD_LIBRARY_PATH \
-     --preserve-env=ROS_DISTRO \
-     --preserve-env=ROS_VERSION \
-     --preserve-env=ROS_PYTHON_VERSION \
-     --preserve-env=ROS_DOMAIN_ID \
-     --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_general_package wmx_ros2_general.launch.py"
-```
-
-```
-ros2 run wmx_ros2_general_package wmx_ros2_general_example
-```
-
-## Service Configuration
-```
-sudo cp amr_ros2_interface.service /lib/systemd/system
-sudo systemctl daemon-reload
-sudo systemctl enable amr_ros2_interface.service
-sudo systemctl start amr_ros2_interface.service
-sudo systemctl restart amr_ros2_interface.service
-```
-
-```
-journalctl -u amr_ros2_interface.service -f
-```
-
-```
-sudo systemctl stop amr_ros2_interface.service
-sudo systemctl disable amr_ros2_interface.service
-sudo rm /lib/systemd/system/amr_ros2_interface.service
-sudo systemctl daemon-reload
-```
+## Service
