@@ -11,10 +11,10 @@ float64[] velocity #velocity (rad/s)
 float64[] acc #acceleration (rad/s^2)
 float64[] dec #decceleration (rad/s^2)
 
-WMX API: CoreMotion.motion->StartPos(&WMX3Api::Motion::PosCommand);
+WMX API: CoreMotion.motion->StartPos(&WMX3Api::Motion::PosCommand)
 ```
-
-
+<br>
+<br>
 **/wmx/axis/position/relative [wmx_ros2_message/msg/AxisPose]**
 ```
 int32[] index #axis index (e.g [0, 1])
@@ -24,10 +24,10 @@ float64[] velocity #velocity (rad/s)
 float64[] acc #acceleration (rad/s^2)
 float64[] dec #decceleration (rad/s^2)
 
-WMX API: CoreMotion.motion->StartMov(&WMX3Api::Motion::PosCommand);
+WMX API: CoreMotion.motion->StartMov(&WMX3Api::Motion::PosCommand)
 ```
-
-
+<br>
+<br>
 **/wmx/axis/velocity [wmx_ros2_message/msg/AxisVelocity]**
 ```
 int32[] index #axis index (e.g [0, 1])
@@ -36,14 +36,28 @@ float64[] velocity #velocity (rad/s)
 float64[] acc #acceleration (rad/s^2)
 float64[] dec #decceleration (rad/s^2)
 
-WMX API: CoreMotion.velocity->StartVel(&wmx3Api::Velocity::VelCommand);
+WMX API: CoreMotion.velocity->StartVel(&wmx3Api::Velocity::VelCommand)
 ```
-
+<br>
+<br>
 ## Publisher
-`/wmx/axis/state [wmx_ros2_message::msg::AxisState]`
+**/wmx/axis/state [wmx_ros2_message/msg/AxisState]**
 ```
-wmx3LibCm_.GetStatus(&cmStatus_);
-cmStatus_.axesStatus
+int32[] amp_alarm
+int32[] servo_on
+int32[] home_done
+int32[] in_pos
+int32[] negative_ls
+int32[] positive_ls
+int32[] home_switch
+float64[] pos_cmd
+float64[] velocity_cmd
+float64[] actual_pos
+float64[] actual_velocity
+float64[] actual_torque
+
+WMX API:  CoreMotion.GetStatus(&CoreMotionStatus)
+          CoreMotionStatus.axesStatus
 ```
 
 ## Service
