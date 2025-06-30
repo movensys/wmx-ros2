@@ -78,6 +78,10 @@ private:
     rclcpp::Subscription<wmx_ros2_message::msg::AxisPose>::SharedPtr axisPoseSub_ = 
                     this->create_subscription<wmx_ros2_message::msg::AxisPose>("/wmx/axis/position",
                     1, std::bind(&WmxRos2General::axisPoseCallback, this, _1));
+    
+    rclcpp::Subscription<wmx_ros2_message::msg::AxisPose>::SharedPtr axisPoseRelativeSub_ = 
+                    this->create_subscription<wmx_ros2_message::msg::AxisPose>("/wmx/axis/position/relative",
+                    1, std::bind(&WmxRos2General::axisPoseRelativeCallback, this, _1));
 
     rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisOnService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/set_on", 
@@ -115,6 +119,7 @@ private:
                     std::shared_ptr<std_srvs::srv::Trigger::Response> response); 
     
     void axisPoseCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg);
+    void axisPoseRelativeCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg);
     
     void axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg);
 

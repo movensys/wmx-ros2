@@ -37,7 +37,7 @@ void WmxRos2General::axisStateStep(){
     axisStatePub_->publish(axisStateMsg_);
 }
 
-void WmxRos2General::axisPoseCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg) {
+void WmxRos2General::axisPoseRelativeCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg) {
     
     size_t axis_count = msg->index.size();
     for(size_t i=0; i<axis_count; i++){
@@ -49,8 +49,26 @@ void WmxRos2General::axisPoseCallback(const wmx_ros2_message::msg::AxisPose::Sha
         position_.profile.dec = msg->dec[i];
 
         err_ = wmx3LibCm_.motion->StartMov(&position_);
+    
+        if (err_ != ErrorCode::None) {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            RCLCPP_ERROR(this->get_logger(), "Failed to move position relative motor %d. Error=%d (%s)", msg->index[i], err_, errString_);
+        }
+    }
+}
 
-        cout<<position_.target<<endl;
+void WmxRos2General::axisPoseCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg) {
+    
+    size_t axis_count = msg->index.size();
+    for(size_t i=0; i<axis_count; i++){
+        position_.axis = msg->index[i];
+        position_.target = msg->target[i];
+        position_.profile.velocity = msg->velocity[i];
+        position_.profile.type = ProfileType::T::Trapezoidal; //msg->profile[i]
+        position_.profile.acc = msg->acc[i];
+        position_.profile.dec = msg->dec[i];
+
+        err_ = wmx3LibCm_.motion->StartPos(&position_);
     
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));

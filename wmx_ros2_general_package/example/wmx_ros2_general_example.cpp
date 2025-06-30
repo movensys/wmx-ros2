@@ -56,6 +56,10 @@ int main(int argc, char **argv)
   rclcpp::Publisher<wmx_ros2_message::msg::AxisPose>::SharedPtr axisPosePub_ = 
                     node->create_publisher<wmx_ros2_message::msg::AxisPose>("/wmx/axis/position", 1); 
   
+  rclcpp::Publisher<wmx_ros2_message::msg::AxisPose>::SharedPtr axisPoseRelativePub_ = 
+                    node->create_publisher<wmx_ros2_message::msg::AxisPose>("/wmx/axis/position/relative", 1); 
+  
+  
   auto setEngineClient = node->create_client<wmx_ros2_message::srv::SetEngine>("/wmx/engine/set_device");
   auto setCommClient = node->create_client<std_srvs::srv::SetBool>("/wmx/engine/set_comm");
   auto getEngineStatusClient = node->create_client<std_srvs::srv::Trigger>("/wmx/engine/get_status");
@@ -145,6 +149,29 @@ int main(int argc, char **argv)
   axisPoseMsg_.acc = {0.5, 0.5};
   axisPoseMsg_.dec = {0.5, 0.5};
   axisPosePub_->publish(axisPoseMsg_);
+  rclcpp::sleep_for(std::chrono::seconds(10));
+
+  setHoming(node, setHomingClient_, {0, 1}); //set homing
+  rclcpp::sleep_for(std::chrono::seconds(1));
+  
+  RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/pose/relative 5 rad");
+  axisPoseMsg_.index = {0, 1};
+  axisPoseMsg_.target = {5.0, 5.0};
+  axisPoseMsg_.profile = "Trapezoidal";
+  axisPoseMsg_.velocity = {1, 1};
+  axisPoseMsg_.acc = {0.5, 0.5};
+  axisPoseMsg_.dec = {0.5, 0.5};
+  axisPoseRelativePub_->publish(axisPoseMsg_);
+  rclcpp::sleep_for(std::chrono::seconds(10));
+
+  RCLCPP_INFO(node->get_logger(), "Publish /wmx/axis/relative -2 rad");
+  axisPoseMsg_.index = {0, 1};
+  axisPoseMsg_.target = {-2.0, -2.0};
+  axisPoseMsg_.profile = "Trapezoidal";
+  axisPoseMsg_.velocity = {1, 1};
+  axisPoseMsg_.acc = {0.5, 0.5};
+  axisPoseMsg_.dec = {0.5, 0.5};
+  axisPoseRelativePub_->publish(axisPoseMsg_);
   rclcpp::sleep_for(std::chrono::seconds(10));
 
   setAxisOn(node, setAxisOnClient_, {0, 1}, {0, 0}); //set servo off
