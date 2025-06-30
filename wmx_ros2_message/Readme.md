@@ -1,1 +1,0 @@
-# WMX_ROS2_MESSAGE

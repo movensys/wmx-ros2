@@ -37,6 +37,7 @@ public:
     ~WmxRos2General(); 
 
 private:
+    int axisCount_;
     int err_;
     char errString_[256];
     char buffer_[512];
