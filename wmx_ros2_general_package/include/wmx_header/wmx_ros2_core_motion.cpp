@@ -4,8 +4,6 @@
 #include <chrono>
 
 void WmxRos2General::axisStateStep(){
-    wmx3LibCm_.GetStatus(&cmStatus_);
-
     axisStateMsg_.amp_alarm.clear();
     axisStateMsg_.servo_on.clear();
     axisStateMsg_.home_done.clear();
@@ -18,6 +16,8 @@ void WmxRos2General::axisStateStep(){
     axisStateMsg_.actual_pos.clear();
     axisStateMsg_.actual_velocity.clear();
     axisStateMsg_.actual_torque.clear();
+
+    wmx3LibCm_.GetStatus(&cmStatus_);
 
     for (int i = 0; i < axisCount_; ++i) {
         axisStateMsg_.amp_alarm.push_back(cmStatus_.axesStatus[i].ampAlarm);
