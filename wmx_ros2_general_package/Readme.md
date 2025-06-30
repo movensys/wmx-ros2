@@ -1,19 +1,42 @@
 # WMX ROS2 General Package
 
 ## Subscriber
-`/wmx/axis/position [wmx_ros2_message::msg::AxisPose]`
+
+**/wmx/axis/position [wmx_ros2_message/msg/AxisPose]**
 ```
-wmx3LibCm_.motion->StartPos(&position_);
+int32[] index #axis index (e.g [0, 1])
+float64[] target # pose target (rad)
+string profile #profile type (not working yet)
+float64[] velocity #velocity (rad/s)
+float64[] acc #acceleration (rad/s^2)
+float64[] dec #decceleration (rad/s^2)
+
+WMX API: CoreMotion.motion->StartPos(&WMX3Api::Motion::PosCommand);
 ```
 
-`/wmx/axis/position/relative [wmx_ros2_message::msg::AxisPose]`
+
+**/wmx/axis/position/relative [wmx_ros2_message/msg/AxisPose]**
 ```
-wmx3LibCm_.motion->StartMov(&position_);
+int32[] index #axis index (e.g [0, 1])
+float64[] target # pose target (rad)
+string profile #profile type (not working yet)
+float64[] velocity #velocity (rad/s)
+float64[] acc #acceleration (rad/s^2)
+float64[] dec #decceleration (rad/s^2)
+
+WMX API: CoreMotion.motion->StartMov(&WMX3Api::Motion::PosCommand);
 ```
 
-`/wmx/axis/velocity [wmx_ros2_message::msg::AxisVelocity]`
+
+**/wmx/axis/velocity [wmx_ros2_message/msg/AxisVelocity]**
 ```
-wmx3LibCm_.velocity->StartVel(&velocity_);
+int32[] index #axis index (e.g [0, 1])
+string profile #profile type (not working yet)
+float64[] velocity #velocity (rad/s)
+float64[] acc #acceleration (rad/s^2)
+float64[] dec #decceleration (rad/s^2)
+
+WMX API: CoreMotion.velocity->StartVel(&wmx3Api::Velocity::VelCommand);
 ```
 
 ## Publisher
