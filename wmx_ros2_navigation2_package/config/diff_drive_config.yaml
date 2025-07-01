@@ -13,7 +13,7 @@ diff_drive_interface:
     wheel_radius: 0.09
     wheel_to_wheel: 0.55
 
-    cmd_vel_topic: "/cmd_vel_safe"
+    cmd_vel_topic: "/cmd_vel"
     encoder_vel_topic: "/cmd_vel_check"
     encoder_omega_topic: "/velocity_controller/commands"
     encoder_odometry_topic: "/odom_enc"

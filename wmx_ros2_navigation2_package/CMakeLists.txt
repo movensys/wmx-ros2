@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(amr_ros2_interface)
+project(wmx_ros2_navigation2_package)
 
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
