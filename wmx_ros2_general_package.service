@@ -6,8 +6,17 @@ After=network.target
 Type=simple
 WorkingDirectory=/home/jetstream/wmx_ros2_ws
 ExecStart=/bin/bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_general_package wmx_ros2_general.launch.py"
-Environment=LANG=en_US.UTF-8
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=AMENT_PREFIX_PATH=/home/jetstream/wmx_ros2_ws/install:/opt/ros/foxy
+Environment=COLCON_PREFIX_PATH=/home/jetstream/wmx_ros2_ws/install
+Environment=PYTHONPATH=/home/jetstream/wmx_ros2_ws/install/lib/python3.8/site-packages
+Environment=LD_LIBRARY_PATH=/home/jetstream/wmx_ros2_ws/install/lib:/opt/ros/foxy/lib
+Environment=ROS_DISTRO=foxy
+Environment=ROS_VERSION=2
+Environment=ROS_PYTHON_VERSION=3
 Environment=ROS_DOMAIN_ID=88
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+Environment=LANG=en_US.UTF-8
 Environment=ROS_LOG_DIR=/home/jetstream/.ros/log
 Restart=always
 RestartSec=5
