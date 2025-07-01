@@ -16,6 +16,12 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=88
 ```
 
+### Build
+```
+cd wmx_ros2_ws
+colcon build
+```
+
 ## WMX ROS2 General Package
 ### Running Command 
 ```
