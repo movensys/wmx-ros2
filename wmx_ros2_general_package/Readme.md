@@ -164,6 +164,8 @@ string message           # response messages
 
 WMX API:  CoreMotion.config->SetGearRatio(request->index, request->numerator, request->denumerator);
 ```
+<br>
+<br>
 
 **wmx/axis/homing [wmx_ros2_message/srv/SetAxis]**
 ```
