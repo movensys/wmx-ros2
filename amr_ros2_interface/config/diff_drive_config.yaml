@@ -1,0 +1,19 @@
+diff_drive_interface:
+  ros__parameters:
+    left_axis: 0
+    right_axis: 1
+    left_axis_polarity: -1
+    right_axis_polarity: 1
+
+    rate: 100
+    gear_numerator: 8388608.0
+    gear_denumerator: 6.28319
+    acc_time: 10.0
+    dec_time: 10.0
+    wheel_radius: 0.09
+    wheel_to_wheel: 0.55
+
+    cmd_vel_topic: "/cmd_vel_safe"
+    encoder_vel_topic: "/cmd_vel_check"
+    encoder_omega_topic: "/velocity_controller/commands"
+    encoder_odometry_topic: "/odom_enc"
