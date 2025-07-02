@@ -77,3 +77,7 @@ sudo --preserve-env=PATH \
      --preserve-env=RMW_IMPLEMENTATION \
      bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package mapping.launch.py"
 ```
+
+```
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
