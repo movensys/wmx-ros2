@@ -8,6 +8,13 @@ ROS2 Foxy
 LMX Installation
 ```
 
+```
+sudo apt install -y ros-foxy-robot-localization \
+                    ros-foxy-slam-toolbox \
+                    ros-foxy-navigation2 \
+                    ros-foxy-nav2*
+```
+
 ### Configuration
 ```
 source /opt/ros/foxy/setup.bash
@@ -63,7 +70,13 @@ sudo systemctl daemon-reload
 ```
 
 ## WMX ROS2 Navigation2 Package
-### Running Command 
+### Mapping HIL 
+Desktop
+```
+ros2 launch baymax_description baymax_gazebo.launch.py
+```
+
+IPC
 ```
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
@@ -75,8 +88,20 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package wmx_ros2_navigation.launch.py"
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package wmx_ros2_navigation2.launch.py"
 ```
+
+Desktop
 ```
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+IPC
+```
+ros2 launch wmx_ros2_navigation2_package mapping.launch.py
+```
+
+Desktop
+```
+rviz2
 ```
