@@ -11,7 +11,7 @@ from nav2_common.launch import RewrittenYaml
 
 ekf_config_file = os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'config', 'ekf.yaml')
 params_file = os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'config', 'navigation.yaml')
-map_file_path = os.path.join(FindPackageShare('wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'maps', 'map.yaml')
+map_file_path = os.path.join(FindPackageShare('wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'maps', 'hil-map.yaml')
 
 start_robot_localization = Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node', output='screen', 
 	parameters=[ekf_config_file, {'use_sim_time': True}])
@@ -24,10 +24,14 @@ start_amcl_localization = Node(package='nav2_amcl', executable='amcl', name='amc
 start_lifecycle_manager = Node(package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_localization', output='screen',
 	parameters=[{'use_sim_time': True}, {'autostart': True}, {'node_names': ['map_server', 'amcl']}])
 
+start_navigation = IncludeLaunchDescription(PythonLaunchDescriptionSource(
+    os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'launch', 'hil-nav2_stack.launch.py')))
+
 def generate_launch_description():
     return LaunchDescription([
         start_robot_localization,
         start_map_server,
         start_amcl_localization,
         start_lifecycle_manager,
+        start_navigation
     ])

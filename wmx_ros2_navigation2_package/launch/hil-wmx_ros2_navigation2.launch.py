@@ -15,7 +15,7 @@ def generate_launch_description():
             package='wmx_ros2_navigation2_package',
             executable='diff_drive_interface',
             name='diff_drive_interface',
-            parameters=[config],
+            parameters=[config, {'use_sim_time': True}],
             output='screen'
         )
     ])

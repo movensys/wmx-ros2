@@ -1,7 +1,5 @@
 diff_drive_interface:
   ros__parameters:
-    use_sim_time: True
-
     left_axis: 0
     right_axis: 1
     left_axis_polarity: -1
