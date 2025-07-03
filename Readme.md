@@ -108,5 +108,6 @@ rviz2
 
 IPC
 ```
-ros2 run nav2_map_server map_saver_cli -f .map --ros-args -p save_map_timeout:=10000
+ros2 run nav2_map_server map_saver_cli -f ./src/wmx_ros2_application/wmx_ros2_navigation2_package/maps/map
+ --ros-args -p save_map_timeout:=10000
 ```

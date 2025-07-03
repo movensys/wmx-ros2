@@ -15,8 +15,7 @@ start_robot_localization = Node(package='robot_localization', executable='ekf_no
 	parameters=[ekf_config_file, {'use_sim_time': True}])
 
 start_slam_toolbox = Node(package='slam_toolbox', executable='async_slam_toolbox_node', name='slam_toolbox', output='screen',
-    parameters=[slam_toolbox_file, {'use_sim_time': True}],
-    remappings=[('/scan', '/laser_horizontal_front_link')])
+    parameters=[slam_toolbox_file, {'use_sim_time': True}])
 
 def generate_launch_description():
     return LaunchDescription([
