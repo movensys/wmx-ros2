@@ -52,7 +52,7 @@ ekf_filter_node:
         imu0_linear_acceleration_rejection_threshold: 5.0  #
         imu0_remove_gravitational_acceleration: false
 
-        use_control: true
+        use_control: false
         stamped_control: false
         control_timeout: 0.2
         control_config: [true, false, false, false, false, true]
