@@ -8,6 +8,13 @@ ROS2 Foxy
 LMX Installation
 ```
 
+```
+sudo apt install -y ros-foxy-robot-localization \
+                    ros-foxy-slam-toolbox \
+                    ros-foxy-navigation2 \
+                    ros-foxy-nav2*
+```
+
 ### Configuration
 ```
 source /opt/ros/foxy/setup.bash
@@ -63,7 +70,13 @@ sudo systemctl daemon-reload
 ```
 
 ## WMX ROS2 Navigation2 Package
-### Running Command 
+### Mapping HIL 
+Desktop
+```
+ros2 launch baymax_description baymax_gazebo.launch.py
+```
+
+IPC
 ```
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
@@ -75,9 +88,68 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package mapping.launch.py"
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package hil-wmx_ros2_navigation2.launch.py"
 ```
 
+IPC
+```
+ros2 launch wmx_ros2_navigation2_package hil-mapping.launch.py
+```
+
+Desktop
+```
+rviz2
+```
+
+Desktop
 ```
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+IPC
+```
+ros2 run nav2_map_server map_saver_cli -f ./src/wmx_ros2_application/wmx_ros2_navigation2_package/maps/hil-map --ros-args -p save_map_timeout:=10000
+```
+
+### Navigation HIL 
+Desktop
+```
+ros2 launch baymax_description baymax_gazebo.launch.py
+```
+
+IPC
+```
+sudo --preserve-env=PATH \
+     --preserve-env=AMENT_PREFIX_PATH \
+     --preserve-env=COLCON_PREFIX_PATH \
+     --preserve-env=PYTHONPATH \
+     --preserve-env=LD_LIBRARY_PATH \
+     --preserve-env=ROS_DISTRO \
+     --preserve-env=ROS_VERSION \
+     --preserve-env=ROS_PYTHON_VERSION \
+     --preserve-env=ROS_DOMAIN_ID \
+     --preserve-env=RMW_IMPLEMENTATION \
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package hil-wmx_ros2_navigation2.launch.py"
+```
+
+IPC
+```
+ros2 launch wmx_ros2_navigation2_package hil-navigation.launch.py
+```
+
+Desktop
+```
+rviz2
+```
+Set initial pose
+
+Desktop
+```
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{pose: {header: { frame_id: 'map' },
+    pose: {position: { x: 8.0, y: 8.0, z: 0.0 }, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }}}}"
+```
+
+Check server
+```
+for node in $(ros2 lifecycle nodes -a); do echo "$node: $(ros2 lifecycle get $node)"; done
 ```

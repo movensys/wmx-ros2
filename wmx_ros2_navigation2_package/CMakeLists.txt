@@ -32,6 +32,8 @@ install(DIRECTORY
   src
   launch
   config
+  rviz
+  maps
   DESTINATION share/${PROJECT_NAME}/
 )
 
