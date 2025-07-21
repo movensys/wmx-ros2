@@ -12,7 +12,9 @@ LMX Installation
 sudo apt install -y ros-foxy-robot-localization \
                     ros-foxy-slam-toolbox \
                     ros-foxy-navigation2 \
-                    ros-foxy-nav2*
+                    ros-foxy-nav2* \
+                    ros-foxy-graph-msgs \
+                    ros-foxy-moveit*
 ```
 
 ### Configuration
@@ -152,4 +154,10 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{pose: 
 Check server
 ```
 for node in $(ros2 lifecycle nodes -a); do echo "$node: $(ros2 lifecycle get $node)"; done
+```
+
+## WMX ROS2 MoveIt2 Package
+### HIL Simulation 
+```
+ros2 launch moveit2_tutorials demo.launch.py
 ```
