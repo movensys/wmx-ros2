@@ -15,10 +15,12 @@ endif()
 
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 include_directories(
   ${rclcpp_INCLUDE_DIRS}
   ${std_msgs_INCLUDE_DIRS}
+  ${sensor_msgs_INCLUDE_DIRS}
 )
 
 include_directories(/opt/lmx/include /opt/lmx/sample/Header)
@@ -37,6 +39,7 @@ target_link_libraries(cr3a_interface
   PRIVATE
     ${rclcpp_LIBRARIES}
     ${std_msgs_LIBRARIES}
+    ${sensor_msgs_LIBRARIES}
     coremotionapi
     ioapi
     wmx3api

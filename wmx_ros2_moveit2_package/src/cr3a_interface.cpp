@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
@@ -23,6 +24,8 @@ public:
     Cr3aRobot(); 
     ~Cr3aRobot(); 
 
+    std::string cmdJointTopic_;
+
     int err_;
     char errString_[256];
 
@@ -30,20 +33,30 @@ private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;    
+
+    sensor_msgs::msg::JointState cmdJointMsg_;
+
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr cmdJointSub_;
     
+    void cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
+
+    void setRosParameter();
     void startEngine();
     void stopEngine();
     void startCommunication();
     void stopCommunication();
 };
 
-
 Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {  
     RCLCPP_INFO(this->get_logger(), "start cr3a_robot_node");
 
+    setRosParameter();
     startEngine();  
+
     startCommunication();
     
+    cmdJointSub_ = this->create_subscription<sensor_msgs::msg::JointState>(cmdJointTopic_, 1, std::bind(&Cr3aRobot::cmdJointCallback, this, _1));
+
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
 }
@@ -55,6 +68,16 @@ Cr3aRobot::~Cr3aRobot(){
     stopEngine();
     
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node stopped");
+}
+
+void Cr3aRobot::setRosParameter(){
+    this->declare_parameter<std::string>("cmd_joint_topic", "/joint_states");
+
+    this->get_parameter("cmd_joint_topic", cmdJointTopic_);
+}
+
+void Cr3aRobot::cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
+    cmdJointMsg_ = *msg;
 }
 
 void Cr3aRobot::startEngine(){

@@ -1,0 +1,3 @@
+cr3a_interface:
+  ros__parameters:
+    cmd_joint_topic: /joint_states

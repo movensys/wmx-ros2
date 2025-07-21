@@ -162,5 +162,18 @@ for node in $(ros2 lifecycle nodes -a); do echo "$node: $(ros2 lifecycle get $no
 ### Dobot CR3A 
 ```
 ros2 launch cr3a_moveit_config cr3a_moveit.launch.py
-ros2 launch cr3a_moveit_config wmx_moveit2.launch.py
+```
+
+```
+sudo --preserve-env=PATH \
+     --preserve-env=AMENT_PREFIX_PATH \
+     --preserve-env=COLCON_PREFIX_PATH \
+     --preserve-env=PYTHONPATH \
+     --preserve-env=LD_LIBRARY_PATH \
+     --preserve-env=ROS_DISTRO \
+     --preserve-env=ROS_VERSION \
+     --preserve-env=ROS_PYTHON_VERSION \
+     --preserve-env=ROS_DOMAIN_ID \
+     --preserve-env=RMW_IMPLEMENTATION \
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_moveit2_package wmx_moveit2.launch.py"
 ```
