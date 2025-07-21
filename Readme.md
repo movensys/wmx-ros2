@@ -14,7 +14,9 @@ sudo apt install -y ros-foxy-robot-localization \
                     ros-foxy-navigation2 \
                     ros-foxy-nav2* \
                     ros-foxy-graph-msgs \
-                    ros-foxy-moveit*
+                    ros-foxy-moveit* \
+                    ros-foxy-ros2-control \
+                    ros-foxy-ros2-controllers
 ```
 
 ### Configuration
