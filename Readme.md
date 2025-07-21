@@ -158,6 +158,3 @@ for node in $(ros2 lifecycle nodes -a); do echo "$node: $(ros2 lifecycle get $no
 
 ## WMX ROS2 MoveIt2 Package
 ### HIL Simulation 
-```
-ros2 launch moveit2_tutorials demo.launch.py
-```
