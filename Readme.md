@@ -159,4 +159,8 @@ for node in $(ros2 lifecycle nodes -a); do echo "$node: $(ros2 lifecycle get $no
 ```
 
 ## WMX ROS2 MoveIt2 Package
-### HIL Simulation 
+### Dobot CR3A 
+```
+ros2 launch cr3a_moveit_config cr3a_moveit.launch.py
+ros2 launch cr3a_moveit_config wmx_moveit2.launch.py
+```
