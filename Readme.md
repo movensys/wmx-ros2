@@ -12,7 +12,11 @@ LMX Installation
 sudo apt install -y ros-foxy-robot-localization \
                     ros-foxy-slam-toolbox \
                     ros-foxy-navigation2 \
-                    ros-foxy-nav2*
+                    ros-foxy-nav2* \
+                    ros-foxy-graph-msgs \
+                    ros-foxy-moveit* \
+                    ros-foxy-ros2-control \
+                    ros-foxy-ros2-controllers
 ```
 
 ### Configuration
@@ -152,4 +156,36 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{pose: 
 Check server
 ```
 for node in $(ros2 lifecycle nodes -a); do echo "$node: $(ros2 lifecycle get $node)"; done
+```
+
+## WMX ROS2 MoveIt2 Package
+### Dobot CR3A 
+```
+sudo --preserve-env=PATH \
+     --preserve-env=AMENT_PREFIX_PATH \
+     --preserve-env=COLCON_PREFIX_PATH \
+     --preserve-env=PYTHONPATH \
+     --preserve-env=LD_LIBRARY_PATH \
+     --preserve-env=ROS_DISTRO \
+     --preserve-env=ROS_VERSION \
+     --preserve-env=ROS_PYTHON_VERSION \
+     --preserve-env=ROS_DOMAIN_ID \
+     --preserve-env=RMW_IMPLEMENTATION \
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_moveit2_package wmx_moveit2.launch.py"
+```
+
+```
+ros2 launch cr3a_moveit_config cr3a_moveit.launch.py
+```
+
+```
+sudo ./lmx-axis-state 0 1 2 3 4 5
+```
+
+```
+ros2 topic echo /joint_states
+```
+
+```
+ros2 topic echo /enc_joint
 ```

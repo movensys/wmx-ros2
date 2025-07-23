@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="cr3a">
+    <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
+
+    <!-- Import cr3a urdf file -->
+    <xacro:include filename="$(find cr3a_description)/urdf/cr3a.xacro" />
+
+    <!-- Import cr3a ros2_control description -->
+    <xacro:include filename="cr3a.ros2_control.xacro" />
+    
+    <xacro:cr3a_ros2_control name="Cr3aFakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+</robot>

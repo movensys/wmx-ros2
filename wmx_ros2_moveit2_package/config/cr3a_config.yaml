@@ -1,0 +1,15 @@
+cr3a_interface:
+  ros__parameters:
+    axis_number: 6
+    rate: 10
+
+    axis_polarity: [1, 1, 1, 1, 1, 1]
+    gear_numerator: [52953088.0, 52953088.0, 42467328.0, 42467328.0, 42467328.0, 42467328.0]
+    gear_denumerator: [6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586]
+
+    omega: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    acc: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
+    dec: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
+
+    cmd_joint_topic: /joint_states
+    encoder_joint_topic: /enc_joint
