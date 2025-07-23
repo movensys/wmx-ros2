@@ -189,3 +189,7 @@ ros2 topic echo /joint_states
 ```
 ros2 topic echo /enc_joint
 ```
+
+```
+ros2 topic pub /joint_states std_msgs/msg/Float64MultiArray "{data: [0.3, 0.0, 0.5, 0.0, 0.0, 0.0]}"
+```
