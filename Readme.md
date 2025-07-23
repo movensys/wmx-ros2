@@ -161,10 +161,6 @@ for node in $(ros2 lifecycle nodes -a); do echo "$node: $(ros2 lifecycle get $no
 ## WMX ROS2 MoveIt2 Package
 ### Dobot CR3A 
 ```
-ros2 launch cr3a_moveit_config cr3a_moveit.launch.py
-```
-
-```
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
      --preserve-env=COLCON_PREFIX_PATH \
@@ -176,4 +172,20 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
      bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_moveit2_package wmx_moveit2.launch.py"
+```
+
+```
+ros2 launch cr3a_moveit_config cr3a_moveit.launch.py
+```
+
+```
+sudo ./lmx-axis-state 0 1 2 3 4 5
+```
+
+```
+ros2 topic echo /joint_states
+```
+
+```
+ros2 topic echo /enc_joint
 ```

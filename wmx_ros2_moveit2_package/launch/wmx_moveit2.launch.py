@@ -15,6 +15,7 @@ def generate_launch_description():
             package='wmx_ros2_moveit2_package',
             executable='cr3a_interface',
             name='cr3a_interface',
+            parameters=[config],
             output='screen'
         )
     ])
