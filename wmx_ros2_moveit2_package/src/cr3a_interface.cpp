@@ -27,7 +27,7 @@ public:
     int axisNumber_;
     int rate_;
 
-    long double jointMsg_[6];
+    long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
 
     std::vector<int64_t> AxisPolarity_;
     std::vector<double> gearNumerator_;
@@ -89,9 +89,22 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
     startEngine();  
 
     startCommunication();
+    
+    /*
     for(int i=0; i<axisNumber_;i++){
         setServoOn(i);
     }
+    */
+
+    /*
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+
+    for(int i=0; i<axisNumber_;i++){
+        setPosition(i, 0.0, omega_[i], acc_[i], dec_[i]);
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    */
 
     cmdJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
     encoderJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
@@ -173,7 +186,7 @@ void Cr3aRobot::encoderJointStep() {
     
     cout<<"Current Joint State"<<endl;
     for (int i = 0; i < axisNumber_; ++i) {
-        cout<<cmAxisStatus_[i]->actualPos<<endl;
+        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<endl;
     }
     cout<<endl;
     
@@ -300,7 +313,7 @@ void Cr3aRobot::setAxisMode(int axis){
 }
 
 void Cr3aRobot::setEncoderMode(int axis){
-    err_ = wmx3LibCm_.config->SetAbsoluteEncoderMode(axis, false);
+    err_ = wmx3LibCm_.config->SetAbsoluteEncoderMode(axis, true);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to set encoder mode axis %d. Error=%d (%s)", axis, err_, errString_);
