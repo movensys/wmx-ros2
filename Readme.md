@@ -191,5 +191,14 @@ ros2 topic echo /enc_joint
 ```
 
 ```
-ros2 topic pub /joint_states std_msgs/msg/Float64MultiArray "{data: [0.3, 0.0, 0.5, 0.0, 0.0, 0.0]}"
+ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
+  header: {
+    stamp: {sec: 0, nanosec: 0},
+    frame_id: ''
+  },
+  name: ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
+  position: [0.0, 0.0, 0.2, 0.0, -0.2, 0.0],
+  velocity: [],
+  effort: []
+}"
 ```

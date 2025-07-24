@@ -170,12 +170,23 @@ void Cr3aRobot::encoderJointStep() {
     }
 
     encoderJointPub_->publish(encoderJointMsg_);
-
+    
+    cout<<"Current Joint State"<<endl;
     for (int i = 0; i < axisNumber_; ++i) {
-        printf(" ActPos    :%-11.3f\n", cmAxisStatus_[i]->actualPos);  
         cout<<cmAxisStatus_[i]->actualPos<<endl;
     }
     cout<<endl;
+    
+    /*
+    for (int i = 0; i < axisNumber_; ++i) {
+        cout<<gearNumerator_[i]<<endl;
+        cout<<gearDenumerator_[i]<<endl;
+        cout<<omega_[i]<<endl;
+        cout<<acc_[i]<<endl;
+        cout<<dec_[i]<<endl;
+    }
+    cout<<endl;
+    */
 }
 
 void Cr3aRobot::cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
@@ -254,7 +265,6 @@ void Cr3aRobot::setPosition(int axis, double position, double omega, double acc,
         RCLCPP_ERROR(this->get_logger(), "Failed to move motor %d. Error=%d (%s)", axis, err_, errString_);
     }
 }
-
 
 void Cr3aRobot::setGearRatio(int axis, double numerator, double denumerator){
     err_ = wmx3LibCm_.config->SetGearRatio(axis, numerator, denumerator);
