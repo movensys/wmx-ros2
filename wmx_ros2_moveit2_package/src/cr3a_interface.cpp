@@ -27,6 +27,7 @@ public:
     int axisNumber_;
     int rate_;
 
+    std::vector<std::string> jointNames_;
     long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
 
     std::vector<int64_t> AxisPolarity_;
@@ -136,6 +137,7 @@ Cr3aRobot::~Cr3aRobot(){
 void Cr3aRobot::setRosParameter(){
     this->declare_parameter<int>("axis_number", 6);
     this->declare_parameter<int>("rate", 10);
+    this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("cmd_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("encoder_joint_topic", "/enc_joint");
     this->declare_parameter<std::vector<int64_t>>("axis_polarity", {1, 1, 1, 1, 1, 1});
@@ -145,6 +147,7 @@ void Cr3aRobot::setRosParameter(){
     this->declare_parameter<std::vector<double>>("acc", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     this->declare_parameter<std::vector<double>>("dec", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     
+    this->get_parameter("joint_name", jointNames_);
     this->get_parameter("axis_number", axisNumber_);
     this->get_parameter("rate", rate_);
     this->get_parameter("cmd_joint_topic", cmdJointTopic_);
@@ -195,8 +198,21 @@ void Cr3aRobot::encoderJointStep() {
 void Cr3aRobot::cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
     cmdJointMsg_ = *msg;
 
-    for(int i=0; i<axisNumber_;i++){ 
-        jointMsg_[i] = cmdJointMsg_.position[i];
+    for (int i = 0; i < axisNumber_; ++i) {
+        const std::string& expected_name = jointNames_[i];
+
+        auto it = std::find(msg->name.begin(), msg->name.end(), expected_name);
+        if (it != msg->name.end()) {
+            size_t index = std::distance(msg->name.begin(), it);
+
+            if (index < msg->position.size()) {
+                jointMsg_[i] = msg->position[index];
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Position index out of bounds for joint: %s", expected_name.c_str());
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Joint name %s not found in incoming message", expected_name.c_str());
+        }
     }
 }
 
