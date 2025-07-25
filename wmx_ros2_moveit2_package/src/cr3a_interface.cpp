@@ -27,7 +27,8 @@ public:
     int axisNumber_;
     int rate_;
 
-    long double jointMsg_[6];
+    std::vector<std::string> jointNames_;
+    long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
 
     std::vector<int64_t> AxisPolarity_;
     std::vector<double> gearNumerator_;
@@ -38,8 +39,6 @@ public:
 
     std::string cmdJointTopic_;
     std::string encoderJointTopic_;
-
-    bool isCommPrev_ = false;
 
     std::chrono::milliseconds cmdJointPeriod_;
     std::chrono::milliseconds encoderJointPeriod_;
@@ -77,6 +76,7 @@ private:
     void clearAlarm(int axis);
     void setEncoderMode(int axis);
     void setAxisMode(int axis);
+    void startHoming(int axis);
     void setPolarity(int axis, int polarity);
     void setGearRatio(int axis, double numerator, double denumerator);
     void setPosition(int axis, double position, double omega, double acc, double dec);
@@ -89,10 +89,25 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
     startEngine();  
 
     startCommunication();
+
+    for(int i=0; i<axisNumber_;i++){
+        clearAlarm(i);
+        setEncoderMode(i);
+        setPolarity(i, AxisPolarity_[i]);
+        setGearRatio(i, gearNumerator_[i], gearDenumerator_[i]);
+        setAxisMode(i);
+    }
+    
     for(int i=0; i<axisNumber_;i++){
         setServoOn(i);
     }
 
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    for(int i=0; i<axisNumber_;i++){
+        startHoming(i);
+    }
+    
     cmdJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
     encoderJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
 
@@ -122,6 +137,7 @@ Cr3aRobot::~Cr3aRobot(){
 void Cr3aRobot::setRosParameter(){
     this->declare_parameter<int>("axis_number", 6);
     this->declare_parameter<int>("rate", 10);
+    this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("cmd_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("encoder_joint_topic", "/enc_joint");
     this->declare_parameter<std::vector<int64_t>>("axis_polarity", {1, 1, 1, 1, 1, 1});
@@ -131,6 +147,7 @@ void Cr3aRobot::setRosParameter(){
     this->declare_parameter<std::vector<double>>("acc", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     this->declare_parameter<std::vector<double>>("dec", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     
+    this->get_parameter("joint_name", jointNames_);
     this->get_parameter("axis_number", axisNumber_);
     this->get_parameter("rate", rate_);
     this->get_parameter("cmd_joint_topic", cmdJointTopic_);
@@ -170,10 +187,10 @@ void Cr3aRobot::encoderJointStep() {
     }
 
     encoderJointPub_->publish(encoderJointMsg_);
-
+    
+    cout<<"Current Joint State"<<endl;
     for (int i = 0; i < axisNumber_; ++i) {
-        printf(" ActPos    :%-11.3f\n", cmAxisStatus_[i]->actualPos);  
-        cout<<cmAxisStatus_[i]->actualPos<<endl;
+        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<endl;
     }
     cout<<endl;
 }
@@ -181,8 +198,21 @@ void Cr3aRobot::encoderJointStep() {
 void Cr3aRobot::cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
     cmdJointMsg_ = *msg;
 
-    for(int i=0; i<axisNumber_;i++){ 
-        jointMsg_[i] = cmdJointMsg_.position[i];
+    for (int i = 0; i < axisNumber_; ++i) {
+        const std::string& expected_name = jointNames_[i];
+
+        auto it = std::find(msg->name.begin(), msg->name.end(), expected_name);
+        if (it != msg->name.end()) {
+            size_t index = std::distance(msg->name.begin(), it);
+
+            if (index < msg->position.size()) {
+                jointMsg_[i] = msg->position[index];
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Position index out of bounds for joint: %s", expected_name.c_str());
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Joint name %s not found in incoming message", expected_name.c_str());
+        }
     }
 }
 
@@ -194,7 +224,7 @@ void Cr3aRobot::cmdJointStep() {
         cmAxisStatus_[i] = &cmStatus_.axesStatus[i];
     }
 
-    if(cmStatus_.engineState == wmx3Api::EngineState::T::Communicating && isCommPrev_ == true){
+    if(cmStatus_.engineState == wmx3Api::EngineState::T::Communicating){
 
         if (!cmAxisStatus_[0]->ampAlarm && !cmAxisStatus_[1]->ampAlarm && !cmAxisStatus_[2]->ampAlarm && 
             !cmAxisStatus_[3]->ampAlarm && !cmAxisStatus_[4]->ampAlarm && !cmAxisStatus_[5]->ampAlarm){
@@ -218,22 +248,8 @@ void Cr3aRobot::cmdJointStep() {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         } 
     }
-        
-    else if(cmStatus_.engineState == wmx3Api::EngineState::T::Communicating && isCommPrev_ == false){
-        for(int i=0; i<axisNumber_;i++){
-            clearAlarm(i);
-            setEncoderMode(i);
-            setPolarity(i, AxisPolarity_[i]);
-            setGearRatio(i, gearNumerator_[i], gearDenumerator_[i]);
-            setAxisMode(i);
-        }
-
-        isCommPrev_ = true;
-        RCLCPP_INFO(this->get_logger(), "Axis is configured");
-    }
     
     else{
-        isCommPrev_ = false;
         RCLCPP_WARN(this->get_logger(), "Communication or engine off. Please start the engine or communication");
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
@@ -255,6 +271,21 @@ void Cr3aRobot::setPosition(int axis, double position, double omega, double acc,
     }
 }
 
+void Cr3aRobot::startHoming(int axis){
+    Config::HomeParam homeParam;
+    wmx3LibCm_.config->GetHomeParam(axis, &homeParam);
+    homeParam.homeType = Config::HomeType::CurrentPos;
+    wmx3LibCm_.config->SetHomeParam(axis, &homeParam);
+    err_ = wmx3LibCm_.home->StartHome(axis);
+    wmx3LibCm_.motion->Wait(axis);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to start homing motor %d. Error=%d (%s)", axis, err_, errString_);
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Set homing axis %d", axis);
+    }
+}
 
 void Cr3aRobot::setGearRatio(int axis, double numerator, double denumerator){
     err_ = wmx3LibCm_.config->SetGearRatio(axis, numerator, denumerator);
@@ -263,7 +294,7 @@ void Cr3aRobot::setGearRatio(int axis, double numerator, double denumerator){
         RCLCPP_ERROR(this->get_logger(), "Failed to set gear ratio axis %d. Error=%d (%s)", axis, err_, errString_);
     }
     else{
-        RCLCPP_INFO(this->get_logger(), "Set gear ratio axis %d", axis);
+        RCLCPP_INFO(this->get_logger(), "Set gear ratio axis %d \t %.6f \t %.6f", axis, numerator, denumerator);
     }
 }
 
@@ -274,7 +305,7 @@ void Cr3aRobot::setPolarity(int axis, int polarity){
         RCLCPP_ERROR(this->get_logger(), "Failed to set polarity axis %d. Error=%d (%s)", axis, err_, errString_);
     }
     else{
-        RCLCPP_INFO(this->get_logger(), "Set polarity axis %d", axis);
+        RCLCPP_INFO(this->get_logger(), "Set polarity axis %d \t %d", axis, polarity);
     }
 }
 
