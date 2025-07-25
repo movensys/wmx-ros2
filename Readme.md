@@ -179,18 +179,6 @@ ros2 launch cr3a_moveit_config cr3a_moveit.launch.py
 ```
 
 ```
-sudo ./lmx-axis-state 0 1 2 3 4 5
-```
-
-```
-ros2 topic echo /joint_states
-```
-
-```
-ros2 topic echo /enc_joint
-```
-
-```
 ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
   header: {
     stamp: {sec: 0, nanosec: 0},
@@ -201,4 +189,16 @@ ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
   velocity: [],
   effort: []
 }"
+```
+
+```
+sudo ./lmx-axis-state 0 1 2 3 4 5
+```
+
+```
+ros2 topic echo /joint_states
+```
+
+```
+ros2 topic echo /enc_joint
 ```
