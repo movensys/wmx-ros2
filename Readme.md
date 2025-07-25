@@ -197,7 +197,7 @@ ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
     frame_id: ''
   },
   name: ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'],
-  position: [0.0, 0.0, 0.2, 0.0, -0.2, 0.0],
+  position: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
   velocity: [],
   effort: []
 }"
