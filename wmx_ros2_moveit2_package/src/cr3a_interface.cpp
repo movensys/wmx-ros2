@@ -190,7 +190,7 @@ void Cr3aRobot::encoderJointStep() {
     
     cout<<"Current Joint State"<<endl;
     for (int i = 0; i < axisNumber_; ++i) {
-        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<endl;
+        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<"omega: "<<omega_[i]<<"acc: "<<acc_[i]<<"dec: "<<dec_[i]<<endl;
     }
     cout<<endl;
 }
