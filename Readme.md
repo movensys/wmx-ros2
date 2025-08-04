@@ -22,7 +22,7 @@ sudo apt install -y ros-foxy-robot-localization \
 ### Configuration
 ```
 source /opt/ros/foxy/setup.bash
-source ~/wmx_ros2_ws/install/setup.bas
+source ~/wmx_ros2_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=88
 ```
