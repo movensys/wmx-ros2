@@ -260,7 +260,7 @@ void Cr3aRobot::setPosition(int axis, double position, double omega, double acc,
     m_position.target = position;
     m_position.profile.velocity = omega;
     
-    m_position.profile.type = ProfileType::T::Trapezoidal;
+    m_position.profile.type = ProfileType::T::SCurve;
     m_position.profile.acc = acc;
     m_position.profile.dec = dec;
 
