@@ -43,8 +43,6 @@ public:
     std::string encoderVelTopic_;
     std::string encoderOmegaTopic_;
     std::string encoderOdometeryTopic_;
-    
-    bool isCommPrev_ = false;
 
     std::chrono::milliseconds cmdVelPeriod_;
     std::chrono::milliseconds encoderOmegaPeriod_;
@@ -95,7 +93,7 @@ private:
     void clearAlarm(int axis);
     void setEncoderMode(int axis);
     void setServoPolarity(int axis);
-    void setGearRatio(int axis, int numerator, int denumerator);
+    void setGearRatio(int axis, double numerator, double denumerator);
     void setAxisMode(int axis); 
     void setPolarity(int axis, int polarity);
     void setVelocity(int axis, double omega);
@@ -109,6 +107,22 @@ DiffDriveController::DiffDriveController() : Node("diff_drive_controller"), wmx3
     startEngine();  
     
     startCommunication();
+    
+    clearAlarm(leftAxis_);
+    clearAlarm(rightAxis_);
+
+    setEncoderMode(leftAxis_);
+    setEncoderMode(rightAxis_);
+
+    setPolarity(leftAxis_, leftAxisPolarity_);
+    setPolarity(rightAxis_, rightAxisPolarity_);
+
+    setGearRatio(leftAxis_, gearNumerator_, gearDenumerator_);
+    setGearRatio(rightAxis_, gearNumerator_, gearDenumerator_);
+
+    setAxisMode(leftAxis_);
+    setAxisMode(rightAxis_);   
+
     setServoOn(leftAxis_);
     setServoOn(rightAxis_);
 
@@ -193,7 +207,7 @@ void DiffDriveController::cmdVelStep() {
     CoreMotionAxisStatus *cmAxis_left_status = &cmStatus_.axesStatus[leftAxis_];
     CoreMotionAxisStatus *cmAxis_right_status = &cmStatus_.axesStatus[rightAxis_];
 
-    if(cmStatus_.engineState == wmx3Api::EngineState::T::Communicating && isCommPrev_ == true){
+    if(cmStatus_.engineState == wmx3Api::EngineState::T::Communicating){
             
         if(!cmAxis_left_status->ampAlarm && !cmAxis_right_status->ampAlarm){   
                 
@@ -215,29 +229,8 @@ void DiffDriveController::cmdVelStep() {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
-        
-    else if(cmStatus_.engineState == wmx3Api::EngineState::T::Communicating && isCommPrev_ == false){
-        clearAlarm(leftAxis_);
-        clearAlarm(rightAxis_);
-
-        setEncoderMode(leftAxis_);
-        setEncoderMode(rightAxis_);
-
-        setPolarity(leftAxis_, leftAxisPolarity_);
-        setPolarity(rightAxis_, rightAxisPolarity_);
-
-        setGearRatio(leftAxis_, gearNumerator_, gearDenumerator_);
-        setGearRatio(rightAxis_, gearNumerator_, gearDenumerator_);
-
-        setAxisMode(leftAxis_);
-        setAxisMode(rightAxis_);   
-  
-        isCommPrev_ = true;
-        RCLCPP_INFO(this->get_logger(), "Axis is configured");
-    }
     
     else{
-        isCommPrev_ = false;
         RCLCPP_WARN(this->get_logger(), "Communication or engine off. Please start the engine or communication");
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
@@ -314,14 +307,14 @@ void DiffDriveController::setEncoderMode(int axis){
     }
 }
 
-void DiffDriveController::setGearRatio(int axis, int numerator, int denumerator){
+void DiffDriveController::setGearRatio(int axis, double numerator, double denumerator){
     err_ = wmx3LibCm_.config->SetGearRatio(axis, numerator, denumerator);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to set gear ratio axis %d. Error=%d (%s)", axis, err_, errString_);
     }
     else{
-        RCLCPP_INFO(this->get_logger(), "Set gear ratio axis %d", axis);
+        RCLCPP_INFO(this->get_logger(), "Set gear ratio axis %d \t %.6f \t %.6f", axis, numerator, denumerator);
     }
 }
 
@@ -332,7 +325,7 @@ void DiffDriveController::setPolarity(int axis, int polarity){
         RCLCPP_ERROR(this->get_logger(), "Failed to set polarity axis %d. Error=%d (%s)", axis, err_, errString_);
     }
     else{
-        RCLCPP_INFO(this->get_logger(), "Set polarity axis %d", axis);
+        RCLCPP_INFO(this->get_logger(), "Set polarity axis %d \t %d", axis, polarity);
     }
 }
 
