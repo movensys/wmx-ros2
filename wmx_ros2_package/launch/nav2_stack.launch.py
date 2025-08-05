@@ -5,11 +5,10 @@ from launch.actions import GroupAction
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
 
-params_file = os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'config', 'navigation.yaml')
-default_bt_xml_filename = os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'config','navigate_w_replanning_and_recovery.xml')
+params_file = os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'config', 'navigation.yaml')
+default_bt_xml_filename = os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'config','navigate_w_replanning_and_recovery.xml')
 
 param_substitutions = {
-    'use_sim_time': 'true',
     'default_bt_xml_filename': default_bt_xml_filename}
 
 configured_params = RewrittenYaml(
@@ -37,7 +36,7 @@ start_load_nodes = GroupAction(
 )
 
 start_lifecycle_manager = Node(package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_navigation', output='screen',
-    parameters=[{'use_sim_time': True}, {'autostart': True}, {'node_names': lifecycle_nodes}])
+    parameters=[{'autostart': True}, {'node_names': lifecycle_nodes}])
 
 def generate_launch_description():
     return LaunchDescription([

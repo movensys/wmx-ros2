@@ -18,7 +18,16 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED) 
+
+include_directories(
+  ${rclcpp_INCLUDE_DIRS}
+  ${std_msgs_INCLUDE_DIRS}
+  ${geometry_msgs_INCLUDE_DIRS}
+  ${nav_msgs_INCLUDE_DIRS}
+)
 
 include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
 link_directories(/opt/lmx/lib)
@@ -32,8 +41,11 @@ target_link_libraries(wmx_ros2_general_lib coremotionapi wmx3api imdll)
 
 install(DIRECTORY
   src
+  config
   launch
   example
+  maps
+  rviz
   DESTINATION share/${PROJECT_NAME}/
 )
 
@@ -43,9 +55,23 @@ target_link_libraries(wmx_ros2_general_node wmx_ros2_general_lib)
 add_executable(wmx_ros2_general_example example/wmx_ros2_general_example.cpp)
 ament_target_dependencies(wmx_ros2_general_example rclcpp wmx_ros2_message std_srvs)   
 
+add_executable(diff_drive_interface src/diff_drive_interface.cpp)
+target_link_libraries(diff_drive_interface
+  PRIVATE
+    ${rclcpp_LIBRARIES}
+    ${std_msgs_LIBRARIES}
+    ${geometry_msgs_LIBRARIES}
+    ${nav_msgs_LIBRARIES}
+    coremotionapi
+    ioapi
+    wmx3api
+    imdll
+)
+
 install(TARGETS 
   wmx_ros2_general_node
   wmx_ros2_general_example
+  diff_drive_interface
   
   DESTINATION lib/${PROJECT_NAME}
 )

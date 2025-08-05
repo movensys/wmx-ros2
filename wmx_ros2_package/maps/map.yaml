@@ -1,4 +1,4 @@
-image: hil-map.pgm
+image: map.pgm
 mode: trinary
 resolution: 0.05
 origin: [-10.1, -10, 0]

@@ -65,11 +65,11 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package hil-wmx_ros2_navigation2.launch.py"
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_navigation2.launch.py"
 ```
 
 ```
-ros2 launch wmx_ros2_navigation2_package mapping.launch.py
+ros2 launch wmx_ros2_package mapping.launch.py
 ```
 
 ```
@@ -77,7 +77,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
 ```
-ros2 run nav2_map_server map_saver_cli -f ./src/wmx_ros2_application/wmx_ros2_navigation2_package/maps/map --ros-args -p save_map_timeout:=10000
+ros2 run nav2_map_server map_saver_cli -f ./src/wmx_ros2_application/wmx_ros2_package/maps/map --ros-args -p save_map_timeout:=10000
 ```
 
 ### Navigation 

@@ -5,17 +5,17 @@ import os
 
 def generate_launch_description():
     config = os.path.join(
-        get_package_share_directory('wmx_ros2_navigation2_package'),
+        get_package_share_directory('wmx_ros2_package'),
         'config',
         'diff_drive_config.yaml'
     )
 
     return LaunchDescription([
         Node(
-            package='wmx_ros2_navigation2_package',
+            package='wmx_ros2_package',
             executable='diff_drive_interface',
             name='diff_drive_interface',
-            parameters=[config, {'use_sim_time': True}],
+            parameters=[config],
             output='screen'
         )
     ])

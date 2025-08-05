@@ -9,23 +9,23 @@ from launch.event_handlers import OnProcessExit
 from ament_index_python.packages import get_package_share_directory
 from nav2_common.launch import RewrittenYaml
 
-ekf_config_file = os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'config', 'ekf.yaml')
-params_file = os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'config', 'navigation.yaml')
-map_file_path = os.path.join(FindPackageShare('wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'maps', 'hil-map.yaml')
+ekf_config_file = os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'config', 'ekf.yaml')
+params_file = os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'config', 'navigation.yaml')
+map_file_path = os.path.join(FindPackageShare('wmx_ros2_package').find('wmx_ros2_package'), 'maps', 'map.yaml')
 
 start_robot_localization = Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node', output='screen', 
-	parameters=[ekf_config_file, {'use_sim_time': True}])
+	parameters=[ekf_config_file])
 
 start_map_server = Node(package='nav2_map_server', executable='map_server', name='map_server', output='screen', parameters=[{'yaml_filename': map_file_path}])
 
 start_amcl_localization = Node(package='nav2_amcl', executable='amcl', name='amcl', output='screen', 
-                parameters=[{'use_sim_time': True}, {'base_frame_id': "base_link"}, {'yaml_filename': params_file}])
+                parameters=[{'base_frame_id': "base_link"}, {'yaml_filename': params_file}])
 
 start_lifecycle_manager = Node(package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_localization', output='screen',
-	parameters=[{'use_sim_time': True}, {'autostart': True}, {'node_names': ['map_server', 'amcl']}])
+	parameters=[{'autostart': True}, {'node_names': ['map_server', 'amcl']}])
 
 start_navigation = IncludeLaunchDescription(PythonLaunchDescriptionSource(
-    os.path.join(FindPackageShare(package='wmx_ros2_navigation2_package').find('wmx_ros2_navigation2_package'), 'launch', 'hil-nav2_stack.launch.py')))
+    os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'launch', 'nav2_stack.launch.py')))
 
 def generate_launch_description():
     return LaunchDescription([
