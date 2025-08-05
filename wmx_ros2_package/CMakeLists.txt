@@ -20,6 +20,7 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED) 
 
 include_directories(
@@ -27,6 +28,7 @@ include_directories(
   ${std_msgs_INCLUDE_DIRS}
   ${geometry_msgs_INCLUDE_DIRS}
   ${nav_msgs_INCLUDE_DIRS}
+  ${sensor_msgs_INCLUDE_DIRS}
 )
 
 include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
@@ -68,10 +70,23 @@ target_link_libraries(diff_drive_interface
     imdll
 )
 
+add_executable(cr3a_interface src/cr3a_interface.cpp)
+target_link_libraries(cr3a_interface
+  PRIVATE
+    ${rclcpp_LIBRARIES}
+    ${std_msgs_LIBRARIES}
+    ${sensor_msgs_LIBRARIES}
+    coremotionapi
+    ioapi
+    wmx3api
+    imdll
+)
+
 install(TARGETS 
   wmx_ros2_general_node
   wmx_ros2_general_example
   diff_drive_interface
+  cr3a_interface
   
   DESTINATION lib/${PROJECT_NAME}
 )

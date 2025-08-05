@@ -92,11 +92,11 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_navigation2_package hil-wmx_ros2_navigation2.launch.py"
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_navigation2.launch.py"
 ```
 
 ```
-ros2 launch wmx_ros2_navigation2_package navigation.launch.py
+ros2 launch wmx_ros2_package navigation2.launch.py
 ```
 
 ```
@@ -121,7 +121,7 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_moveit2_package wmx_moveit2.launch.py"
+     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_moveit2.launch.py"
 ```
 
 ```
