@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(wmx_ros2_general_package)
+project(wmx_ros2_package)
 
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
@@ -23,9 +23,9 @@ find_package(wmx_ros2_message REQUIRED)
 include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
 link_directories(/opt/lmx/lib)
 
-add_library(wmx_ros2_general_lib include/wmx_header/wmx_ros2_general.cpp
-                                 include/wmx_header/wmx_ros2_engine.cpp
-                                 include/wmx_header/wmx_ros2_core_motion.cpp)
+add_library(wmx_ros2_general_lib include/wmx_general_header/wmx_ros2_general.cpp
+                                 include/wmx_general_header/wmx_ros2_engine.cpp
+                                 include/wmx_general_header/wmx_ros2_core_motion.cpp)
 set_target_properties(wmx_ros2_general_lib PROPERTIES LINKER_LANGUAGE CXX)
 ament_target_dependencies(wmx_ros2_general_lib rclcpp rclcpp_action wmx_ros2_message std_srvs)
 target_link_libraries(wmx_ros2_general_lib coremotionapi wmx3api imdll)

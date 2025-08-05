@@ -1,4 +1,4 @@
-#include "wmx_header/wmx_ros2_general.hpp"
+#include "wmx_general_header/wmx_ros2_general.hpp"
 
 int main(int argc, char ** argv)
 {

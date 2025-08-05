@@ -48,7 +48,7 @@ void setHoming(const std::shared_ptr<rclcpp::Node>& node, rclcpp::Client<wmx_ros
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  auto node = rclcpp::Node::make_shared("wmx_ros2_general_test");
+  auto node = rclcpp::Node::make_shared("wmx_ros2_general_example");
 
   rclcpp::Publisher<wmx_ros2_message::msg::AxisVelocity>::SharedPtr axisVelPub_ = 
                     node->create_publisher<wmx_ros2_message::msg::AxisVelocity>("/wmx/axis/velocity", 1); 
