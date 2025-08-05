@@ -145,7 +145,7 @@ ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
 }"
 ```
 
-### Service Configuration
+### Service Configuration (not working yet)
 Installation
 ```
 sudo cp wmx_ros2_general_package.service /lib/systemd/system
