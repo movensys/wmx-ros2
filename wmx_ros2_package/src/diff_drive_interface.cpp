@@ -165,10 +165,10 @@ void DiffDriveController::setRosParameter(){
     this->declare_parameter<int>("right_axis_polarity", 1);
 
     this->declare_parameter<int>("rate", 10);
-    this->declare_parameter<double>("gear_numerator", 100000000.0);
-    this->declare_parameter<double>("gear_denumerator", 36.0);
-    this->declare_parameter<double>("acc_time", 10000.0);
-    this->declare_parameter<double>("dec_time", 10000.0);
+    this->declare_parameter<double>("gear_numerator", 1.0);
+    this->declare_parameter<double>("gear_denumerator", 1.0);
+    this->declare_parameter<double>("acc_time", 1.0);
+    this->declare_parameter<double>("dec_time", 1.0);
     this->declare_parameter<double>("wheel_radius", 0.09);
     this->declare_parameter<double>("wheel_to_wheel", 0.55);
 
