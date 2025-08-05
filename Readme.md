@@ -1,6 +1,6 @@
 # WMX ROS2 Application
 
-### Dependencies 
+### Running On
 ```
 Advantech MIC-713-OX4A1
 Ubuntu 20.04
@@ -8,6 +8,7 @@ ROS2 Foxy
 [WMX3Engine] Build: Jun  6 2025:18:10:19 (v3.5.0.0)
 ```
 
+### Dependencies 
 ```
 sudo apt install -y ros-foxy-robot-localization \
                     ros-foxy-slam-toolbox \
