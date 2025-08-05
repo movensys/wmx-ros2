@@ -146,6 +146,7 @@ ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
 ```
 
 ### Service Configuration
+Installation
 ```
 sudo cp wmx_ros2_general_package.service /lib/systemd/system
 sudo systemctl daemon-reload
@@ -154,10 +155,13 @@ sudo systemctl start wmx_ros2_general_package.service
 sudo systemctl restart wmx_ros2_general_package.service
 ```
 
+Check status
 ```
-journalctl -u wmx_ros2_general_package.service -f
+sudo systemctl wmx_ros2_general_package.service
+sudo journalctl -u wmx_ros2_general_package.service -f
 ```
 
+Uninstall
 ```
 sudo systemctl stop wmx_ros2_general_package.service
 sudo systemctl disable wmx_ros2_general_package.service
