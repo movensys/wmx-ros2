@@ -12,6 +12,7 @@ from nav2_common.launch import RewrittenYaml
 ekf_config_file = os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'config', 'ekf.yaml')
 params_file = os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'config', 'navigation.yaml')
 map_file_path = os.path.join(FindPackageShare('wmx_ros2_package').find('wmx_ros2_package'), 'maps', 'map.yaml')
+default_rviz_config_path = os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'rviz/navigation.rviz')
 
 start_robot_localization = Node(package='robot_localization', executable='ekf_node', name='ekf_filter_node', output='screen', 
 	parameters=[ekf_config_file])
@@ -27,11 +28,14 @@ start_lifecycle_manager = Node(package='nav2_lifecycle_manager', executable='lif
 start_navigation = IncludeLaunchDescription(PythonLaunchDescriptionSource(
     os.path.join(FindPackageShare(package='wmx_ros2_package').find('wmx_ros2_package'), 'launch', 'nav2_stack.launch.py')))
 
+start_rviz = Node(package='rviz2', executable='rviz2', name='rviz2', output='screen', arguments=['-d', default_rviz_config_path])
+
 def generate_launch_description():
     return LaunchDescription([
         start_robot_localization,
         start_map_server,
         start_amcl_localization,
         start_lifecycle_manager,
-        start_navigation
+        start_navigation,
+        start_rviz
     ])
