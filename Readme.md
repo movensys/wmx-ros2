@@ -21,7 +21,7 @@ sudo apt install -y ros-foxy-graph-msgs \
 source /opt/ros/foxy/setup.bash
 source ~/wmx_ros2_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export ROS_DOMAIN_ID=88
+export ROS_DOMAIN_ID=70
 ```
 
 ### Build

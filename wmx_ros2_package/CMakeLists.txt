@@ -46,8 +46,6 @@ install(DIRECTORY
   config
   launch
   example
-  maps
-  rviz
   DESTINATION share/${PROJECT_NAME}/
 )
 
@@ -56,19 +54,6 @@ target_link_libraries(wmx_ros2_general_node wmx_ros2_general_lib)
 
 add_executable(wmx_ros2_general_example example/wmx_ros2_general_example.cpp)
 ament_target_dependencies(wmx_ros2_general_example rclcpp wmx_ros2_message std_srvs)   
-
-add_executable(diff_drive_interface src/diff_drive_interface.cpp)
-target_link_libraries(diff_drive_interface
-  PRIVATE
-    ${rclcpp_LIBRARIES}
-    ${std_msgs_LIBRARIES}
-    ${geometry_msgs_LIBRARIES}
-    ${nav_msgs_LIBRARIES}
-    coremotionapi
-    ioapi
-    wmx3api
-    imdll
-)
 
 add_executable(cr3a_interface src/cr3a_interface.cpp)
 target_link_libraries(cr3a_interface
@@ -85,7 +70,6 @@ target_link_libraries(cr3a_interface
 install(TARGETS 
   wmx_ros2_general_node
   wmx_ros2_general_example
-  diff_drive_interface
   cr3a_interface
   
   DESTINATION lib/${PROJECT_NAME}
