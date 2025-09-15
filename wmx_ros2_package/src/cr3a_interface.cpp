@@ -321,7 +321,7 @@ void Cr3aRobot::setAxisMode(int axis){
 }
 
 void Cr3aRobot::setEncoderMode(int axis){
-    err_ = wmx3LibCm_.config->SetAbsoluteEncoderMode(axis, false);
+    err_ = wmx3LibCm_.config->SetAbsoluteEncoderMode(axis, true);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to set encoder mode axis %d. Error=%d (%s)", axis, err_, errString_);

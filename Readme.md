@@ -24,12 +24,6 @@ export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_DOMAIN_ID=70
 ```
 
-### Build
-```
-cd wmx_ros2_ws
-colcon build
-```
-
 ## WMX ROS2 MoveIt2 Package
 ### Dobot CR3A 
 ```
@@ -46,10 +40,7 @@ sudo --preserve-env=PATH \
      bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_moveit2.launch.py"
 ```
 
-```
-ros2 launch cr3a_moveit_config cr3a_moveit.launch.py
-```
-
+## Debugging Command
 Set initial joint states
 ```
 ros2 topic pub /joint_states sensor_msgs/msg/JointState "{
