@@ -32,9 +32,7 @@ public:
     std::vector<std::string> jointNames_;
     long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
 
-    std::vector<double> omega_;
-    std::vector<double> acc_;
-    std::vector<double> dec_;
+    double omega_, acc_, dec_;
 
     std::string cmdJointTopic_;
     std::string encoderJointTopic_;
@@ -126,9 +124,9 @@ void Cr3aRobot::setRosParameter(){
     this->declare_parameter<std::string>("cmd_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("encoder_joint_topic", "/enc_joint");
     
-    this->declare_parameter<std::vector<double>>("omega", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
-    this->declare_parameter<std::vector<double>>("acc", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
-    this->declare_parameter<std::vector<double>>("dec", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+    this->declare_parameter<double>("omega", 0.0);
+    this->declare_parameter<double>("acc", 0.0);
+    this->declare_parameter<double>("dec", 0.0);
     
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("axis_number", axisNumber_);
@@ -138,15 +136,6 @@ void Cr3aRobot::setRosParameter(){
     this->get_parameter("omega", omega_);
     this->get_parameter("acc", acc_);
     this->get_parameter("dec", dec_);
-
-    size_t axis_num = static_cast<size_t>(axisNumber_);
-    if (omega_.size() != axis_num ||
-        acc_.size() != axis_num ||
-        dec_.size() != axis_num) {
-        RCLCPP_FATAL(this->get_logger(), "Parameter size mismatch with axis_number");
-        rclcpp::shutdown();
-        return;
-    }
 }
 
 void Cr3aRobot::encoderJointStep() {
@@ -167,7 +156,7 @@ void Cr3aRobot::encoderJointStep() {
     
     cout<<"Current Joint State"<<endl;
     for (int i = 0; i < axisNumber_; ++i) {
-        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<"\t omega: "<<omega_[i]<<"\t acc: "<<acc_[i]<<"\t dec: "<<dec_[i]<<endl;
+        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<"\t omega: "<<omega_<<"\t acc: "<<acc_<<"\t dec: "<<dec_<<endl;
     }
     cout<<endl;
 }
@@ -210,7 +199,7 @@ void Cr3aRobot::cmdJointStep() {
                 cmAxisStatus_[3]->servoOn && cmAxisStatus_[4]->servoOn && cmAxisStatus_[5]->servoOn){
                 
                 for (int i = 0; i < axisNumber_; ++i) {
-                    setPosition(i, jointMsg_[i], omega_[i], acc_[i], dec_[i]);
+                    setPosition(i, jointMsg_[i], omega_, acc_, dec_);
                 }
             }
                 
