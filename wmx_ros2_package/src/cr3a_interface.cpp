@@ -48,7 +48,8 @@ private:
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
     
-    wmx3Api::Motion::PosCommand m_position = wmx3Api::Motion::PosCommand();
+    //wmx3Api::Motion::PosCommand m_position = wmx3Api::Motion::PosCommand();
+    wmx3Api::Motion::LinearIntplCommand lin_ = wmx3Api::Motion::LinearIntplCommand();
 
     sensor_msgs::msg::JointState cmdJointMsg_;
     std_msgs::msg::Float64MultiArray encoderJointMsg_;
@@ -71,7 +72,7 @@ private:
     void setServoOn(int axis);
     void setServoOff(int axis);
     void clearAlarm(int axis);
-    void setPosition(int axis, double position, double omega, double acc, double dec);
+    //void setPosition(int axis, double position, double omega, double acc, double dec);
 };
 
 Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {  
@@ -198,9 +199,24 @@ void Cr3aRobot::cmdJointStep() {
             if( cmAxisStatus_[0]->servoOn && cmAxisStatus_[1]->servoOn && cmAxisStatus_[2]->servoOn &&
                 cmAxisStatus_[3]->servoOn && cmAxisStatus_[4]->servoOn && cmAxisStatus_[5]->servoOn){
                 
+                lin_.axisCount = 6;
+                for (int i = 0; i < axisNumber_; ++i) {
+                    lin_.axis[i] = i;  
+                    lin_.target[i] = jointMsg_[i];      
+                }
+
+                lin_.profile.type = ProfileType::Trapezoidal;
+                lin_.profile.velocity = omega_;
+                lin_.profile.acc = acc_;
+                lin_.profile.dec = dec_;
+
+                wmx3LibCm_.motion->StartLinearIntplPos(&lin_);
+
+                /*
                 for (int i = 0; i < axisNumber_; ++i) {
                     setPosition(i, jointMsg_[i], omega_, acc_, dec_);
                 }
+                */
             }
                 
             else{
@@ -221,6 +237,7 @@ void Cr3aRobot::cmdJointStep() {
     }
 }
 
+/*
 void Cr3aRobot::setPosition(int axis, double position, double omega, double acc, double dec){
     m_position.axis = axis;
     m_position.target = position;
@@ -236,6 +253,7 @@ void Cr3aRobot::setPosition(int axis, double position, double omega, double acc,
         RCLCPP_ERROR(this->get_logger(), "Failed to move motor %d. Error=%d (%s)", axis, err_, errString_);
     }
 }
+*/
 
 void Cr3aRobot::clearAlarm(int axis){
     err_ = wmx3LibCm_.axisControl->ClearAmpAlarm(axis);
