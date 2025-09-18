@@ -14,6 +14,9 @@
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
+#include "IOApi.h"
+
+#define WMX_PARAM_FILE_PATH "/home/jetstream/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
 
 using std::placeholders::_1;
 using namespace wmx3Api;
@@ -28,14 +31,12 @@ public:
     int rate_;
 
     std::vector<std::string> jointNames_;
-    long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
+    std::string gripperName_;
 
-    std::vector<int64_t> AxisPolarity_;
-    std::vector<double> gearNumerator_;
-    std::vector<double> gearDenumerator_;
-    std::vector<double> omega_;
-    std::vector<double> acc_;
-    std::vector<double> dec_;
+    long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
+    float gripperMsg_ = 0.0;
+
+    double omega_, acc_, dec_;
 
     std::string cmdJointTopic_;
     std::string encoderJointTopic_;
@@ -50,8 +51,9 @@ private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
+    Io Wmx3Lib_Io_;
     
-    wmx3Api::Motion::PosCommand m_position = wmx3Api::Motion::PosCommand();
+    wmx3Api::Motion::LinearIntplCommand lin_ = wmx3Api::Motion::LinearIntplCommand();
 
     sensor_msgs::msg::JointState cmdJointMsg_;
     std_msgs::msg::Float64MultiArray encoderJointMsg_;
@@ -74,15 +76,9 @@ private:
     void setServoOn(int axis);
     void setServoOff(int axis);
     void clearAlarm(int axis);
-    void setEncoderMode(int axis);
-    void setAxisMode(int axis);
-    void startHoming(int axis);
-    void setPolarity(int axis, int polarity);
-    void setGearRatio(int axis, double numerator, double denumerator);
-    void setPosition(int axis, double position, double omega, double acc, double dec);
 };
 
-Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {  
+Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_) {  
     RCLCPP_INFO(this->get_logger(), "start cr3a_robot_node");
 
     setRosParameter();
@@ -90,23 +86,14 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
 
     startCommunication();
 
+    wmx3LibCm_.config->ImportAndSetAll((char*)WMX_PARAM_FILE_PATH);
+
     for(int i=0; i<axisNumber_;i++){
         clearAlarm(i);
-        setEncoderMode(i);
-        setPolarity(i, AxisPolarity_[i]);
-        setGearRatio(i, gearNumerator_[i], gearDenumerator_[i]);
-        setAxisMode(i);
-    }
-    
-    for(int i=0; i<axisNumber_;i++){
         setServoOn(i);
     }
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    for(int i=0; i<axisNumber_;i++){
-        startHoming(i);
-    }
     
     cmdJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
     encoderJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
@@ -137,39 +124,25 @@ Cr3aRobot::~Cr3aRobot(){
 void Cr3aRobot::setRosParameter(){
     this->declare_parameter<int>("axis_number", 6);
     this->declare_parameter<int>("rate", 10);
+    this->declare_parameter<std::string>("gripper_name", "gripper");
+
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("cmd_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("encoder_joint_topic", "/enc_joint");
-    this->declare_parameter<std::vector<int64_t>>("axis_polarity", {1, 1, 1, 1, 1, 1});
-    this->declare_parameter<std::vector<double>>("gear_numerator", {1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
-    this->declare_parameter<std::vector<double>>("gear_denumerator", {1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
-    this->declare_parameter<std::vector<double>>("omega", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
-    this->declare_parameter<std::vector<double>>("acc", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
-    this->declare_parameter<std::vector<double>>("dec", {0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     
+    this->declare_parameter<double>("omega", 0.0);
+    this->declare_parameter<double>("acc", 0.0);
+    this->declare_parameter<double>("dec", 0.0);
+    
+    this->get_parameter("gripper_name", gripperName_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("axis_number", axisNumber_);
     this->get_parameter("rate", rate_);
     this->get_parameter("cmd_joint_topic", cmdJointTopic_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
-    this->get_parameter("axis_polarity", AxisPolarity_);
-    this->get_parameter("gear_numerator", gearNumerator_);
-    this->get_parameter("gear_denumerator", gearDenumerator_);
     this->get_parameter("omega", omega_);
     this->get_parameter("acc", acc_);
     this->get_parameter("dec", dec_);
-
-    size_t axis_num = static_cast<size_t>(axisNumber_);
-    if (AxisPolarity_.size() != axis_num ||
-        gearNumerator_.size() != axis_num ||
-        gearDenumerator_.size() != axis_num ||
-        omega_.size() != axis_num ||
-        acc_.size() != axis_num ||
-        dec_.size() != axis_num) {
-        RCLCPP_FATAL(this->get_logger(), "Parameter size mismatch with axis_number");
-        rclcpp::shutdown();
-        return;
-    }
 }
 
 void Cr3aRobot::encoderJointStep() {
@@ -190,8 +163,9 @@ void Cr3aRobot::encoderJointStep() {
     
     cout<<"Current Joint State"<<endl;
     for (int i = 0; i < axisNumber_; ++i) {
-        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<"\t omega: "<<omega_[i]<<"\t acc: "<<acc_[i]<<"\t dec: "<<dec_[i]<<endl;
+        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<"\t omega: "<<omega_<<"\t acc: "<<acc_<<"\t dec: "<<dec_<<endl;
     }
+    cout<<"gripper: "<< gripperMsg_<<endl;
     cout<<endl;
 }
 
@@ -214,6 +188,20 @@ void Cr3aRobot::cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr m
             RCLCPP_WARN(this->get_logger(), "Joint name %s not found in incoming message", expected_name.c_str());
         }
     }
+
+    const std::string& expected_name = gripperName_;
+    auto it = std::find(msg->name.begin(), msg->name.end(), expected_name);
+    if (it != msg->name.end()) {
+        size_t index = std::distance(msg->name.begin(), it);
+
+        if (index < msg->position.size()) {
+            gripperMsg_ = msg->position[index];
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Position index out of bounds for gripper: %s", expected_name.c_str());
+        }
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Gripper name %s not found in incoming message", expected_name.c_str());
+    }
 }
 
 void Cr3aRobot::cmdJointStep() {
@@ -232,8 +220,24 @@ void Cr3aRobot::cmdJointStep() {
             if( cmAxisStatus_[0]->servoOn && cmAxisStatus_[1]->servoOn && cmAxisStatus_[2]->servoOn &&
                 cmAxisStatus_[3]->servoOn && cmAxisStatus_[4]->servoOn && cmAxisStatus_[5]->servoOn){
                 
+                lin_.axisCount = 6;
                 for (int i = 0; i < axisNumber_; ++i) {
-                    setPosition(i, jointMsg_[i], omega_[i], acc_[i], dec_[i]);
+                    lin_.axis[i] = i;  
+                    lin_.target[i] = jointMsg_[i];      
+                }
+
+                lin_.profile.type = ProfileType::Trapezoidal;
+                lin_.profile.velocity = omega_;
+                lin_.profile.acc = acc_;
+                lin_.profile.dec = dec_;
+
+                wmx3LibCm_.motion->StartLinearIntplPos(&lin_);
+
+                if(gripperMsg_ >= 0.005){
+                    Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0xFF);
+                }
+                else{
+                    Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0x00);
                 }
             }
                 
@@ -252,82 +256,6 @@ void Cr3aRobot::cmdJointStep() {
     else{
         RCLCPP_WARN(this->get_logger(), "Communication or engine off. Please start the engine or communication");
         std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-}
-
-void Cr3aRobot::setPosition(int axis, double position, double omega, double acc, double dec){
-    m_position.axis = axis;
-    m_position.target = position;
-    m_position.profile.velocity = omega;
-    
-    m_position.profile.type = ProfileType::T::SCurve;
-    m_position.profile.acc = acc;
-    m_position.profile.dec = dec;
-
-    err_ = wmx3LibCm_.motion->StartPos(&m_position);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to move motor %d. Error=%d (%s)", axis, err_, errString_);
-    }
-}
-
-void Cr3aRobot::startHoming(int axis){
-    Config::HomeParam homeParam;
-    wmx3LibCm_.config->GetHomeParam(axis, &homeParam);
-    homeParam.homeType = Config::HomeType::CurrentPos;
-    wmx3LibCm_.config->SetHomeParam(axis, &homeParam);
-    err_ = wmx3LibCm_.home->StartHome(axis);
-    wmx3LibCm_.motion->Wait(axis);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to start homing motor %d. Error=%d (%s)", axis, err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Set homing axis %d", axis);
-    }
-}
-
-void Cr3aRobot::setGearRatio(int axis, double numerator, double denumerator){
-    err_ = wmx3LibCm_.config->SetGearRatio(axis, numerator, denumerator);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to set gear ratio axis %d. Error=%d (%s)", axis, err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Set gear ratio axis %d \t %.6f \t %.6f", axis, numerator, denumerator);
-    }
-}
-
-void Cr3aRobot::setPolarity(int axis, int polarity){
-    err_ = wmx3LibCm_.config->SetAxisPolarity(axis, polarity);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to set polarity axis %d. Error=%d (%s)", axis, err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Set polarity axis %d \t %d", axis, polarity);
-    }
-}
-
-void Cr3aRobot::setAxisMode(int axis){
-    err_ = wmx3LibCm_.axisControl->SetAxisCommandMode(axis, AxisCommandMode::Position);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to set axis %d command mode to Position. Error=%d (%s)", axis, err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Set Position mode axis %d", axis);
-    }
-}
-
-void Cr3aRobot::setEncoderMode(int axis){
-    err_ = wmx3LibCm_.config->SetAbsoluteEncoderMode(axis, false);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to set encoder mode axis %d. Error=%d (%s)", axis, err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Set encoder mode axis %d", axis);
     }
 }
 
