@@ -14,6 +14,7 @@
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
+#include "IOApi.h"
 
 #define WMX_PARAM_FILE_PATH "/home/jetstream/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
 
@@ -30,7 +31,10 @@ public:
     int rate_;
 
     std::vector<std::string> jointNames_;
+    std::string gripperName_;
+
     long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
+    float gripperMsg_ = 0.0;
 
     double omega_, acc_, dec_;
 
@@ -47,8 +51,8 @@ private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
+    Io Wmx3Lib_Io_;
     
-    //wmx3Api::Motion::PosCommand m_position = wmx3Api::Motion::PosCommand();
     wmx3Api::Motion::LinearIntplCommand lin_ = wmx3Api::Motion::LinearIntplCommand();
 
     sensor_msgs::msg::JointState cmdJointMsg_;
@@ -72,10 +76,9 @@ private:
     void setServoOn(int axis);
     void setServoOff(int axis);
     void clearAlarm(int axis);
-    //void setPosition(int axis, double position, double omega, double acc, double dec);
 };
 
-Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {  
+Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_) {  
     RCLCPP_INFO(this->get_logger(), "start cr3a_robot_node");
 
     setRosParameter();
@@ -121,6 +124,8 @@ Cr3aRobot::~Cr3aRobot(){
 void Cr3aRobot::setRosParameter(){
     this->declare_parameter<int>("axis_number", 6);
     this->declare_parameter<int>("rate", 10);
+    this->declare_parameter<std::string>("gripper_name", "gripper");
+
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("cmd_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("encoder_joint_topic", "/enc_joint");
@@ -129,6 +134,7 @@ void Cr3aRobot::setRosParameter(){
     this->declare_parameter<double>("acc", 0.0);
     this->declare_parameter<double>("dec", 0.0);
     
+    this->get_parameter("gripper_name", gripperName_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("axis_number", axisNumber_);
     this->get_parameter("rate", rate_);
@@ -159,6 +165,7 @@ void Cr3aRobot::encoderJointStep() {
     for (int i = 0; i < axisNumber_; ++i) {
         cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<"\t omega: "<<omega_<<"\t acc: "<<acc_<<"\t dec: "<<dec_<<endl;
     }
+    cout<<"gripper: "<< gripperMsg_<<endl;
     cout<<endl;
 }
 
@@ -180,6 +187,20 @@ void Cr3aRobot::cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr m
         } else {
             RCLCPP_WARN(this->get_logger(), "Joint name %s not found in incoming message", expected_name.c_str());
         }
+    }
+
+    const std::string& expected_name = gripperName_;
+    auto it = std::find(msg->name.begin(), msg->name.end(), expected_name);
+    if (it != msg->name.end()) {
+        size_t index = std::distance(msg->name.begin(), it);
+
+        if (index < msg->position.size()) {
+            gripperMsg_ = msg->position[index];
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Position index out of bounds for gripper: %s", expected_name.c_str());
+        }
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Gripper name %s not found in incoming message", expected_name.c_str());
     }
 }
 
@@ -212,11 +233,12 @@ void Cr3aRobot::cmdJointStep() {
 
                 wmx3LibCm_.motion->StartLinearIntplPos(&lin_);
 
-                /*
-                for (int i = 0; i < axisNumber_; ++i) {
-                    setPosition(i, jointMsg_[i], omega_, acc_, dec_);
+                if(gripperMsg_ >= 0.005){
+                    Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0xFF);
                 }
-                */
+                else{
+                    Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0x00);
+                }
             }
                 
             else{
@@ -236,24 +258,6 @@ void Cr3aRobot::cmdJointStep() {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
-
-/*
-void Cr3aRobot::setPosition(int axis, double position, double omega, double acc, double dec){
-    m_position.axis = axis;
-    m_position.target = position;
-    m_position.profile.velocity = omega;
-    
-    m_position.profile.type = ProfileType::T::SCurve;
-    m_position.profile.acc = acc;
-    m_position.profile.dec = dec;
-
-    err_ = wmx3LibCm_.motion->StartPos(&m_position);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to move motor %d. Error=%d (%s)", axis, err_, errString_);
-    }
-}
-*/
 
 void Cr3aRobot::clearAlarm(int axis){
     err_ = wmx3LibCm_.axisControl->ClearAmpAlarm(axis);

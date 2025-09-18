@@ -4,6 +4,7 @@ cr3a_interface:
     rate: 200
 
     joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    gripper_name: "picker_1_joint"
     axis_polarity: [-1, -1, 1, -1, -1, -1]
     gear_numerator: [52953088.0, 52953088.0, 42467328.0, 42467328.0, 42467328.0, 42467328.0]
     gear_denumerator: [6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586]
