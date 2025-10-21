@@ -20,10 +20,5 @@ dobot_cr3_compare:
   ros__parameters:
     
     joint_feedback_rate: 200
-
     joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
-    axis_polarity: [-1, -1, 1, -1, -1, -1]
-    gear_numerator: [52953088.0, 52953088.0, 42467328.0, 42467328.0, 42467328.0, 42467328.0]
-    gear_denumerator: [6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586, 6.283185307179586]
-
     encoder_joint_topic: /joint_states

@@ -26,9 +26,7 @@ public:
     ~Cr3aRobot(); 
 
     std::vector<std::string> jointNames_;
-
     int jointFeedbackRate_;
-    std::chrono::milliseconds encoderJointPeriod_;
     std::string encoderJointTopic_;
 
     int err_;
@@ -40,8 +38,7 @@ private:
     CoreMotion wmx3LibCm_;
 
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
-    std_msgs::msg::JointState encoderJointMsg_;
-    rclcpp::Publisher<std_msgs::msg::JointState>::SharedPtr encoderJointPub_;  
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
     
     void encoderJointStep();
 
@@ -55,7 +52,7 @@ private:
     void clearAlarm(int axis);
 };
 
-Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_) {  
+Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {  
     RCLCPP_INFO(this->get_logger(), "start cr3a_robot_node");
 
     setRosParameter();
@@ -72,9 +69,9 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
     
-    encoderJointPeriod_ = std::chrono::milliseconds(1000 / jointFeedbackRate_);
-    encoderJointTimer_ = this->create_wall_timer(encoderJointPeriod_, std::bind(&Cr3aRobot::encoderJointStep, this));
-    encoderJointPub_ = this->create_publisher<std_msgs::msg::JointState>(encoderJointTopic_, 1); 
+    encoderJointTimer_ = this->create_wall_timer(std::chrono::milliseconds(1000 / jointFeedbackRate_), std::bind(&Cr3aRobot::encoderJointStep, this)); 
+
+    encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);  
 
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -83,7 +80,7 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib
 Cr3aRobot::~Cr3aRobot(){
     RCLCPP_INFO(this->get_logger(), "Stop cr3a_robot_node");
 
-    for(int i=0; i<axisNumber_;i++){
+    for(int i=0; i<6;i++){
         setServoOff(i);
     }
 
@@ -94,141 +91,38 @@ Cr3aRobot::~Cr3aRobot(){
 }
 
 void Cr3aRobot::setRosParameter(){
-    this->declare_parameter<int>("axis_number", 6);
-    this->declare_parameter<int>("rate", 10);
-    this->declare_parameter<std::string>("gripper_name", "gripper");
-
+    this->declare_parameter<int>("joint_feedback_rate", 10);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
-    this->declare_parameter<std::string>("cmd_joint_topic", "/joint_states");
-    this->declare_parameter<std::string>("encoder_joint_topic", "/enc_joint");
+    this->declare_parameter<std::string>("encoder_joint_topic", "/joint_states");
     
-    this->declare_parameter<double>("omega", 0.0);
-    this->declare_parameter<double>("acc", 0.0);
-    this->declare_parameter<double>("dec", 0.0);
-    
-    this->get_parameter("gripper_name", gripperName_);
     this->get_parameter("joint_name", jointNames_);
-    this->get_parameter("axis_number", axisNumber_);
-    this->get_parameter("rate", rate_);
-    this->get_parameter("cmd_joint_topic", cmdJointTopic_);
+    this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
-    this->get_parameter("omega", omega_);
-    this->get_parameter("acc", acc_);
-    this->get_parameter("dec", dec_);
 }
 
 void Cr3aRobot::encoderJointStep() {
     wmx3LibCm_.GetStatus(&cmStatus_);
 
-    std::vector<CoreMotionAxisStatus*> cmAxisStatus_(axisNumber_);
-    for (int i = 0; i < axisNumber_; ++i) {
+    std::vector<CoreMotionAxisStatus*> cmAxisStatus_(6);
+    for (int i = 0; i < 6; ++i) {
         cmAxisStatus_[i] = &cmStatus_.axesStatus[i];
     }
 
-    encoderJointMsg_.data.clear();
+    sensor_msgs::msg::JointState encoderJointMsg_;
+    encoderJointMsg_.header.stamp = this->get_clock()->now();
  
-    for (int i = 0; i < axisNumber_; ++i) {
-        encoderJointMsg_.data.push_back(cmAxisStatus_[i]->actualPos);
+    for (int i = 0; i < 6; ++i) {
+        encoderJointMsg_.name.push_back(jointNames_[i]);
+        encoderJointMsg_.position.push_back(cmAxisStatus_[i]->actualPos);
     }
 
     encoderJointPub_->publish(encoderJointMsg_);
     
     cout<<"Current Joint State"<<endl;
-    for (int i = 0; i < axisNumber_; ++i) {
-        cout<<"command: "<<jointMsg_[i]<<"\t state: "<<cmAxisStatus_[i]->actualPos<<"\t omega: "<<omega_<<"\t acc: "<<acc_<<"\t dec: "<<dec_<<endl;
+    for (int i = 0; i < 6; ++i) {
+        cout<<"state: "<<cmAxisStatus_[i]->actualPos<<endl;
     }
-    cout<<"gripper: "<< gripperMsg_<<endl;
     cout<<endl;
-}
-
-void Cr3aRobot::cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
-    cmdJointMsg_ = *msg;
-
-    for (int i = 0; i < axisNumber_; ++i) {
-        const std::string& expected_name = jointNames_[i];
-
-        auto it = std::find(msg->name.begin(), msg->name.end(), expected_name);
-        if (it != msg->name.end()) {
-            size_t index = std::distance(msg->name.begin(), it);
-
-            if (index < msg->position.size()) {
-                jointMsg_[i] = msg->position[index];
-            } else {
-                RCLCPP_WARN(this->get_logger(), "Position index out of bounds for joint: %s", expected_name.c_str());
-            }
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Joint name %s not found in incoming message", expected_name.c_str());
-        }
-    }
-
-    const std::string& expected_name = gripperName_;
-    auto it = std::find(msg->name.begin(), msg->name.end(), expected_name);
-    if (it != msg->name.end()) {
-        size_t index = std::distance(msg->name.begin(), it);
-
-        if (index < msg->position.size()) {
-            gripperMsg_ = msg->position[index];
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Position index out of bounds for gripper: %s", expected_name.c_str());
-        }
-    } else {
-        RCLCPP_WARN(this->get_logger(), "Gripper name %s not found in incoming message", expected_name.c_str());
-    }
-}
-
-void Cr3aRobot::cmdJointStep() {
-    wmx3LibCm_.GetStatus(&cmStatus_);
-
-    std::vector<CoreMotionAxisStatus*> cmAxisStatus_(axisNumber_);
-    for (int i = 0; i < axisNumber_; ++i) {
-        cmAxisStatus_[i] = &cmStatus_.axesStatus[i];
-    }
-
-    if(cmStatus_.engineState == wmx3Api::EngineState::T::Communicating){
-
-        if (!cmAxisStatus_[0]->ampAlarm && !cmAxisStatus_[1]->ampAlarm && !cmAxisStatus_[2]->ampAlarm && 
-            !cmAxisStatus_[3]->ampAlarm && !cmAxisStatus_[4]->ampAlarm && !cmAxisStatus_[5]->ampAlarm){
-            
-            if( cmAxisStatus_[0]->servoOn && cmAxisStatus_[1]->servoOn && cmAxisStatus_[2]->servoOn &&
-                cmAxisStatus_[3]->servoOn && cmAxisStatus_[4]->servoOn && cmAxisStatus_[5]->servoOn){
-                
-                lin_.axisCount = 6;
-                for (int i = 0; i < axisNumber_; ++i) {
-                    lin_.axis[i] = i;  
-                    lin_.target[i] = jointMsg_[i];      
-                }
-
-                lin_.profile.type = ProfileType::Trapezoidal;
-                lin_.profile.velocity = omega_;
-                lin_.profile.acc = acc_;
-                lin_.profile.dec = dec_;
-
-                wmx3LibCm_.motion->StartLinearIntplPos(&lin_);
-
-                if(gripperMsg_ >= 0.005){
-                    Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0xFF);
-                }
-                else{
-                    Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0x00);
-                }
-            }
-                
-            else{
-                RCLCPP_WARN(this->get_logger(), "Servo off. Please set servo on");
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-        }
-            
-        else{
-            RCLCPP_WARN(this->get_logger(), "Servo alarm on. Please clear servo alarm");
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        } 
-    }
-    
-    else{
-        RCLCPP_WARN(this->get_logger(), "Communication or engine off. Please start the engine or communication");
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
 }
 
 void Cr3aRobot::clearAlarm(int axis){
