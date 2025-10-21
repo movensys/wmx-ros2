@@ -67,10 +67,23 @@ target_link_libraries(cr3a_interface
     imdll
 )
 
+add_executable(dobot_cr3_compare src/dobot_cr3_compare.cpp)
+target_link_libraries(dobot_cr3_compare
+  PRIVATE
+    ${rclcpp_LIBRARIES}
+    ${std_msgs_LIBRARIES}
+    ${sensor_msgs_LIBRARIES}
+    coremotionapi
+    ioapi
+    wmx3api
+    imdll
+)
+
 install(TARGETS 
   wmx_ros2_general_node
   wmx_ros2_general_example
   cr3a_interface
+  dobot_cr3_compare
   
   DESTINATION lib/${PROJECT_NAME}
 )
