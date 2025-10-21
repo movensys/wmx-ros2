@@ -10,13 +10,11 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "std_msgs/msg/float64_multi_array.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
-#include "IOApi.h"
 
-#define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
+#define WMX_PARAM_FILE_PATH "/home/jetstream/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
 
 using std::placeholders::_1;
 using namespace wmx3Api;
@@ -27,22 +25,11 @@ public:
     Cr3aRobot(); 
     ~Cr3aRobot(); 
 
-    int axisNumber_;
-    int rate_;
-
     std::vector<std::string> jointNames_;
-    std::string gripperName_;
 
-    long double jointMsg_[6] = {0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
-    float gripperMsg_ = 0.0;
-
-    double omega_, acc_, dec_;
-
-    std::string cmdJointTopic_;
-    std::string encoderJointTopic_;
-
-    std::chrono::milliseconds cmdJointPeriod_;
+    int jointFeedbackRate_;
     std::chrono::milliseconds encoderJointPeriod_;
+    std::string encoderJointTopic_;
 
     int err_;
     char errString_[256];
@@ -51,21 +38,11 @@ private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
-    Io Wmx3Lib_Io_;
-    
-    wmx3Api::Motion::LinearIntplCommand lin_ = wmx3Api::Motion::LinearIntplCommand();
 
-    sensor_msgs::msg::JointState cmdJointMsg_;
-    std_msgs::msg::Float64MultiArray encoderJointMsg_;
-    
-    rclcpp::TimerBase::SharedPtr cmdJointTimer_; 
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
-
-    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr cmdJointSub_;
-    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr encoderJointPub_;  
+    std_msgs::msg::JointState encoderJointMsg_;
+    rclcpp::Publisher<std_msgs::msg::JointState>::SharedPtr encoderJointPub_;  
     
-    void cmdJointStep();
-    void cmdJointCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void encoderJointStep();
 
     void setRosParameter();
@@ -88,21 +65,16 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib
 
     wmx3LibCm_.config->ImportAndSetAll((char*)WMX_PARAM_FILE_PATH);
 
-    for(int i=0; i<axisNumber_;i++){
+    for(int i=0; i<6;i++){
         clearAlarm(i);
         setServoOn(i);
     }
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
     
-    cmdJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
-    encoderJointPeriod_ = std::chrono::milliseconds(1000 / rate_);
-
-    cmdJointTimer_ = this->create_wall_timer(cmdJointPeriod_, std::bind(&Cr3aRobot::cmdJointStep, this));
+    encoderJointPeriod_ = std::chrono::milliseconds(1000 / jointFeedbackRate_);
     encoderJointTimer_ = this->create_wall_timer(encoderJointPeriod_, std::bind(&Cr3aRobot::encoderJointStep, this));
-    
-    cmdJointSub_ = this->create_subscription<sensor_msgs::msg::JointState>(cmdJointTopic_, 1, std::bind(&Cr3aRobot::cmdJointCallback, this, _1));
-    encoderJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(encoderJointTopic_, 1); 
+    encoderJointPub_ = this->create_publisher<std_msgs::msg::JointState>(encoderJointTopic_, 1); 
 
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
