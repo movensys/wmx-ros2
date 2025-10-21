@@ -19,6 +19,7 @@ cr3a_interface:
 dobot_cr3_compare:
   ros__parameters:
     
+    joint_number: 6
     joint_feedback_rate: 200
     joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
     encoder_joint_topic: /joint_states

@@ -25,6 +25,7 @@ public:
     Cr3aRobot(); 
     ~Cr3aRobot(); 
 
+    int jointNumber_;
     std::vector<std::string> jointNames_;
     int jointFeedbackRate_;
     std::string encoderJointTopic_;
@@ -62,7 +63,7 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
 
     wmx3LibCm_.config->ImportAndSetAll((char*)WMX_PARAM_FILE_PATH);
 
-    for(int i=0; i<6;i++){
+    for(int i=0; i<jointNumber_;i++){
         clearAlarm(i);
         setServoOn(i);
     }
@@ -80,7 +81,7 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
 Cr3aRobot::~Cr3aRobot(){
     RCLCPP_INFO(this->get_logger(), "Stop cr3a_robot_node");
 
-    for(int i=0; i<6;i++){
+    for(int i=0; i<jointNumber_;i++){
         setServoOff(i);
     }
 
@@ -91,10 +92,12 @@ Cr3aRobot::~Cr3aRobot(){
 }
 
 void Cr3aRobot::setRosParameter(){
+    this->declare_parameter<int>("joint_number", 1);
     this->declare_parameter<int>("joint_feedback_rate", 10);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/joint_states");
     
+    this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
@@ -103,15 +106,15 @@ void Cr3aRobot::setRosParameter(){
 void Cr3aRobot::encoderJointStep() {
     wmx3LibCm_.GetStatus(&cmStatus_);
 
-    std::vector<CoreMotionAxisStatus*> cmAxisStatus_(6);
-    for (int i = 0; i < 6; ++i) {
+    std::vector<CoreMotionAxisStatus*> cmAxisStatus_(jointNumber_);
+    for (int i = 0; i < jointNumber_; ++i) {
         cmAxisStatus_[i] = &cmStatus_.axesStatus[i];
     }
 
     sensor_msgs::msg::JointState encoderJointMsg_;
     encoderJointMsg_.header.stamp = this->get_clock()->now();
  
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
         encoderJointMsg_.position.push_back(cmAxisStatus_[i]->actualPos);
     }
@@ -119,7 +122,7 @@ void Cr3aRobot::encoderJointStep() {
     encoderJointPub_->publish(encoderJointMsg_);
     
     cout<<"Current Joint State"<<endl;
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < jointNumber_; ++i) {
         cout<<"state: "<<cmAxisStatus_[i]->actualPos<<endl;
     }
     cout<<endl;
