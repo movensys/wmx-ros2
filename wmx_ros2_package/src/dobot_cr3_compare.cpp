@@ -10,11 +10,12 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_msgs/msg/float64_multi_array.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 
-#define WMX_PARAM_FILE_PATH "/home/jetstream/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
+#define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
 
 using std::placeholders::_1;
 using namespace wmx3Api;
@@ -29,6 +30,7 @@ public:
     std::vector<std::string> jointNames_;
     int jointFeedbackRate_;
     std::string encoderJointTopic_;
+    std_msgs::msg::Float64MultiArray cmdJointMsg_;
 
     int err_;
     char errString_[256];
@@ -38,10 +40,14 @@ private:
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
 
+    wmx3Api::Motion::LinearIntplCommand lin_ = wmx3Api::Motion::LinearIntplCommand();
+    
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdJointSub_;
     
     void encoderJointStep();
+    void cmdJointCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
 
     void setRosParameter();
     void startEngine();
@@ -74,6 +80,8 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
 
     encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);  
 
+    cmdJointSub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>("/mvsk/trajectory", 1, std::bind(&Cr3aRobot::cmdJointCallback, this, _1));
+
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
 }
@@ -89,6 +97,23 @@ Cr3aRobot::~Cr3aRobot(){
     stopEngine();
     
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node stopped");
+}
+
+void Cr3aRobot::cmdJointCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg){
+    cmdJointMsg_ = *msg;
+
+    lin_.axisCount = 6;
+    for (int i = 0; i < 6; ++i) {
+        lin_.axis[i] = i;  
+        lin_.target[i] = cmdJointMsg_.data[i];      
+    }
+
+    lin_.profile.type = ProfileType::Trapezoidal;
+    lin_.profile.velocity = 0.1;
+    lin_.profile.acc = 0.1;
+    lin_.profile.dec = 0.1;
+
+    wmx3LibCm_.motion->StartLinearIntplPos(&lin_);
 }
 
 void Cr3aRobot::setRosParameter(){

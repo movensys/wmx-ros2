@@ -6,12 +6,16 @@ from rclpy.action import ActionServer
 from rclpy.node import Node
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from std_msgs.msg import Float64MultiArray
 import os
 
 class FollowJointTrajectoryServer(Node):
     def __init__(self):
         super().__init__('dobot_group_controller')
         self._action_server = ActionServer(self,FollowJointTrajectory,f'/cr3_group_controller/follow_joint_trajectory',self.execute_callback)
+        
+        self.trajectory_publisher = self.create_publisher(Float64MultiArray, '/mvsk/trajectory', 1)
+
         self.get_logger().info("FollowJointTrajectory Action Server is ready...")
         
     async def execute_callback(self, goal_handle):
@@ -24,9 +28,20 @@ class FollowJointTrajectoryServer(Node):
         return result
 
     def execution_trajectory(self, trajectory: JointTrajectory):
-        print(len(trajectory.points))
+        self.get_logger().info("Joint Names: {}".format(trajectory.joint_names))
+
+        for i in range (len(trajectory.points)-1):
+            trajectory_msgs = Float64MultiArray()
+            for j in range(6):
+                trajectory_msgs.data.append(trajectory.points[i+1].positions[j])
+                trajectory_msgs.data.append(trajectory.points[i+1].velocities[j])
+                trajectory_msgs.data.append(trajectory.points[i].velocities[j])
             
-        #self.get_logger().info("Joint Names: {}".format(trajectory.joint_names))
+            self.trajectory_publisher.publish(trajectory_msgs)
+            
+            time.sleep(0.05)
+        
+
         #Positions = []
         #for i, point in enumerate(trajectory.points):
         #    joint= []
