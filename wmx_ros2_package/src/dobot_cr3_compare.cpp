@@ -109,9 +109,9 @@ void Cr3aRobot::cmdJointCallback(const std_msgs::msg::Float64MultiArray::SharedP
     }
 
     lin_.profile.type = ProfileType::Trapezoidal;
-    lin_.profile.velocity = 0.1;
-    lin_.profile.acc = 0.1;
-    lin_.profile.dec = 0.1;
+    lin_.profile.velocity = 1.0;
+    lin_.profile.acc = 1.0;
+    lin_.profile.dec = 1.0;
 
     wmx3LibCm_.motion->StartLinearIntplPos(&lin_);
 }

@@ -73,10 +73,7 @@ sudo --preserve-env=PATH \
 ros2 run wmx_ros2_package action_move_server.py
 ```
 ```
-ros2 launch cr_robot_ros2 dobot_bringup_ros2.launch.py
-```
-```
-ros2 launch dobot_moveit dobot_moveit.launch.py
+ros2 launch cr3_moveit dobot_moveit.launch.py
 ```
 
 
