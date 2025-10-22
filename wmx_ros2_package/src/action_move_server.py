@@ -24,22 +24,24 @@ class FollowJointTrajectoryServer(Node):
         return result
 
     def execution_trajectory(self, trajectory: JointTrajectory):
-        self.get_logger().info("Joint Names: {}".format(trajectory.joint_names))
-        Positions = []
-        for i, point in enumerate(trajectory.points):
-            joint= []
-            for ii in point.positions:
-                joint.append(180 * ii / 3.14159)
-            Positions.append(joint)
-            self.get_logger().info(
-                "Point {}: Positions: {}, Velocities: {}, Accelerations: {}, TimeFromStart: {}".format(
-                    i, joint, point.velocities, point.accelerations, point.time_from_start.sec
-                )
-            )
-        for ii in Positions:
-            print("haha")
+        print(len(trajectory.points))
+            
+        #self.get_logger().info("Joint Names: {}".format(trajectory.joint_names))
+        #Positions = []
+        #for i, point in enumerate(trajectory.points):
+        #    joint= []
+        #    for ii in point.positions:
+        #        joint.append(180 * ii / 3.14159)
+        #    Positions.append(joint)
+        #    self.get_logger().info(
+        #        "Point {}: Positions: {}, Velocities: {}, Accelerations: {}, TimeFromStart: {}".format(
+        #            i, joint, point.velocities, point.accelerations, point.time_from_start.sec
+        #        )
+        #    )
+        #for ii in Positions:
+            #print(trajectory)
             #self.ServoJ_C(ii[0],ii[1],ii[2],ii[3],ii[4],ii[5])
-            time.sleep(0.18)
+        #    time.sleep(0.18)
     
     #def ServoJ_C(self, j1, j2, j3, j4, j5, j6): 
     #    P1 = ServoJ.Request()
