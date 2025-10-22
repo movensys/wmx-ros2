@@ -34,13 +34,15 @@ public:
 
     int err_;
     char errString_[256];
+    double vel_;
+    double acc_;
 
 private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
 
-    wmx3Api::Motion::LinearIntplCommand lin_ = wmx3Api::Motion::LinearIntplCommand();
+    wmx3Api::Motion::PosCommand posCommands_[6];
     
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
@@ -102,18 +104,26 @@ Cr3aRobot::~Cr3aRobot(){
 void Cr3aRobot::cmdJointCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg){
     cmdJointMsg_ = *msg;
 
-    lin_.axisCount = 6;
     for (int i = 0; i < 6; ++i) {
-        lin_.axis[i] = i;  
-        lin_.target[i] = cmdJointMsg_.data[i];      
+        posCommands_[i].axis = i;
+        posCommands_[i].target = cmdJointMsg_.data[i];
+        posCommands_[i].profile.type = ProfileType::Trapezoidal;
+        vel_ = std::abs(cmdJointMsg_.data[i+6]);
+        acc_ = std::abs(cmdJointMsg_.data[i+12]);        
+        posCommands_[i].profile.velocity = vel_ < 1e-6 ? 1e-6 : vel_;
+        posCommands_[i].profile.endVelocity = posCommands_[i].profile.velocity;
+        posCommands_[i].profile.acc = acc_ < 1e-6 ? 1e-6 : acc_;
+        posCommands_[i].profile.dec = posCommands_[i].profile.acc;
     }
 
-    lin_.profile.type = ProfileType::Trapezoidal;
-    lin_.profile.velocity = 1.0;
-    lin_.profile.acc = 1.0;
-    lin_.profile.dec = 1.0;
-
-    wmx3LibCm_.motion->StartLinearIntplPos(&lin_);
+    err_ = wmx3LibCm_.motion->StartPos(6, posCommands_);
+    if(err_ != 0) {
+        wmx3LibCm_.ErrorToString(err_, errString_, 256);
+        RCLCPP_INFO(this->get_logger(), "%s", errString_);
+        for (int i = 0; i < 6; ++i) {
+            RCLCPP_INFO(this->get_logger(), "pos[%lf] vel[%lf] acc[%lf]", posCommands_[i].target, posCommands_[i].profile.velocity, posCommands_[i].profile.acc);
+        }
+    }
 }
 
 void Cr3aRobot::setRosParameter(){
@@ -146,11 +156,11 @@ void Cr3aRobot::encoderJointStep() {
 
     encoderJointPub_->publish(encoderJointMsg_);
     
-    cout<<"Current Joint State"<<endl;
-    for (int i = 0; i < jointNumber_; ++i) {
-        cout<<"state: "<<cmAxisStatus_[i]->actualPos<<endl;
-    }
-    cout<<endl;
+    // cout<<"Current Joint State"<<endl;
+    // for (int i = 0; i < jointNumber_; ++i) {
+    //     cout<<"state: "<<cmAxisStatus_[i]->actualPos<<endl;
+    // }
+    // cout<<endl;
 }
 
 void Cr3aRobot::clearAlarm(int axis){

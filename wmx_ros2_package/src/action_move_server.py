@@ -45,7 +45,7 @@ class FollowJointTrajectoryServer(Node):
             for j in range(6):
                 trajectory_msgs.data.append(trajectory.points[i+1].velocities[j]) #velocity
             for j in range(6):
-                trajectory_msgs.data.append(trajectory.points[i].velocities[j]) #prev_velocity
+                trajectory_msgs.data.append(trajectory.points[i+1].accelerations[j]) #acceleration
             
             self.trajectory_publisher.publish(trajectory_msgs)
             
