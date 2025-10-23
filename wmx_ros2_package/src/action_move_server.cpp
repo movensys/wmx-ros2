@@ -3,6 +3,9 @@
 #include <sstream>
 #include <chrono>
 
+#include "WMX3Api.h"
+#include "CoreMotionApi.h"
+
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 
@@ -11,14 +14,29 @@
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 
+using namespace wmx3Api;
+
 class FollowJointTrajectoryServer : public rclcpp::Node {
 public:
   using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
   using GoalHandleFJT = rclcpp_action::ServerGoalHandle<FollowJointTrajectory>;
 
+  int err_;
+  char errString_[256];
+
   FollowJointTrajectoryServer()
-  : Node("dobot_group_controller")
+  : Node("dobot_group_controller"), wmx3LibCm_(&wmx3Lib_)
   {
+    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
+    wmx3Lib_.SetDeviceName("DiffDriveROS2");
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Created a device");
+    }
+
     action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
       this,
       "/cr3_group_controller/follow_joint_trajectory",
@@ -32,6 +50,10 @@ public:
   }
 
 private:
+  WMX3Api wmx3Lib_;
+  CoreMotion wmx3LibCm_;
+  wmx3Api::Motion::PosCommand posCommands_[6];
+
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr trajectory_pub_;
 
@@ -55,6 +77,7 @@ private:
 
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle)
   {
+    double vel_, acc_, velPre_;
     RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal!");
     const auto goal = goal_handle->get_goal();
     const auto &trajectory = goal->trajectory;
@@ -88,30 +111,36 @@ private:
 
     for (size_t i = 0; i < trajectory.points.size(); ++i) {
       const auto &pt = trajectory.points[i];
-      std_msgs::msg::Float64MultiArray msg;
 
       // positions
       for (size_t j = 0; j < N; ++j) {
-        msg.data.push_back(pt.positions.at(j));
+        posCommands_[j].axis = j;
+        posCommands_[j].target = pt.positions.at(j);
+        posCommands_[j].profile.type = ProfileType::Trapezoidal;
+
+        vel_ = std::abs(pt.velocities.at(j));
+        acc_ = std::abs(pt.accelerations.at(j));
+        velPre_ = (i == 0.0) ? 0.0 : std::abs(trajectory.points[i - 1].velocities.at(j));
+
+        vel_ = vel_ < 1e-6 ? 1e-6 : vel_;
+        acc_ = acc_ < 1e-6 ? 1e-6 : acc_;
+        velPre_ = velPre_ < 1e-6 ? 1e-6 : velPre_;
+        
+        posCommands_[j].profile.endVelocity = vel_ == 1e-6? 0.0 : vel_;
+        posCommands_[j].profile.velocity = vel_ < velPre_ ? (velPre_+vel_)/2.0 : vel_;
+        posCommands_[j].profile.acc = acc_;
+        posCommands_[j].profile.dec = acc_;
       }
-      // velocities
-      for (size_t j = 0; j < N; ++j) {
-        msg.data.push_back(pt.velocities.at(j));
-      }
-      // accelerations
-      for (size_t j = 0; j < N; ++j) {
-        msg.data.push_back(pt.accelerations.at(j));
-      }
-      // previous velocities
-      for (size_t j = 0; j < N; ++j) {
-        if (i == 0) {
-          msg.data.push_back(pt.velocities.at(j));
-        } else {
-          msg.data.push_back(trajectory.points[i - 1].velocities.at(j));
-        }
+      
+      err_ = wmx3LibCm_.motion->StartPos(6, posCommands_);
+      if(err_ != 0) {
+          wmx3LibCm_.ErrorToString(err_, errString_, 256);
+          RCLCPP_INFO(this->get_logger(), "%s", errString_);
+          for (int i = 0; i < 6; ++i) {
+              RCLCPP_INFO(this->get_logger(), "pos[%lf] vel[%lf] acc[%lf]", posCommands_[i].target, posCommands_[i].profile.velocity, posCommands_[i].profile.acc);
+          }
       }
 
-      trajectory_pub_->publish(msg);
       rate.sleep();
     }
 

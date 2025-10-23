@@ -61,7 +61,7 @@ class FollowJointTrajectoryServer(Node):
             
             self.trajectory_publisher.publish(trajectory_msgs)
             
-            time.sleep(0.1)
+            time.sleep(0.099)
 
 def main(args=None):
     rclpy.init(args=args)

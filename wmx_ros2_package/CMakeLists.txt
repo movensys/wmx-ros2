@@ -27,7 +27,10 @@ find_package(trajectory_msgs REQUIRED)     # added
 
 include_directories(
   ${rclcpp_INCLUDE_DIRS}
+  ${rclcpp_action_INCLUDE_DIRS}
   ${std_msgs_INCLUDE_DIRS}
+  ${control_msgs_INCLUDE_DIRS}
+  ${trajectory_msgs_INCLUDE_DIRS}
   ${geometry_msgs_INCLUDE_DIRS}
   ${nav_msgs_INCLUDE_DIRS}
   ${sensor_msgs_INCLUDE_DIRS}
@@ -82,12 +85,17 @@ target_link_libraries(dobot_cr3_compare
 )
 
 add_executable(action_move_server src/action_move_server.cpp)
-ament_target_dependencies(action_move_server
-  rclcpp
-  rclcpp_action
-  control_msgs
-  trajectory_msgs
-  std_msgs
+target_link_libraries(action_move_server
+  PRIVATE
+    ${rclcpp_LIBRARIES}
+    ${rclcpp_action_LIBRARIES}
+    ${control_msgs_LIBRARIES}
+    ${trajectory_msgs_LIBRARIES}
+    ${std_msgs_LIBRARIES}
+    coremotionapi
+    ioapi
+    wmx3api
+    imdll
 )
 
 install(TARGETS 

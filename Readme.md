@@ -94,6 +94,10 @@ mic-713@lmx-humble-1:~/wmx_ros2_ws$ ros2 run wmx_ros2_package action_move_server
 ```
 
 ```
+sudo env "PATH=$PATH" "AMENT_PREFIX_PATH=$AMENT_PREFIX_PATH" "COLCON_PREFIX_PATH=$COLCON_PREFIX_PATH" "PYTHONPATH=$PYTHONPATH" "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" "ROS_DISTRO=$ROS_DISTRO" "ROS_VERSION=$ROS_VERSION" "ROS_PYTHON_VERSION=$ROS_PYTHON_VERSION" "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" bash -c "ros2 run wmx_ros2_package action_move_server"
+```
+
+```
 trajectory_msgs.msg.JointTrajectory(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='dummy_link'), joint_names=['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'], 
 
 points=[
