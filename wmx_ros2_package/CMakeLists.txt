@@ -22,6 +22,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED) 
+find_package(control_msgs REQUIRED)        # added
+find_package(trajectory_msgs REQUIRED)     # added
 
 include_directories(
   ${rclcpp_INCLUDE_DIRS}
@@ -79,11 +81,21 @@ target_link_libraries(dobot_cr3_compare
     imdll
 )
 
+add_executable(action_move_server src/action_move_server.cpp)
+ament_target_dependencies(action_move_server
+  rclcpp
+  rclcpp_action
+  control_msgs
+  trajectory_msgs
+  std_msgs
+)
+
 install(TARGETS 
   wmx_ros2_general_node
   wmx_ros2_general_example
   cr3a_interface
   dobot_cr3_compare
+  action_move_server
   
   DESTINATION lib/${PROJECT_NAME}
 )
