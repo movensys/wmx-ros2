@@ -29,23 +29,35 @@ class FollowJointTrajectoryServer(Node):
 
     def execution_trajectory(self, trajectory: JointTrajectory):
         self.get_logger().info("Joint Names: {}".format(trajectory.joint_names))
+        Positions = []
+        for i, point in enumerate(trajectory.points):
+            joint= []
+            for ii in point.positions:
+                joint.append(ii)
+            Positions.append(joint)
+            self.get_logger().info(
+                "Point {}: Positions: {}, Velocities: {}, Accelerations: {}, TimeFromStart: {}".format(
+                    i, joint, point.velocities, point.accelerations, point.time_from_start.nanosec
+                )
+            )
 
-        #for i, point in enumerate(trajectory.points):
-        #    trajectory_msgs = Float64MultiArray()
+        self.get_logger().info(
+                "Command Start!!!"
+            )
 
-        #    for j in range(6):
-        #        trajectory_msgs.data.append(point.positions[j])
-        #    for j in range(6):
-        #        trajectory_msgs.data.append(point.velocities[j])
-                
-        for i in range (len(trajectory.points)-1):
+        for i in range (len(trajectory.points)):
             trajectory_msgs = Float64MultiArray()
             for j in range(6):
-                trajectory_msgs.data.append(trajectory.points[i+1].positions[j]) #position
+                trajectory_msgs.data.append(trajectory.points[i].positions[j]) #position
             for j in range(6):
-                trajectory_msgs.data.append(trajectory.points[i+1].velocities[j]) #velocity
+                trajectory_msgs.data.append(trajectory.points[i].velocities[j]) #velocity
             for j in range(6):
-                trajectory_msgs.data.append(trajectory.points[i+1].accelerations[j]) #acceleration
+                trajectory_msgs.data.append(trajectory.points[i].accelerations[j]) #acceleration
+            for j in range(6):
+                if i == 0:
+                    trajectory_msgs.data.append(trajectory.points[i].velocities[j]) #prev velocity
+                else:
+                    trajectory_msgs.data.append(trajectory.points[i-1].velocities[j]) #prev velocity
             
             self.trajectory_publisher.publish(trajectory_msgs)
             

@@ -35,6 +35,7 @@ public:
     int err_;
     char errString_[256];
     double vel_;
+    double velPre_;
     double acc_;
 
 private:
@@ -108,12 +109,19 @@ void Cr3aRobot::cmdJointCallback(const std_msgs::msg::Float64MultiArray::SharedP
         posCommands_[i].axis = i;
         posCommands_[i].target = cmdJointMsg_.data[i];
         posCommands_[i].profile.type = ProfileType::Trapezoidal;
+
         vel_ = std::abs(cmdJointMsg_.data[i+6]);
-        acc_ = std::abs(cmdJointMsg_.data[i+12]);        
-        posCommands_[i].profile.velocity = vel_ < 1e-6 ? 1e-6 : vel_;
-        posCommands_[i].profile.endVelocity = posCommands_[i].profile.velocity;
-        posCommands_[i].profile.acc = acc_ < 1e-6 ? 1e-6 : acc_;
-        posCommands_[i].profile.dec = posCommands_[i].profile.acc;
+        acc_ = std::abs(cmdJointMsg_.data[i+12]);
+        velPre_ = std::abs(cmdJointMsg_.data[i+18]);
+
+        vel_ = vel_ < 1e-6 ? 1e-6 : vel_;
+        acc_ = acc_ < 1e-6 ? 1e-6 : acc_;
+        velPre_ = velPre_ < 1e-6 ? 1e-6 : velPre_;
+
+        posCommands_[i].profile.endVelocity = vel_ == 1e-6? 0.0 : vel_;
+        posCommands_[i].profile.velocity = vel_ < velPre_ ? (velPre_+vel_)/2.0 : vel_;
+        posCommands_[i].profile.acc = acc_;
+        posCommands_[i].profile.dec = acc_;
     }
 
     err_ = wmx3LibCm_.motion->StartPos(6, posCommands_);
