@@ -70,7 +70,7 @@ sudo --preserve-env=PATH \
      bash -c "source /opt/ros/humble/setup.bash && source /home/mic-713/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package dobot_cr3_compare.launch.py"
 ```
 ```
-ros2 run wmx_ros2_package action_move_server.py
+ros2 run  wmx_ros2_package action_move_server
 ```
 ```
 ros2 launch cr3_moveit dobot_moveit.launch.py
