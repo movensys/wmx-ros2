@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 project(wmx_ros2_package)
 
 if(NOT CMAKE_C_STANDARD)
@@ -6,7 +6,7 @@ if(NOT CMAKE_C_STANDARD)
 endif()
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -22,10 +22,15 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED) 
+find_package(control_msgs REQUIRED)        # added
+find_package(trajectory_msgs REQUIRED)     # added
 
 include_directories(
   ${rclcpp_INCLUDE_DIRS}
+  ${rclcpp_action_INCLUDE_DIRS}
   ${std_msgs_INCLUDE_DIRS}
+  ${control_msgs_INCLUDE_DIRS}
+  ${trajectory_msgs_INCLUDE_DIRS}
   ${geometry_msgs_INCLUDE_DIRS}
   ${nav_msgs_INCLUDE_DIRS}
   ${sensor_msgs_INCLUDE_DIRS}
@@ -67,11 +72,44 @@ target_link_libraries(cr3a_interface
     imdll
 )
 
+add_executable(dobot_cr3_compare src/dobot_cr3_compare.cpp)
+target_link_libraries(dobot_cr3_compare
+  PRIVATE
+    ${rclcpp_LIBRARIES}
+    ${std_msgs_LIBRARIES}
+    ${sensor_msgs_LIBRARIES}
+    coremotionapi
+    ioapi
+    wmx3api
+    imdll
+)
+
+add_executable(action_move_server src/action_move_server.cpp)
+target_link_libraries(action_move_server
+  PRIVATE
+    ${rclcpp_LIBRARIES}
+    ${rclcpp_action_LIBRARIES}
+    ${control_msgs_LIBRARIES}
+    ${trajectory_msgs_LIBRARIES}
+    ${std_msgs_LIBRARIES}
+    coremotionapi
+    ioapi
+    wmx3api
+    imdll
+)
+
 install(TARGETS 
   wmx_ros2_general_node
   wmx_ros2_general_example
   cr3a_interface
+  dobot_cr3_compare
+  action_move_server
   
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  src/action_move_server.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
