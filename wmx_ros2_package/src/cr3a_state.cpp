@@ -10,7 +10,6 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "std_msgs/msg/float64_multi_array.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
@@ -30,27 +29,20 @@ public:
     std::vector<std::string> jointNames_;
     int jointFeedbackRate_;
     std::string encoderJointTopic_;
-    std_msgs::msg::Float64MultiArray cmdJointMsg_;
+    std::string isaacsimJointTopic_;
 
     int err_;
     char errString_[256];
-    double vel_;
-    double velPre_;
-    double acc_;
 
 private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
-
-    wmx3Api::Motion::PosCommand posCommands_[6];
     
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
-    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmdJointSub_;
-    
     void encoderJointStep();
-    void cmdJointCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
 
     void setRosParameter();
     void startEngine();
@@ -81,9 +73,8 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
     
     encoderJointTimer_ = this->create_wall_timer(std::chrono::milliseconds(1000 / jointFeedbackRate_), std::bind(&Cr3aRobot::encoderJointStep, this)); 
 
-    encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);  
-
-    cmdJointSub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>("/mvsk/trajectory", 1, std::bind(&Cr3aRobot::cmdJointCallback, this, _1));
+    encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
+    isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);  
 
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -102,48 +93,18 @@ Cr3aRobot::~Cr3aRobot(){
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node stopped");
 }
 
-void Cr3aRobot::cmdJointCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg){
-    cmdJointMsg_ = *msg;
-
-    for (int i = 0; i < 6; ++i) {
-        posCommands_[i].axis = i;
-        posCommands_[i].target = cmdJointMsg_.data[i];
-        posCommands_[i].profile.type = ProfileType::Trapezoidal;
-
-        vel_ = std::abs(cmdJointMsg_.data[i+6]);
-        acc_ = std::abs(cmdJointMsg_.data[i+12]);
-        velPre_ = std::abs(cmdJointMsg_.data[i+18]);
-
-        vel_ = vel_ < 1e-6 ? 1e-6 : vel_;
-        acc_ = acc_ < 1e-6 ? 1e-6 : acc_;
-        velPre_ = velPre_ < 1e-6 ? 1e-6 : velPre_;
-
-        posCommands_[i].profile.endVelocity = vel_ == 1e-6? 0.0 : vel_;
-        posCommands_[i].profile.velocity = vel_ < velPre_ ? (velPre_+vel_)/2.0 : vel_;
-        posCommands_[i].profile.acc = acc_;
-        posCommands_[i].profile.dec = acc_;
-    }
-
-    err_ = wmx3LibCm_.motion->StartPos(6, posCommands_);
-    if(err_ != 0) {
-        wmx3LibCm_.ErrorToString(err_, errString_, 256);
-        RCLCPP_INFO(this->get_logger(), "%s", errString_);
-        for (int i = 0; i < 6; ++i) {
-            RCLCPP_INFO(this->get_logger(), "pos[%lf] vel[%lf] acc[%lf]", posCommands_[i].target, posCommands_[i].profile.velocity, posCommands_[i].profile.acc);
-        }
-    }
-}
-
 void Cr3aRobot::setRosParameter(){
     this->declare_parameter<int>("joint_number", 1);
     this->declare_parameter<int>("joint_feedback_rate", 10);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/joint_states");
+    this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim/joint_states");
     
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
+    this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
 }
 
 void Cr3aRobot::encoderJointStep() {
@@ -155,20 +116,20 @@ void Cr3aRobot::encoderJointStep() {
     }
 
     sensor_msgs::msg::JointState encoderJointMsg_;
-    encoderJointMsg_.header.stamp = this->get_clock()->now();
  
     for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
         encoderJointMsg_.position.push_back(cmAxisStatus_[i]->actualPos);
     }
 
+    for (int i = 0; i < 2; ++i) {
+        encoderJointMsg_.name.push_back(jointNames_[6+i]);
+        encoderJointMsg_.position.push_back(0.0);
+    }
+
+    isaacsimJointPub_->publish(encoderJointMsg_);
+    encoderJointMsg_.header.stamp = this->get_clock()->now();
     encoderJointPub_->publish(encoderJointMsg_);
-    
-    // cout<<"Current Joint State"<<endl;
-    // for (int i = 0; i < jointNumber_; ++i) {
-    //     cout<<"state: "<<cmAxisStatus_[i]->actualPos<<endl;
-    // }
-    // cout<<endl;
 }
 
 void Cr3aRobot::clearAlarm(int axis){

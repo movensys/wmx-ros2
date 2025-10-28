@@ -12,7 +12,6 @@
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
-#include "std_msgs/msg/float64_multi_array.hpp"
 
 using namespace wmx3Api;
 
@@ -24,11 +23,11 @@ public:
   int err_;
   char errString_[256];
 
-  FollowJointTrajectoryServer()
-  : Node("dobot_group_controller"), wmx3LibCm_(&wmx3Lib_)
+  FollowJointTrajectoryServer() : Node("cr3a_group_controller"), wmx3LibCm_(&wmx3Lib_)
   {
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
-    wmx3Lib_.SetDeviceName("DiffDriveROS2");
+
+    wmx3Lib_.SetDeviceName("cr3aLMX");
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
@@ -39,12 +38,10 @@ public:
 
     action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
       this,
-      "/cr3_group_controller/follow_joint_trajectory",
+      "/iifes_arm_controller/follow_joint_trajectory",
       std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
       std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1));
-
-    trajectory_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/mvsk/trajectory", 1);
 
     RCLCPP_INFO(this->get_logger(), "FollowJointTrajectory Action Server is ready...");
   }
@@ -55,7 +52,6 @@ private:
   wmx3Api::Motion::PosCommand posCommands_[6];
 
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr trajectory_pub_;
 
   rclcpp_action::GoalResponse handle_goal(
       const rclcpp_action::GoalUUID &,
