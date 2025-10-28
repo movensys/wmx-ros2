@@ -60,8 +60,8 @@ target_link_libraries(wmx_ros2_general_node wmx_ros2_general_lib)
 add_executable(wmx_ros2_general_example example/wmx_ros2_general_example.cpp)
 ament_target_dependencies(wmx_ros2_general_example rclcpp wmx_ros2_message std_srvs)   
 
-add_executable(cr3a_interface src/cr3a_interface.cpp)
-target_link_libraries(cr3a_interface
+add_executable(cr3a_state src/cr3a_state.cpp)
+target_link_libraries(cr3a_state
   PRIVATE
     ${rclcpp_LIBRARIES}
     ${std_msgs_LIBRARIES}
@@ -72,20 +72,8 @@ target_link_libraries(cr3a_interface
     imdll
 )
 
-add_executable(dobot_cr3_compare src/dobot_cr3_compare.cpp)
-target_link_libraries(dobot_cr3_compare
-  PRIVATE
-    ${rclcpp_LIBRARIES}
-    ${std_msgs_LIBRARIES}
-    ${sensor_msgs_LIBRARIES}
-    coremotionapi
-    ioapi
-    wmx3api
-    imdll
-)
-
-add_executable(action_move_server src/action_move_server.cpp)
-target_link_libraries(action_move_server
+add_executable(cr3a_action src/cr3a_action.cpp)
+target_link_libraries(cr3a_action
   PRIVATE
     ${rclcpp_LIBRARIES}
     ${rclcpp_action_LIBRARIES}
@@ -99,17 +87,8 @@ target_link_libraries(action_move_server
 )
 
 install(TARGETS 
-  wmx_ros2_general_node
-  wmx_ros2_general_example
-  cr3a_interface
-  dobot_cr3_compare
-  action_move_server
-  
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(PROGRAMS
-  src/action_move_server.py
+  cr3a_state
+  cr3a_action
   DESTINATION lib/${PROJECT_NAME}
 )
 

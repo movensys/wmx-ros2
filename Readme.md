@@ -24,7 +24,6 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=70
 ```
 
-## WMX ROS2 MoveIt2 Package
 ### Dobot CR3A 
 ```
 sudo --preserve-env=PATH \
@@ -37,5 +36,5 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/foxy/setup.bash && source /home/jetstream/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_moveit2.launch.py"
+     bash -c "source /opt/ros/humble/setup.bash && source /home/mic-713/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_cr3a.launch.py"
 ```
