@@ -38,7 +38,7 @@ public:
 
     action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
       this,
-      "/cr3_group_controller/follow_joint_trajectory",
+      "/iifes_arm_controller/follow_joint_trajectory",
       std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
       std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1));
