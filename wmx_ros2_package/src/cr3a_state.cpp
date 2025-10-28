@@ -116,8 +116,6 @@ void Cr3aRobot::encoderJointStep() {
     }
 
     sensor_msgs::msg::JointState encoderJointMsg_;
-
-    encoderJointMsg_.header.stamp = this->get_clock()->now();
  
     for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
@@ -129,8 +127,9 @@ void Cr3aRobot::encoderJointStep() {
         encoderJointMsg_.position.push_back(0.0);
     }
 
-    encoderJointPub_->publish(encoderJointMsg_);
     isaacsimJointPub_->publish(encoderJointMsg_);
+    encoderJointMsg_.header.stamp = this->get_clock()->now();
+    encoderJointPub_->publish(encoderJointMsg_);
 }
 
 void Cr3aRobot::clearAlarm(int axis){
