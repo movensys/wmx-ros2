@@ -98,11 +98,27 @@ private:
         "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
         i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
         pt.time_from_start.sec, pt.time_from_start.nanosec);
+      if(i!=0) {
+        rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
+        rclcpp::Duration duration_pre(trajectory.points[i-1].time_from_start);
+
+        RCLCPP_INFO(
+          this->get_logger(),
+          "Time interval: %f",
+          (duration_cur-duration_pre).seconds());        
+      }
     }
 
+    rclcpp::Duration duration_cur(trajectory.points[1].time_from_start);
+    rclcpp::Duration duration_pre(trajectory.points[0].time_from_start);
+
+    RCLCPP_INFO(
+      this->get_logger(),
+      "Time interval: %f",
+      (duration_cur-duration_pre).seconds());
     RCLCPP_INFO(this->get_logger(), "Command Start!!!");
 
-    rclcpp::Rate rate(10.0); // 0.1 s
+    rclcpp::Rate rate(1/(duration_cur-duration_pre).seconds());
     const size_t N = 6;      // expected DOF
 
     for (size_t i = 0; i < trajectory.points.size(); ++i) {
@@ -122,6 +138,7 @@ private:
         acc_ = acc_ < 1e-6 ? 1e-6 : acc_;
         velPre_ = velPre_ < 1e-6 ? 1e-6 : velPre_;
         
+        posCommands_[j].profile.startingVelocity = velPre_ == 1e-6? 0.0 : velPre_;
         posCommands_[j].profile.endVelocity = vel_ == 1e-6? 0.0 : vel_;
         posCommands_[j].profile.velocity = vel_ < velPre_ ? (velPre_+vel_)/2.0 : vel_;
         posCommands_[j].profile.acc = acc_;
