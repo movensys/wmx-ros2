@@ -34,6 +34,7 @@ public:
     std::string isaacsimJointTopic_;
     std::string gripperServiceTopic_;
 
+    unsigned char  inData[constants::maxIoInSize];
     int err_;
     char errString_[256];
 
@@ -167,7 +168,13 @@ void Cr3aRobot::encoderJointStep() {
 
     for (int i = 0; i < 2; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[6+i]);
-        encoderJointMsg_.position.push_back(0.0);
+        Wmx3Lib_Io_.GetInBit(0x00, 0x00, &inData[0]);
+        if(inData[0]){
+            encoderJointMsg_.position.push_back(0.045);
+        }
+        else{
+            encoderJointMsg_.position.push_back(0.000);
+        }        
     }
 
     isaacsimJointPub_->publish(encoderJointMsg_);
