@@ -10,9 +10,11 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_srvs/srv/set_bool.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
+#include "IOApi.h"
 
 #define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
 
@@ -30,6 +32,7 @@ public:
     int jointFeedbackRate_;
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
+    std::string gripperServiceTopic_;
 
     int err_;
     char errString_[256];
@@ -38,11 +41,16 @@ private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
+    Io Wmx3Lib_Io_;
     
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
     void encoderJointStep();
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
+    
+    void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                          std::shared_ptr<std_srvs::srv::SetBool::Response> response); 
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
 
     void setRosParameter();
     void startEngine();
@@ -54,7 +62,7 @@ private:
     void clearAlarm(int axis);
 };
 
-Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {  
+Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
     RCLCPP_INFO(this->get_logger(), "start cr3a_robot_node");
 
     setRosParameter();
@@ -75,6 +83,10 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {
 
     encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
     isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);  
+
+    setGripperService_ = this->create_service<std_srvs::srv::SetBool>(gripperServiceTopic_,
+                                std::bind(&Cr3aRobot::setGripper, this,
+                                std::placeholders::_1, std::placeholders::_2));
 
     RCLCPP_INFO(this->get_logger(), "cr3a_robot_node ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -99,12 +111,43 @@ void Cr3aRobot::setRosParameter(){
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim/joint_states");
+    this->declare_parameter<std::string>("gripper_service_topic", "/wmx/set_gripper");
     
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
     this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
+    this->get_parameter("gripper_service_topic", gripperServiceTopic_);
+}
+
+void Cr3aRobot::setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                          std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
+    if (request->data){
+      err_ = Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0xFF);
+      if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Gripper fails to Close");
+        response->success = false;
+      }
+      else{
+        RCLCPP_INFO(this->get_logger(), "Gripper success to Close");
+        response->success = true;
+      }
+      
+    } 
+    else{
+      err_ = Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0x00);
+      if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Gripper fails to Open");
+        response->success = false;
+      }
+      else{
+        RCLCPP_INFO(this->get_logger(), "Gripper success to Open");
+        response->success = true;
+      }
+    }
 }
 
 void Cr3aRobot::encoderJointStep() {

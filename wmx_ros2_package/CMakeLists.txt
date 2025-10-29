@@ -34,6 +34,7 @@ include_directories(
   ${geometry_msgs_INCLUDE_DIRS}
   ${nav_msgs_INCLUDE_DIRS}
   ${sensor_msgs_INCLUDE_DIRS}
+  ${std_srvs_INCLUDE_DIRS}
 )
 
 include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
@@ -66,6 +67,7 @@ target_link_libraries(cr3a_state
     ${rclcpp_LIBRARIES}
     ${std_msgs_LIBRARIES}
     ${sensor_msgs_LIBRARIES}
+    ${std_srvs_LIBRARIES}
     coremotionapi
     ioapi
     wmx3api
