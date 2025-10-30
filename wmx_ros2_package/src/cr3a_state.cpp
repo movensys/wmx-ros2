@@ -32,7 +32,7 @@ public:
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
 
-    unsigned char  inData[constants::maxIoInSize];
+    unsigned char  outData;
     int err_;
     char errString_[256];
 
@@ -127,8 +127,8 @@ void Cr3aRobot::encoderJointStep() {
 
     for (int i = 0; i < 2; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[6+i]);
-        Wmx3Lib_Io_.GetInBit(0x00, 0x00, &inData[0]);
-        if(inData[0]){
+        Wmx3Lib_Io_.GetOutBit(0, 0, &outData);
+        if(outData){
             encoderJointMsg_.position.push_back(0.045);
         }
         else{

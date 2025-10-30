@@ -70,7 +70,7 @@ private:
   void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                           std::shared_ptr<std_srvs::srv::SetBool::Response> response){
       if (request->data){
-        err_ = Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0xFF);
+        err_ = Wmx3Lib_Io_.SetOutBit(0, 0, 1);
         if (err_ != ErrorCode::None) {
           wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
           RCLCPP_ERROR(this->get_logger(), "Gripper fails to Close");
@@ -82,7 +82,7 @@ private:
         }
       } 
       else{
-        err_ = Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0x00);
+        err_ = Wmx3Lib_Io_.SetOutBit(0, 0, 0);
         if (err_ != ErrorCode::None) {
           wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
           RCLCPP_ERROR(this->get_logger(), "Gripper fails to Open");
