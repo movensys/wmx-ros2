@@ -24,7 +24,7 @@ public:
   int err_;
   char errString_[256];
 
-  FollowJointTrajectoryServer() : Node("cr3a_group_controller"), wmx3LibAm_(&wmx3Lib_)
+  FollowJointTrajectoryServer() : Node("cr3a_group_controller")
   {
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
 
@@ -36,6 +36,9 @@ public:
     else{
         RCLCPP_INFO(this->get_logger(), "Created a device");
     }
+
+    wmx3LibCm_ = CoreMotion(&wmx3Lib_);
+    wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
 
     action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
       this,
@@ -49,8 +52,10 @@ public:
 
 private:
   WMX3Api wmx3Lib_;
+  CoreMotion wmx3LibCm_;
   AdvancedMotion wmx3LibAm_;
   AdvMotion::PVTIntplCommand pvtCmd;
+  AxisSelection axisSel;
 
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
 
@@ -111,10 +116,12 @@ private:
     }
     
     const size_t N = 6;      // expected DOF;
+    axisSel.axisCount = N;
 
     // generate PVT commands from trajectory.points
     pvtCmd.axisCount = N;
     for (size_t j = 0; j < N; ++j) {
+        axisSel.axis[j] = j;
         pvtCmd.axis[j] = j;
         pvtCmd.pointCount[j] = trajectory.points.size();
     }
@@ -142,6 +149,12 @@ private:
     err_ = wmx3LibAm_.advMotion->StartPVT(&pvtCmd);
     if(err_ != 0) {
         wmx3LibAm_.ErrorToString(err_, errString_, 256);
+        RCLCPP_INFO(this->get_logger(), "%s", errString_);
+    }
+
+    err_ = wmx3LibCm_.motion->Wait(&axisSel);
+    if(err_ != 0) {
+        wmx3LibCm_.ErrorToString(err_, errString_, 256);
         RCLCPP_INFO(this->get_logger(), "%s", errString_);
     }
 
