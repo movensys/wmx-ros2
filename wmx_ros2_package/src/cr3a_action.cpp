@@ -5,6 +5,7 @@
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
+#include "AdvancedMotionApi.h"
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -23,7 +24,7 @@ public:
   int err_;
   char errString_[256];
 
-  FollowJointTrajectoryServer() : Node("cr3a_group_controller"), wmx3LibCm_(&wmx3Lib_)
+  FollowJointTrajectoryServer() : Node("cr3a_group_controller"), wmx3LibAm_(&wmx3Lib_)
   {
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
 
@@ -48,8 +49,8 @@ public:
 
 private:
   WMX3Api wmx3Lib_;
-  CoreMotion wmx3LibCm_;
-  wmx3Api::Motion::PosCommand posCommands_[6];
+  AdvancedMotion wmx3LibAm_;
+  AdvMotion::PVTIntplCommand pvtCmd;
 
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
 
@@ -73,10 +74,10 @@ private:
 
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle)
   {
-    double vel_, acc_, velPre_;
     RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal!");
     const auto goal = goal_handle->get_goal();
     const auto &trajectory = goal->trajectory;
+    double timeMilliseconds;
 
     // Log joint names
     std::ostringstream jn;
@@ -108,53 +109,40 @@ private:
           (duration_cur-duration_pre).seconds());        
       }
     }
+    
+    const size_t N = 6;      // expected DOF;
 
-    rclcpp::Duration duration_cur(trajectory.points[1].time_from_start);
-    rclcpp::Duration duration_pre(trajectory.points[0].time_from_start);
-
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Time interval: %f",
-      (duration_cur-duration_pre).seconds());
-    RCLCPP_INFO(this->get_logger(), "Command Start!!!");
-
-    rclcpp::Rate rate(1/(duration_cur-duration_pre).seconds());
-    const size_t N = 6;      // expected DOF
+    // generate PVT commands from trajectory.points
+    pvtCmd.axisCount = N;
+    for (size_t j = 0; j < N; ++j) {
+        pvtCmd.axis[j] = j;
+        pvtCmd.pointCount[j] = trajectory.points.size();
+    }
 
     for (size_t i = 0; i < trajectory.points.size(); ++i) {
       const auto &pt = trajectory.points[i];
+      timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
 
-      // positions
       for (size_t j = 0; j < N; ++j) {
-        posCommands_[j].axis = j;
-        posCommands_[j].target = pt.positions.at(j);
-        posCommands_[j].profile.type = ProfileType::Trapezoidal;
-
-        vel_ = std::abs(pt.velocities.at(j));
-        acc_ = std::abs(pt.accelerations.at(j));
-        velPre_ = (i == 0.0) ? 0.0 : std::abs(trajectory.points[i - 1].velocities.at(j));
-
-        vel_ = vel_ < 1e-6 ? 1e-6 : vel_;
-        acc_ = acc_ < 1e-6 ? 1e-6 : acc_;
-        velPre_ = velPre_ < 1e-6 ? 1e-6 : velPre_;
-        
-        posCommands_[j].profile.startingVelocity = velPre_ == 1e-6? 0.0 : velPre_;
-        posCommands_[j].profile.endVelocity = vel_ == 1e-6? 0.0 : vel_;
-        posCommands_[j].profile.velocity = vel_ < velPre_ ? (velPre_+vel_)/2.0 : vel_;
-        posCommands_[j].profile.acc = acc_;
-        posCommands_[j].profile.dec = acc_;
+        pvtCmd.points[j][i].pos = pt.positions.at(j);
+        pvtCmd.points[j][i].velocity = pt.velocities.at(j);
+        pvtCmd.points[j][i].timeMilliseconds = timeMilliseconds;
       }
-      
-      err_ = wmx3LibCm_.motion->StartPos(6, posCommands_);
-      if(err_ != 0) {
-          wmx3LibCm_.ErrorToString(err_, errString_, 256);
-          RCLCPP_INFO(this->get_logger(), "%s", errString_);
-          for (int i = 0; i < 6; ++i) {
-              RCLCPP_INFO(this->get_logger(), "pos[%lf] vel[%lf] acc[%lf]", posCommands_[i].target, posCommands_[i].profile.velocity, posCommands_[i].profile.acc);
-          }
-      }
+    }
 
-      rate.sleep();
+    // if last time interval is less than 1ms, ignore the last point.
+    double last = trajectory.points.size() - 1;
+    if(rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3) {
+      for (size_t j = 0; j < N; ++j) {
+          pvtCmd.pointCount[j] -= 1;
+      }
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Command Start!!!");
+    err_ = wmx3LibAm_.advMotion->StartPVT(&pvtCmd);
+    if(err_ != 0) {
+        wmx3LibAm_.ErrorToString(err_, errString_, 256);
+        RCLCPP_INFO(this->get_logger(), "%s", errString_);
     }
 
     auto result = std::make_shared<FollowJointTrajectory::Result>();

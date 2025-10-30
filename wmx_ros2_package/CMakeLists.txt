@@ -83,6 +83,7 @@ target_link_libraries(cr3a_action
     ${trajectory_msgs_LIBRARIES}
     ${std_msgs_LIBRARIES}
     coremotionapi
+    advancedmotionapi
     ioapi
     wmx3api
     imdll
