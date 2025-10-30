@@ -6,6 +6,7 @@
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 #include "AdvancedMotionApi.h"
+#include "IOApi.h"
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -13,6 +14,7 @@
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
+#include "std_srvs/srv/set_bool.hpp"
 
 using namespace wmx3Api;
 
@@ -20,6 +22,8 @@ class FollowJointTrajectoryServer : public rclcpp::Node {
 public:
   using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
   using GoalHandleFJT = rclcpp_action::ServerGoalHandle<FollowJointTrajectory>;
+  
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
 
   int err_;
   char errString_[256];
@@ -39,6 +43,7 @@ public:
 
     wmx3LibCm_ = CoreMotion(&wmx3Lib_);
     wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
+    Wmx3Lib_Io_ = Io(&wmx3Lib_); 
 
     action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
       this,
@@ -46,6 +51,10 @@ public:
       std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
       std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1));
+
+    setGripperService_ = this->create_service<std_srvs::srv::SetBool>("/wmx/set_gripper",
+                                std::bind(&FollowJointTrajectoryServer::setGripper, this,
+                                std::placeholders::_1, std::placeholders::_2));
 
     RCLCPP_INFO(this->get_logger(), "FollowJointTrajectory Action Server is ready...");
   }
@@ -56,6 +65,35 @@ private:
   AdvancedMotion wmx3LibAm_;
   AdvMotion::PVTIntplCommand pvtCmd;
   AxisSelection axisSel;
+  Io Wmx3Lib_Io_;
+
+  void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                          std::shared_ptr<std_srvs::srv::SetBool::Response> response){
+      if (request->data){
+        err_ = Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0xFF);
+        if (err_ != ErrorCode::None) {
+          wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+          RCLCPP_ERROR(this->get_logger(), "Gripper fails to Close");
+          response->success = false;
+        }
+        else{
+          RCLCPP_INFO(this->get_logger(), "Gripper success to Close");
+          response->success = true;
+        }
+      } 
+      else{
+        err_ = Wmx3Lib_Io_.SetOutBit(0x00, 0x00, 0x00);
+        if (err_ != ErrorCode::None) {
+          wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+          RCLCPP_ERROR(this->get_logger(), "Gripper fails to Open");
+          response->success = false;
+        }
+        else{
+          RCLCPP_INFO(this->get_logger(), "Gripper success to Open");
+          response->success = true;
+        }
+      }
+  }
 
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
 

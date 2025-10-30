@@ -82,6 +82,7 @@ target_link_libraries(cr3a_action
     ${control_msgs_LIBRARIES}
     ${trajectory_msgs_LIBRARIES}
     ${std_msgs_LIBRARIES}
+    ${std_srvs_LIBRARIES}
     coremotionapi
     advancedmotionapi
     ioapi

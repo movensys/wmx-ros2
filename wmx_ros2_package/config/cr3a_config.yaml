@@ -6,4 +6,3 @@ cr3a_state:
     joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "picker_1_joint", "picker_2_joint"]
     encoder_joint_topic: /joint_states
     isaacsim_joint_topic: /isaacsim/joint_command
-    gripper_service_topic: /wmx/set_gripper
