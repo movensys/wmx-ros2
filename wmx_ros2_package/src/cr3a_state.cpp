@@ -123,6 +123,7 @@ void Cr3aRobot::encoderJointStep() {
     for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
         encoderJointMsg_.position.push_back(cmAxisStatus_[i]->actualPos);
+        encoderJointMsg_.velocity.push_back(cmAxisStatus_[i]->actualVelocity);
     }
 
     for (int i = 0; i < 2; ++i) {
@@ -130,9 +131,11 @@ void Cr3aRobot::encoderJointStep() {
         Wmx3Lib_Io_.GetOutBit(0, 0, &outData);
         if(outData){
             encoderJointMsg_.position.push_back(0.045);
+            encoderJointMsg_.velocity.push_back(0.000);
         }
         else{
             encoderJointMsg_.position.push_back(0.000);
+            encoderJointMsg_.velocity.push_back(0.000);
         }        
     }
 
