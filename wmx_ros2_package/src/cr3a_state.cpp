@@ -13,6 +13,7 @@
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
+#include "IOApi.h"
 
 #define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
 
@@ -31,6 +32,7 @@ public:
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
 
+    unsigned char  outData;
     int err_;
     char errString_[256];
 
@@ -38,6 +40,7 @@ private:
     WMX3Api wmx3Lib_;            
     CoreMotionStatus cmStatus_;  
     CoreMotion wmx3LibCm_;
+    Io Wmx3Lib_Io_;
     
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
     void encoderJointStep();
@@ -54,7 +57,7 @@ private:
     void clearAlarm(int axis);
 };
 
-Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_) {  
+Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
     RCLCPP_INFO(this->get_logger(), "start cr3a_robot_node");
 
     setRosParameter();
@@ -120,11 +123,20 @@ void Cr3aRobot::encoderJointStep() {
     for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
         encoderJointMsg_.position.push_back(cmAxisStatus_[i]->actualPos);
+        encoderJointMsg_.velocity.push_back(cmAxisStatus_[i]->actualVelocity);
     }
 
     for (int i = 0; i < 2; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[6+i]);
-        encoderJointMsg_.position.push_back(0.0);
+        Wmx3Lib_Io_.GetOutBit(0, 0, &outData);
+        if(outData){
+            encoderJointMsg_.position.push_back(0.045);
+            encoderJointMsg_.velocity.push_back(0.000);
+        }
+        else{
+            encoderJointMsg_.position.push_back(0.000);
+            encoderJointMsg_.velocity.push_back(0.000);
+        }        
     }
 
     isaacsimJointPub_->publish(encoderJointMsg_);
