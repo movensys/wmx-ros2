@@ -16,6 +16,8 @@
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 
+#define MAX_TRAJ_POINTS 1000
+
 using namespace wmx3Api;
 
 class FollowJointTrajectoryServer : public rclcpp::Node {
@@ -45,6 +47,8 @@ public:
     wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
     Wmx3Lib_Io_ = Io(&wmx3Lib_); 
 
+    wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
+
     action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
       this,
       "/iifes_arm_controller/follow_joint_trajectory",
@@ -59,11 +63,18 @@ public:
     RCLCPP_INFO(this->get_logger(), "FollowJointTrajectory Action Server is ready...");
   }
 
+  ~FollowJointTrajectoryServer()
+  {
+    wmx3LibAm_.advMotion->FreeSplineBuffer(0);
+  }
+
 private:
   WMX3Api wmx3Lib_;
   CoreMotion wmx3LibCm_;
   AdvancedMotion wmx3LibAm_;
-  AdvMotion::PVTIntplCommand pvtCmd;
+  AdvMotion::PointTimeSplineCommand spl;
+  AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
+  unsigned int time_spl[MAX_TRAJ_POINTS];
   AxisSelection axisSel;
   Io Wmx3Lib_Io_;
 
@@ -120,7 +131,15 @@ private:
     RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal!");
     const auto goal = goal_handle->get_goal();
     const auto &trajectory = goal->trajectory;
+    auto result = std::make_shared<FollowJointTrajectory::Result>();
+    int num_points = trajectory.points.size();
     double timeMilliseconds;
+
+    if(num_points > MAX_TRAJ_POINTS) {
+      RCLCPP_WARN(this->get_logger(), "Too many trajectory point size! current points:%d / max traj points:%d \nAborting current goal.", num_points, MAX_TRAJ_POINTS);
+      goal_handle->abort(result);
+      return;
+    }
 
     // Log joint names
     std::ostringstream jn;
@@ -154,49 +173,45 @@ private:
     }
     
     const size_t N = 6;      // expected DOF;
-    axisSel.axisCount = N;
 
-    // generate PVT commands from trajectory.points
-    pvtCmd.axisCount = N;
+    // generate spline commands from trajectory.points
+    axisSel.axisCount = N;
+    spl.dimensionCount = N;
     for (size_t j = 0; j < N; ++j) {
         axisSel.axis[j] = j;
-        pvtCmd.axis[j] = j;
-        pvtCmd.pointCount[j] = trajectory.points.size();
+        spl.axis[j] = j;
     }
 
     for (size_t i = 0; i < trajectory.points.size(); ++i) {
       const auto &pt = trajectory.points[i];
       timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
+      time_spl[i] = timeMilliseconds;
 
       for (size_t j = 0; j < N; ++j) {
-        pvtCmd.points[j][i].pos = pt.positions.at(j);
-        pvtCmd.points[j][i].velocity = pt.velocities.at(j);
-        pvtCmd.points[j][i].timeMilliseconds = timeMilliseconds;
+        pt_spl[i].pos[j] = pt.positions.at(j);
       }
     }
 
     // if last time interval is less than 1ms, ignore the last point.
     double last = trajectory.points.size() - 1;
     if(rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3) {
-      for (size_t j = 0; j < N; ++j) {
-          pvtCmd.pointCount[j] -= 1;
-      }
+      num_points -= 1;
     }
 
     RCLCPP_INFO(this->get_logger(), "Command Start!!!");
-    err_ = wmx3LibAm_.advMotion->StartPVT(&pvtCmd);
+    err_ = wmx3LibAm_.advMotion->StartCSplinePos(0, &spl, num_points, pt_spl, time_spl);
     if(err_ != 0) {
         wmx3LibAm_.ErrorToString(err_, errString_, 256);
-        RCLCPP_INFO(this->get_logger(), "%s", errString_);
+        RCLCPP_INFO(this->get_logger(), "StartCSplinePos Error: %s", errString_);
     }
 
+    // TODO: instead of using blociking Wait function, monitor flags so that "goal_handle->is_canceling()" can be checked.
     err_ = wmx3LibCm_.motion->Wait(&axisSel);
     if(err_ != 0) {
         wmx3LibCm_.ErrorToString(err_, errString_, 256);
-        RCLCPP_INFO(this->get_logger(), "%s", errString_);
+        RCLCPP_INFO(this->get_logger(), "Wait Error: %s", errString_);
     }
 
-    auto result = std::make_shared<FollowJointTrajectory::Result>();
     result->error_code = 0;
     goal_handle->succeed(result);
   }
