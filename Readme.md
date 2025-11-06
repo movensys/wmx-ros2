@@ -13,7 +13,8 @@ ROS2 Humble
 sudo apt install -y ros-humble-graph-msgs \
                     ros-humble-moveit* \
                     ros-humble-ros2-control \
-                    ros-humble-ros2-controllers
+                    ros-humble-ros2-controllers \
+                    ros-humble-rmw-cyclonedds-cpp
 ```
 
 ### Configuration
