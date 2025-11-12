@@ -192,6 +192,11 @@ private:
       }
     }
 
+    // if first time interval is not zero, make it zero.
+    if (time_spl[0] != 0.0) {
+      time_spl[0] = 0.0;
+    }
+
     // if last time interval is less than 1ms, ignore the last point.
     double last = trajectory.points.size() - 1;
     if(rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3) {
