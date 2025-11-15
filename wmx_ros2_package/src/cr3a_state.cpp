@@ -15,7 +15,7 @@
 #include "CoreMotionApi.h"
 #include "IOApi.h"
 
-#define WMX_PARAM_FILE_PATH "/home/mic-733ao/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
+#define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
 
 using std::placeholders::_1;
 using namespace wmx3Api;
