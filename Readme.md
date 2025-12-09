@@ -2,7 +2,6 @@
 
 ### Running On
 ```
-Advantech MIC-713-OX4A1
 Ubuntu 22.04
 ROS2 Humble 
 [WMX3Engine] Build: Jun  6 2025:18:10:19 (v3.5.0.0)
