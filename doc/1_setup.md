@@ -25,10 +25,12 @@ cd ~/wmx_ros2_ws/src && \
 
 ## Bashrc
 ```
+export ROS_DOMAIN_ID=70
+
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
 source /opt/ros/humble/setup.bash
 source ~/wmx_ros2_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export ROS_DOMAIN_ID=70
 ```
 ```
 source ~/.bashrc
