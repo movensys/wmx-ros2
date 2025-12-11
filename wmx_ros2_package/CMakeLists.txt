@@ -74,8 +74,8 @@ target_link_libraries(manipulator_state
     imdll
 )
 
-add_executable(manipulator_action src/manipulator_action.cpp)
-target_link_libraries(manipulator_action
+add_executable(follow_joint_trajectory_server src/follow_joint_trajectory_server.cpp)
+target_link_libraries(follow_joint_trajectory_server
   PRIVATE
     ${rclcpp_LIBRARIES}
     ${rclcpp_action_LIBRARIES}
@@ -92,7 +92,7 @@ target_link_libraries(manipulator_action
 
 install(TARGETS 
   manipulator_state
-  manipulator_action
+  follow_joint_trajectory_server
   DESTINATION lib/${PROJECT_NAME}
 )
 

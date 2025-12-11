@@ -6,7 +6,7 @@ manipulator_state:
     encoder_joint_topic: /joint_states
     isaacsim_joint_topic: /isaacsim/joint_command
 
-manipulator_action:
+joint_trajectory:
   ros__parameters:
     wmx_gripper_topic: /wmx/set_gripper
     joint_trajectory_action: /isaacsim/joint_command
