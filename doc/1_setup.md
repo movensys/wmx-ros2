@@ -23,6 +23,14 @@ cd ~/wmx_ros2_ws/src && \
    git clone git@bitbucket.org:mvs_app/wmx_ros2_application.git
 ```
 
+## Build
+```
+cd ~/wmx_ros2_ws
+colcon build --packages-select wmx_ros2_message
+source ~/.bashrc
+colcon build
+```
+
 ## Bashrc
 ```
 export ROS_DOMAIN_ID=70
