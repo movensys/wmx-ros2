@@ -22,15 +22,28 @@ using namespace wmx3Api;
 
 class FollowJointTrajectoryServer : public rclcpp::Node {
 public:
-  using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
-  using GoalHandleFJT = rclcpp_action::ServerGoalHandle<FollowJointTrajectory>;
-  
-  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
+  FollowJointTrajectoryServer();
+  ~FollowJointTrajectoryServer();
 
   int err_;
   char errString_[256];
 
-  FollowJointTrajectoryServer() : Node("manipulator_action")
+private:
+  WMX3Api wmx3Lib_;
+  CoreMotion wmx3LibCm_;
+  AdvancedMotion wmx3LibAm_;
+  AdvMotion::PointTimeSplineCommand spl;
+  AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
+  unsigned int time_spl[MAX_TRAJ_POINTS];
+  AxisSelection axisSel;
+  Io Wmx3Lib_Io_;
+
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
+  using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
+  using GoalHandleFJT = rclcpp_action::ServerGoalHandle<FollowJointTrajectory>;
+};
+
+FollowJointTrajectoryServer::FollowJointTrajectoryServer() : Node("manipulator_action")
   {
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
 
@@ -68,15 +81,7 @@ public:
     wmx3LibAm_.advMotion->FreeSplineBuffer(0);
   }
 
-private:
-  WMX3Api wmx3Lib_;
-  CoreMotion wmx3LibCm_;
-  AdvancedMotion wmx3LibAm_;
-  AdvMotion::PointTimeSplineCommand spl;
-  AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
-  unsigned int time_spl[MAX_TRAJ_POINTS];
-  AxisSelection axisSel;
-  Io Wmx3Lib_Io_;
+
 
   void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                           std::shared_ptr<std_srvs::srv::SetBool::Response> response){
