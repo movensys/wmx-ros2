@@ -15,17 +15,16 @@
 #include "CoreMotionApi.h"
 #include "IOApi.h"
 
-#define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
-
 using std::placeholders::_1;
 using namespace wmx3Api;
 using namespace std;
 
-class Cr3aRobot : public rclcpp::Node {
+class ManipulatorState : public rclcpp::Node {
 public:
-    Cr3aRobot(); 
-    ~Cr3aRobot(); 
+    ManipulatorState(); 
+    ~ManipulatorState(); 
 
+    std::string string wmxParamPath_;
     int jointNumber_;
     std::vector<std::string> jointNames_;
     int jointFeedbackRate_;
@@ -57,15 +56,22 @@ private:
     void clearAlarm(int axis);
 };
 
-Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
-    RCLCPP_INFO(this->get_logger(), "start cr3a_robot_node");
+ManipulatorState::ManipulatorState() : Node("manipulator_action_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
+    RCLCPP_INFO(this->get_logger(), "start manipulator_action_node");
 
     setRosParameter();
     startEngine();  
 
     startCommunication();
 
-    wmx3LibCm_.config->ImportAndSetAll((char*)WMX_PARAM_FILE_PATH);
+    err = wmx3LibCm_.config->ImportAndSetAll((char*)wmxParamPath_);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Fails to upload wmx params. Error=%d (%s)", err_, errString_);
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Success to upload wmx params");
+    }
 
     for(int i=0; i<jointNumber_;i++){
         clearAlarm(i);
@@ -79,12 +85,12 @@ Cr3aRobot::Cr3aRobot() : Node("cr3a_robot_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib
     encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
     isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);  
 
-    RCLCPP_INFO(this->get_logger(), "cr3a_robot_node ready");
+    RCLCPP_INFO(this->get_logger(), "manipulator_action_node is ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
 }
 
-Cr3aRobot::~Cr3aRobot(){
-    RCLCPP_INFO(this->get_logger(), "Stop cr3a_robot_node");
+ManipulatorState::~ManipulatorState(){
+    RCLCPP_INFO(this->get_logger(), "Stop manipulator_action_node");
 
     for(int i=0; i<jointNumber_;i++){
         setServoOff(i);
@@ -93,16 +99,18 @@ Cr3aRobot::~Cr3aRobot(){
     stopCommunication();
     stopEngine();
     
-    RCLCPP_INFO(this->get_logger(), "cr3a_robot_node stopped");
+    RCLCPP_INFO(this->get_logger(), "manipulator_action_node stopped");
 }
 
-void Cr3aRobot::setRosParameter(){
+void ManipulatorState::setRosParameter(){
+    this->declare_parameter<std::string>("wmx_params_path");
     this->declare_parameter<int>("joint_number", 1);
     this->declare_parameter<int>("joint_feedback_rate", 10);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim/joint_states");
     
+    this->get_parameter("wmx_params_path", wmxParamPath_);
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
@@ -110,7 +118,7 @@ void Cr3aRobot::setRosParameter(){
     this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
 }
 
-void Cr3aRobot::encoderJointStep() {
+void ManipulatorState::encoderJointStep() {
     wmx3LibCm_.GetStatus(&cmStatus_);
 
     std::vector<CoreMotionAxisStatus*> cmAxisStatus_(jointNumber_);
@@ -144,7 +152,7 @@ void Cr3aRobot::encoderJointStep() {
     encoderJointPub_->publish(encoderJointMsg_);
 }
 
-void Cr3aRobot::clearAlarm(int axis){
+void ManipulatorState::clearAlarm(int axis){
     err_ = wmx3LibCm_.axisControl->ClearAmpAlarm(axis);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -155,7 +163,7 @@ void Cr3aRobot::clearAlarm(int axis){
     }
 }
 
-void Cr3aRobot::setServoOn(int axis){
+void ManipulatorState::setServoOn(int axis){
     err_ = wmx3LibCm_.axisControl->SetServoOn(axis, 1);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -166,7 +174,7 @@ void Cr3aRobot::setServoOn(int axis){
     }
 }
 
-void Cr3aRobot::setServoOff(int axis){
+void ManipulatorState::setServoOff(int axis){
     err_ = wmx3LibCm_.axisControl->SetServoOn(axis, 0);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -177,7 +185,7 @@ void Cr3aRobot::setServoOff(int axis){
     }
 }
 
-void Cr3aRobot::startEngine(){
+void ManipulatorState::startEngine(){
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
     wmx3Lib_.SetDeviceName("DiffDriveROS2");
     if (err_ != ErrorCode::None) {
@@ -189,7 +197,7 @@ void Cr3aRobot::startEngine(){
     }
 }
 
-void Cr3aRobot::startCommunication(){
+void ManipulatorState::startCommunication(){
     err_ = wmx3Lib_.StartCommunication(INFINITE);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -200,7 +208,7 @@ void Cr3aRobot::startCommunication(){
     }
 }
 
-void Cr3aRobot::stopEngine(){
+void ManipulatorState::stopEngine(){
     err_ = wmx3Lib_.CloseDevice();
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -211,7 +219,7 @@ void Cr3aRobot::stopEngine(){
     }
 }
 
-void Cr3aRobot::stopCommunication(){
+void ManipulatorState::stopCommunication(){
     err_ = wmx3Lib_.StopCommunication(INFINITE);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));

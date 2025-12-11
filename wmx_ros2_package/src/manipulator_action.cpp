@@ -30,11 +30,11 @@ public:
   int err_;
   char errString_[256];
 
-  FollowJointTrajectoryServer() : Node("cr3a_group_controller")
+  FollowJointTrajectoryServer() : Node("manipulator_action")
   {
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
 
-    wmx3Lib_.SetDeviceName("cr3aLMX");
+    wmx3Lib_.SetDeviceName("ManipulatorAction");
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
