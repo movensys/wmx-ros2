@@ -43,18 +43,17 @@ private:
   using GoalHandleFJT = rclcpp_action::ServerGoalHandle<FollowJointTrajectory>;
 };
 
-FollowJointTrajectoryServer::FollowJointTrajectoryServer() : Node("manipulator_action")
-  {
-    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
+FollowJointTrajectoryServer::FollowJointTrajectoryServer() : Node("manipulator_action"){
+  err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
 
-    wmx3Lib_.SetDeviceName("ManipulatorAction");
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Created a device");
-    }
+  wmx3Lib_.SetDeviceName("ManipulatorAction");
+  if (err_ != ErrorCode::None) {
+      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+      RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
+  }
+  else{
+      RCLCPP_INFO(this->get_logger(), "Created a device");
+  }
 
     wmx3LibCm_ = CoreMotion(&wmx3Lib_);
     wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);

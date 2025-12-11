@@ -27,12 +27,12 @@ public:
     ~ManipulatorState(); 
 
     int jointNumber_;
-    std::vector<std::string> jointNames_;
     int jointFeedbackRate_;
+    std::vector<std::string> jointNames_;
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
 
-    unsigned char  outData;
+    unsigned char outData_;
     int err_;
     char errString_[256];
 
@@ -43,13 +43,14 @@ private:
     Io Wmx3Lib_Io_;
     
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
-    void encoderJointStep();
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
-
+    void encoderJointStep();
     void setRosParameter();
+
     void startEngine();
     void stopEngine();
+    void setWmxParam(char* path);
     void startCommunication();
     void stopCommunication();
     void setServoOn(int axis);
@@ -57,15 +58,14 @@ private:
     void clearAlarm(int axis);
 };
 
-ManipulatorState::ManipulatorState() : Node("manipulator_action_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
-    RCLCPP_INFO(this->get_logger(), "start manipulator_action_node");
+ManipulatorState::ManipulatorState() : Node("manipulator_state_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
+    RCLCPP_INFO(this->get_logger(), "start manipulator_state_node");
 
     setRosParameter();
+
     startEngine();  
-
     startCommunication();
-
-    wmx3LibCm_.config->ImportAndSetAll((char*)WMX_PARAM_FILE_PATH);
+    setWmxParam((char*)WMX_PARAM_FILE_PATH);
 
     for(int i=0; i<jointNumber_;i++){
         clearAlarm(i);
@@ -74,17 +74,18 @@ ManipulatorState::ManipulatorState() : Node("manipulator_action_node"), wmx3LibC
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
     
-    encoderJointTimer_ = this->create_wall_timer(std::chrono::milliseconds(1000 / jointFeedbackRate_), std::bind(&ManipulatorState::encoderJointStep, this)); 
+    encoderJointTimer_ = this->create_wall_timer(std::chrono::milliseconds(1000 / jointFeedbackRate_), 
+                                                 std::bind(&ManipulatorState::encoderJointStep, this)); 
 
     encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
     isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);  
 
-    RCLCPP_INFO(this->get_logger(), "manipulator_action_node is ready");
     std::this_thread::sleep_for(std::chrono::seconds(3));
+    RCLCPP_INFO(this->get_logger(), "manipulator_state_node is ready");
 }
 
 ManipulatorState::~ManipulatorState(){
-    RCLCPP_INFO(this->get_logger(), "Stop manipulator_action_node");
+    RCLCPP_INFO(this->get_logger(), "Stop manipulator_state_node");
 
     for(int i=0; i<jointNumber_;i++){
         setServoOff(i);
@@ -93,19 +94,19 @@ ManipulatorState::~ManipulatorState(){
     stopCommunication();
     stopEngine();
     
-    RCLCPP_INFO(this->get_logger(), "manipulator_action_node stopped");
+    RCLCPP_INFO(this->get_logger(), "manipulator_state_node is stopped");
 }
 
 void ManipulatorState::setRosParameter(){
-    this->declare_parameter<int>("joint_number", 1);
-    this->declare_parameter<int>("joint_feedback_rate", 10);
-    this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
-    this->declare_parameter<std::string>("encoder_joint_topic", "/joint_states");
-    this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim/joint_states");
+    this->declare_parameter<int>("joint_number", 0);
+    this->declare_parameter<int>("joint_feedback_rate", 0);
+    this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
+    this->declare_parameter<std::string>("encoder_joint_topic", "/manipulator_node/no_param");
+    this->declare_parameter<std::string>("isaacsim_joint_topic", "/manipulator_node/no_param");
     
     this->get_parameter("joint_number", jointNumber_);
-    this->get_parameter("joint_name", jointNames_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
+    this->get_parameter("joint_name", jointNames_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
     this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
 }
@@ -128,8 +129,8 @@ void ManipulatorState::encoderJointStep() {
 
     for (int i = 0; i < 2; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[6+i]);
-        Wmx3Lib_Io_.GetOutBit(0, 0, &outData);
-        if(outData){
+        Wmx3Lib_Io_.GetOutBit(0, 0, &outData_);
+        if(outData_){
             encoderJointMsg_.position.push_back(0.045);
             encoderJointMsg_.velocity.push_back(0.000);
         }
@@ -142,6 +143,17 @@ void ManipulatorState::encoderJointStep() {
     isaacsimJointPub_->publish(encoderJointMsg_);
     encoderJointMsg_.header.stamp = this->get_clock()->now();
     encoderJointPub_->publish(encoderJointMsg_);
+}
+
+void ManipulatorState::setWmxParam(char* path){
+    err_ = wmx3LibCm_.config->ImportAndSetAll(path);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
+    }
 }
 
 void ManipulatorState::clearAlarm(int axis){
