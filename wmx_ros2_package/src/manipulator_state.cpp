@@ -15,6 +15,8 @@
 #include "CoreMotionApi.h"
 #include "IOApi.h"
 
+#define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
+
 using std::placeholders::_1;
 using namespace wmx3Api;
 using namespace std;
@@ -24,7 +26,6 @@ public:
     ManipulatorState(); 
     ~ManipulatorState(); 
 
-    std::string string wmxParamPath_;
     int jointNumber_;
     std::vector<std::string> jointNames_;
     int jointFeedbackRate_;
@@ -64,14 +65,7 @@ ManipulatorState::ManipulatorState() : Node("manipulator_action_node"), wmx3LibC
 
     startCommunication();
 
-    err = wmx3LibCm_.config->ImportAndSetAll((char*)wmxParamPath_);
-    if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Fails to upload wmx params. Error=%d (%s)", err_, errString_);
-    }
-    else{
-        RCLCPP_INFO(this->get_logger(), "Success to upload wmx params");
-    }
+    wmx3LibCm_.config->ImportAndSetAll((char*)WMX_PARAM_FILE_PATH);
 
     for(int i=0; i<jointNumber_;i++){
         clearAlarm(i);
@@ -80,7 +74,7 @@ ManipulatorState::ManipulatorState() : Node("manipulator_action_node"), wmx3LibC
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
     
-    encoderJointTimer_ = this->create_wall_timer(std::chrono::milliseconds(1000 / jointFeedbackRate_), std::bind(&Cr3aRobot::encoderJointStep, this)); 
+    encoderJointTimer_ = this->create_wall_timer(std::chrono::milliseconds(1000 / jointFeedbackRate_), std::bind(&ManipulatorState::encoderJointStep, this)); 
 
     encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
     isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);  
@@ -103,14 +97,12 @@ ManipulatorState::~ManipulatorState(){
 }
 
 void ManipulatorState::setRosParameter(){
-    this->declare_parameter<std::string>("wmx_params_path");
     this->declare_parameter<int>("joint_number", 1);
     this->declare_parameter<int>("joint_feedback_rate", 10);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"joint1", "joint2", "joint3", "joint4", "joint5", "joint6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/joint_states");
     this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim/joint_states");
     
-    this->get_parameter("wmx_params_path", wmxParamPath_);
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
@@ -187,7 +179,7 @@ void ManipulatorState::setServoOff(int axis){
 
 void ManipulatorState::startEngine(){
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
-    wmx3Lib_.SetDeviceName("DiffDriveROS2");
+    wmx3Lib_.SetDeviceName("ManipulatorState");
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
@@ -232,7 +224,7 @@ void ManipulatorState::stopCommunication(){
 
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<Cr3aRobot>());
+    rclcpp::spin(std::make_shared<ManipulatorState>());
     rclcpp::shutdown();
     return 0;
 }
