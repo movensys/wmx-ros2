@@ -29,6 +29,7 @@ cd ~/wmx_ros2_ws
 colcon build --packages-select wmx_ros2_message
 source install/setup.bash
 colcon build
+source ~/.bashrc
 ```
 
 ## Bashrc
