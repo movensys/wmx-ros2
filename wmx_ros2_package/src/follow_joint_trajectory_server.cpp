@@ -57,9 +57,8 @@ private:
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle);
 
   // Service callback declaration
-  void setGripper(
-    const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-    std::shared_ptr<std_srvs::srv::SetBool::Response> response);
+  void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, 
+                        std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
   // Helper functions
   void startEngine();
@@ -68,28 +67,26 @@ private:
 };
 
 FollowJointTrajectoryServer::FollowJointTrajectoryServer() 
-  : Node("follow_joint_trajectory_server")
-{
-  startEngine();
+  : Node("follow_joint_trajectory_server"){
 
   wmx3LibCm_ = CoreMotion(&wmx3Lib_);
   wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
   Wmx3Lib_Io_ = Io(&wmx3Lib_); 
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
-  action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
-    this, 
-    "/iifes_arm_controller/follow_joint_trajectory",
-    std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
-    std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
-    std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1));
+  startEngine();
 
-  setGripperService_ = this->create_service<std_srvs::srv::SetBool>(
-    "/wmx/set_gripper",
-    std::bind(&FollowJointTrajectoryServer::setGripper, this,
-              std::placeholders::_1, std::placeholders::_2));
+  action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this, 
+                    "/iifes_arm_controller/follow_joint_trajectory",
+                    std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
+                    std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
+                    std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1));
 
-  RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is ready...");
+  setGripperService_ = this->create_service<std_srvs::srv::SetBool>("/wmx/set_gripper",
+                    std::bind(&FollowJointTrajectoryServer::setGripper, this,
+                    std::placeholders::_1, std::placeholders::_2));
+
+  RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is ready");
 }
 
 FollowJointTrajectoryServer::~FollowJointTrajectoryServer()
@@ -104,33 +101,25 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer()
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is stopped");
 }
 
-rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(
-  const rclcpp_action::GoalUUID &uuid,
-  std::shared_ptr<const FollowJointTrajectory::Goal> goal)
-{
+rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(const rclcpp_action::GoalUUID &uuid,
+                                                                      std::shared_ptr<const FollowJointTrajectory::Goal> goal){
   (void)uuid;
   (void)goal;
   RCLCPP_INFO(this->get_logger(), "Received goal request");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
-rclcpp_action::CancelResponse FollowJointTrajectoryServer::handle_cancel(
-  std::shared_ptr<GoalHandleFJT> goal_handle)
-{
+rclcpp_action::CancelResponse FollowJointTrajectoryServer::handle_cancel(std::shared_ptr<GoalHandleFJT> goal_handle){
   (void)goal_handle;
   RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
-void FollowJointTrajectoryServer::handle_accepted(std::shared_ptr<GoalHandleFJT> goal_handle)
-{
-  // Execute in a separate thread to avoid blocking
-  std::thread{std::bind(&FollowJointTrajectoryServer::execute, this, std::placeholders::_1), 
-              goal_handle}.detach();
+void FollowJointTrajectoryServer::handle_accepted(std::shared_ptr<GoalHandleFJT> goal_handle){
+  std::thread{std::bind(&FollowJointTrajectoryServer::execute, this, std::placeholders::_1), goal_handle}.detach();
 }
 
-void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_handle)
-{
+void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_handle){
   RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal!");
   const auto goal = goal_handle->get_goal();
   const auto &trajectory = goal->trajectory;
@@ -241,10 +230,8 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   RCLCPP_INFO(this->get_logger(), "Trajectory execution completed successfully");
 }
 
-void FollowJointTrajectoryServer::setGripper(
-  const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-  std::shared_ptr<std_srvs::srv::SetBool::Response> response)
-{
+void FollowJointTrajectoryServer::setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                              std::shared_ptr<std_srvs::srv::SetBool::Response> response){
   if (request->data) {
     err_ = Wmx3Lib_Io_.SetOutBit(0, 0, 1);
     if (err_ != ErrorCode::None) {
@@ -275,10 +262,9 @@ void FollowJointTrajectoryServer::setGripper(
   }
 }
 
-void FollowJointTrajectoryServer::startEngine()
-{
+void FollowJointTrajectoryServer::startEngine(){
   err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
-  wmx3Lib_.SetDeviceName("JointTrajectory");
+  wmx3Lib_.SetDeviceName("FollowJointTrajectoryServer");
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
