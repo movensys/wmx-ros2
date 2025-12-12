@@ -22,8 +22,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED) 
-find_package(control_msgs REQUIRED)        # added
-find_package(trajectory_msgs REQUIRED)     # added
+find_package(control_msgs REQUIRED)        
+find_package(trajectory_msgs REQUIRED)     
 
 include_directories(
   ${rclcpp_INCLUDE_DIRS}
@@ -61,8 +61,8 @@ target_link_libraries(wmx_ros2_general_node wmx_ros2_general_lib)
 add_executable(wmx_ros2_general_example example/wmx_ros2_general_example.cpp)
 ament_target_dependencies(wmx_ros2_general_example rclcpp wmx_ros2_message std_srvs)   
 
-add_executable(cr3a_state src/cr3a_state.cpp)
-target_link_libraries(cr3a_state
+add_executable(manipulator_state src/manipulator_state.cpp)
+target_link_libraries(manipulator_state
   PRIVATE
     ${rclcpp_LIBRARIES}
     ${std_msgs_LIBRARIES}
@@ -74,8 +74,8 @@ target_link_libraries(cr3a_state
     imdll
 )
 
-add_executable(cr3a_action src/cr3a_action.cpp)
-target_link_libraries(cr3a_action
+add_executable(follow_joint_trajectory_server src/follow_joint_trajectory_server.cpp)
+target_link_libraries(follow_joint_trajectory_server
   PRIVATE
     ${rclcpp_LIBRARIES}
     ${rclcpp_action_LIBRARIES}
@@ -91,8 +91,8 @@ target_link_libraries(cr3a_action
 )
 
 install(TARGETS 
-  cr3a_state
-  cr3a_action
+  manipulator_state
+  follow_joint_trajectory_server
   DESTINATION lib/${PROJECT_NAME}
 )
 
