@@ -147,18 +147,9 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   for (size_t i = 0; i < trajectory.points.size(); ++i) {
     const auto &pt = trajectory.points[i];
     std::ostringstream pos, vel, acc;
-    for (size_t k = 0; k < pt.positions.size(); ++k) { 
-      if (k) pos << ", "; 
-      pos << pt.positions[k]; 
-    }
-    for (size_t k = 0; k < pt.velocities.size(); ++k) { 
-      if (k) vel << ", "; 
-      vel << pt.velocities[k]; 
-    }
-    for (size_t k = 0; k < pt.accelerations.size(); ++k) { 
-      if (k) acc << ", "; 
-      acc << pt.accelerations[k]; 
-    }
+    for (size_t k = 0; k < pt.positions.size(); ++k) { if (k) pos << ", "; pos << pt.positions[k]; }
+    for (size_t k = 0; k < pt.velocities.size(); ++k) { if (k) vel << ", "; vel << pt.velocities[k]; }
+    for (size_t k = 0; k < pt.accelerations.size(); ++k) { if (k) acc << ", "; acc << pt.accelerations[k]; }
     RCLCPP_INFO(
       this->get_logger(),
       "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
@@ -193,12 +184,12 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   }
 
   // If first time interval is not zero, make it zero
-  if (time_spl[0] != 0) {
-    time_spl[0] = 0;
+  if (time_spl[0] != 0.0) {
+    time_spl[0] = 0.0;
   }
 
   // If last time interval is less than 1ms, ignore the last point
-  size_t last = trajectory.points.size() - 1;
+  double last = trajectory.points.size() - 1;
   if(last > 0 && 
      (rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - 
       rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3)) {
