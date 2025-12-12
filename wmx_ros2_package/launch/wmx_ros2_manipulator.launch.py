@@ -10,19 +10,13 @@ def generate_launch_description():
         'manipulator_config.yaml'
     )
 
+    start_manipulator_state = Node(package='wmx_ros2_package', executable='manipulator_state', name='manipulator_state',
+                                parameters=[config], output='screen')
+    
+    start_follow_joint_trajectory_server = Node(package='wmx_ros2_package', executable='follow_joint_trajectory_server', name='follow_joint_trajectory_server',
+                                parameters=[config], output='screen')
+
     return LaunchDescription([
-        Node(
-            package='wmx_ros2_package',
-            executable='manipulator_state',
-            name='manipulator_state',
-            parameters=[config],
-            output='screen'
-        ),
-        Node(
-            package='wmx_ros2_package',
-            executable='manipulator_action',
-            name='manipulator_action',
-            parameters=[config],
-            output='screen'
-        ),
+        start_manipulator_state,
+        start_follow_joint_trajectory_server
     ])
