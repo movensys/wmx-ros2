@@ -1,17 +1,17 @@
 # WMX ROS2 Application
 
-ROS2 interface for WMX motor control hardware to control CR3A manipulator robot.
+ROS2 interface for WMX motion control software to control CR3A manipulator robot.
 
 ## Architecture
 
-**Low-level Control (wmx_ros2_general.launch.py):**
+**Low-level Control ([wmx_ros2_general.launch.py](wmx_ros2_package\launch\wmx_ros2_general.launch.py)):**
 
 ![alt text](images/wmx_ros2_general.png)
 
-- wmx_ros2_general_example.cpp -> services/topics -> wmx_ros2_general_node -> WMX3 API (CreateDevice, StartCommunication, CoreMotion) -> LMX(WMX Linux runtime)
+- [wmx_ros2_general_example.cpp](wmx_ros2_package\example\wmx_ros2_general_example.cpp) -> services/topics -> wmx_ros2_general_node -> WMX3 API (CreateDevice, StartCommunication, CoreMotion) -> LMX(WMX Linux runtime)
 
 
-**Trajectory Control (wmx_ros2_manipulator.launch.py):**
+**Trajectory Control ([wmx_ros2_manipulator.launch.py](wmx_ros2_package\launch\wmx_ros2_manipulator.launch.py)):**
 
 ![alt text](images/wmx_ros2_manipulator.png)
 
@@ -35,9 +35,9 @@ Robot -> LMX(WMX Linux runtime) -> WMX3 API -> manipulator_state -> /joint_state
 
 ## Launch Files
 
-**wmx_ros2_manipulator.launch.py** - For trajectory control (starts `manipulator_state` + `follow_joint_trajectory_server`)
+**[wmx_ros2_manipulator.launch.py](wmx_ros2_package\launch\wmx_ros2_manipulator.launch.py)** - For trajectory control (starts `manipulator_state` + `follow_joint_trajectory_server`)
 
-**wmx_ros2_general.launch.py** - For low-level axis control (starts `wmx_ros2_general_node`)
+**[wmx_ros2_general.launch.py](wmx_ros2_package\launch\wmx_ros2_general.launch.py)** - For low-level axis control (starts `wmx_ros2_general_node`)
 
 ## MoveIt2 Integration
 

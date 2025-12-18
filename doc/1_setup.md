@@ -7,6 +7,8 @@ ROS2 Humble
 [WMX3Engine] Build: Jun  6 2025:18:10:19 (v3.5.0.0)
 ```
 
+**Note that this ROS2 application requires pre-installed `LMX`(WMX Linux runtime).**
+
 ## Dependencies 
 ```
 sudo apt install -y ros-humble-graph-msgs \

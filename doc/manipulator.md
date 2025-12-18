@@ -1,3 +1,6 @@
+## For trajectory control
+
+Manipulator Launch
 ```
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
