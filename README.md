@@ -1,18 +1,23 @@
 # WMX ROS2 Application
 
-ROS2 interface for WMX3/LMX motor control hardware to control CR3A manipulator robot.
+ROS2 interface for WMX motor control hardware to control CR3A manipulator robot.
 
 ## Architecture
 
 **Low-level Control (wmx_ros2_general.launch.py):**
 
-wmx_ros2_general_example.cpp -> services/topics -> wmx_ros2_general_node -> WMX3 API (CreateDevice, StartCommunication, CoreMotion) -> LMX
+![alt text](images/wmx_ros2_general.png)
+
+- wmx_ros2_general_example.cpp -> services/topics -> wmx_ros2_general_node -> WMX3 API (CreateDevice, StartCommunication, CoreMotion) -> LMX(WMX Linux runtime)
+
 
 **Trajectory Control (wmx_ros2_manipulator.launch.py):**
 
-/follow_joint_trajectory (action) -> follow_joint_trajectory_server -> WMX3 API -> LMX -> Robot
+![alt text](images/wmx_ros2_manipulator.png)
 
-Robot -> LMX -> WMX3 API -> manipulator_state -> /joint_states
+/follow_joint_trajectory (action) -> follow_joint_trajectory_server -> WMX3 API -> LMX(WMX Linux runtime) -> Robot
+
+Robot -> LMX(WMX Linux runtime) -> WMX3 API -> manipulator_state -> /joint_states
 
 ## Packages
 
