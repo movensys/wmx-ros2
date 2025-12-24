@@ -5,6 +5,7 @@ manipulator_state:
     joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "picker_1_joint", "picker_2_joint"]
     encoder_joint_topic: /joint_states
     isaacsim_joint_topic: /isaacsim/joint_command
+    wmx_param_file_path: /home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml
 
 joint_trajectory:
   ros__parameters:

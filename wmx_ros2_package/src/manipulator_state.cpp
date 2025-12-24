@@ -15,8 +15,6 @@
 #include "CoreMotionApi.h"
 #include "IOApi.h"
 
-#define WMX_PARAM_FILE_PATH "/home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml"
-
 using std::placeholders::_1;
 using namespace wmx3Api;
 using namespace std;
@@ -31,6 +29,7 @@ public:
     std::vector<std::string> jointNames_;
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
+    std::string wmxParamFilePath_;
 
     unsigned char outData_;
     int err_;
@@ -63,9 +62,9 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state_node"), wmx3LibCm
 
     setRosParameter();
 
-    startEngine();  
+    startEngine();
     startCommunication();
-    setWmxParam((char*)WMX_PARAM_FILE_PATH);
+    setWmxParam((char*)wmxParamFilePath_.c_str());
 
     for(int i=0; i<jointNumber_;i++){
         clearAlarm(i);
@@ -103,12 +102,14 @@ void ManipulatorState::setRosParameter(){
     this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/manipulator_node/no_param");
     this->declare_parameter<std::string>("isaacsim_joint_topic", "/manipulator_node/no_param");
-    
+    this->declare_parameter<std::string>("wmx_param_file_path", "");
+
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
     this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
+    this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 }
 
 void ManipulatorState::encoderJointStep() {
