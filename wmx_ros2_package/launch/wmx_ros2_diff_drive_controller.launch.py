@@ -1,0 +1,18 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
+import os
+
+def generate_launch_description():
+    config = os.path.join(
+        get_package_share_directory('wmx_ros2_package'),
+        'config',
+        'diff_drive_controller_config.yaml'
+    )
+
+    start_diff_drive_controller = Node(package='wmx_ros2_package', executable='diff_drive_controller', name='diff_drive_controller',
+                                parameters=[config], output='screen')
+    
+    return LaunchDescription([
+        start_diff_drive_controller,
+    ])

@@ -28,6 +28,9 @@ public:
   FollowJointTrajectoryServer();
   ~FollowJointTrajectoryServer();
 
+  std::string jointTrajectoryAction_;
+  std::string wmxGripperTopic_;
+
   int err_;
   char errString_[256];
 
@@ -60,6 +63,8 @@ private:
   void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, 
                         std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
+  void setRosParameter();
+
   // Helper functions
   void startEngine();
   void stopEngine();
@@ -77,20 +82,19 @@ FollowJointTrajectoryServer::FollowJointTrajectoryServer()
   startEngine();
 
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this, 
-                    "/iifes_arm_controller/follow_joint_trajectory",
+                    jointTrajectoryAction_,
                     std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
                     std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
                     std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1));
 
-  setGripperService_ = this->create_service<std_srvs::srv::SetBool>("/wmx/set_gripper",
+  setGripperService_ = this->create_service<std_srvs::srv::SetBool>(wmxGripperTopic_,
                     std::bind(&FollowJointTrajectoryServer::setGripper, this,
                     std::placeholders::_1, std::placeholders::_2));
 
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is ready");
 }
 
-FollowJointTrajectoryServer::~FollowJointTrajectoryServer()
-{
+FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
   RCLCPP_INFO(this->get_logger(), "Stop follow_joint_trajectory_server");
 
   wmx3LibAm_.advMotion->FreeSplineBuffer(0);
@@ -99,6 +103,14 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer()
   stopEngine();
 
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is stopped");
+}
+
+void ManipulatorState::setRosParameter(){
+    this->declare_parameter<std::string>("joint_trajectory_action", "/joint_action/no_param");
+    this->declare_parameter<std::string>("wmx_gripper_topic", "/joint_action/no_param");
+
+    this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
+    this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
 }
 
 rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(const rclcpp_action::GoalUUID &uuid,
