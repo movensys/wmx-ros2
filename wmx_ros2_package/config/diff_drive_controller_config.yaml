@@ -1,0 +1,3 @@
+diff_drive_controller:
+  ros__parameters:
+    wmx_param_file_path: /home/mic-713/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/baymax_wmx_parameters.xml
