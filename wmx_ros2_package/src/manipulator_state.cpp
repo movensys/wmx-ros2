@@ -106,7 +106,7 @@ void ManipulatorState::setRosParameter(){
     this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/manipulator_node/no_param");
     this->declare_parameter<std::string>("isaacsim_joint_topic", "/manipulator_node/no_param");
-    this->declare_parameter<std::string>("wmx_param_file_path", "");
+    this->declare_parameter<std::string>("wmx_param_file_path", "/manipulator_node/no_param");
 
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
