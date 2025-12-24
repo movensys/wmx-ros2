@@ -107,6 +107,8 @@ install(TARGETS
   manipulator_state
   follow_joint_trajectory_server
   diff_drive_controller
+  wmx_ros2_general_node
+  wmx_ros2_general_example
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -30,6 +30,8 @@ public:
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
     std::string wmxParamFilePath_;
+    float gripperCloseValue_;
+    float gripperOpenValue_;
 
     unsigned char outData_;
     int err_;
@@ -99,6 +101,8 @@ ManipulatorState::~ManipulatorState(){
 void ManipulatorState::setRosParameter(){
     this->declare_parameter<int>("joint_number", 0);
     this->declare_parameter<int>("joint_feedback_rate", 0);
+    this->declare_parameter<float>("gripper_open_value", 0);
+    this->declare_parameter<float>("gripper_close_value", 0);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
     this->declare_parameter<std::string>("encoder_joint_topic", "/manipulator_node/no_param");
     this->declare_parameter<std::string>("isaacsim_joint_topic", "/manipulator_node/no_param");
@@ -106,6 +110,8 @@ void ManipulatorState::setRosParameter(){
 
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
+    this->get_parameter("gripper_open_value", gripperOpenValue_);
+    this->get_parameter("gripper_close_value", gripperCloseValue_);
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
     this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
@@ -132,11 +138,11 @@ void ManipulatorState::encoderJointStep() {
         encoderJointMsg_.name.push_back(jointNames_[6+i]);
         Wmx3Lib_Io_.GetOutBit(0, 0, &outData_);
         if(outData_){
-            encoderJointMsg_.position.push_back(0.045);
+            encoderJointMsg_.position.push_back(gripperCloseValue_);
             encoderJointMsg_.velocity.push_back(0.000);
         }
         else{
-            encoderJointMsg_.position.push_back(0.000);
+            encoderJointMsg_.position.push_back(gripperOpenValue_);
             encoderJointMsg_.velocity.push_back(0.000);
         }        
     }
