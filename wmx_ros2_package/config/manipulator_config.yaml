@@ -11,5 +11,6 @@ manipulator_state:
 
 follow_joint_trajectory_server:
   ros__parameters:
+    joint_number: 6
     wmx_gripper_topic: /wmx/set_gripper
     joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_trajectory

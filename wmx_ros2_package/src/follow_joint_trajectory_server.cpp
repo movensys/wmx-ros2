@@ -28,6 +28,7 @@ public:
   FollowJointTrajectoryServer();
   ~FollowJointTrajectoryServer();
 
+  int jointNumber_;
   std::string jointTrajectoryAction_;
   std::string wmxGripperTopic_;
 
@@ -79,6 +80,7 @@ FollowJointTrajectoryServer::FollowJointTrajectoryServer()
   Wmx3Lib_Io_ = Io(&wmx3Lib_); 
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
+  setRosParameter();
   startEngine();
 
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this, 
@@ -106,11 +108,13 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
 }
 
 void FollowJointTrajectoryServer::setRosParameter(){
-    this->declare_parameter<std::string>("joint_trajectory_action", "/joint_action/no_param");
-    this->declare_parameter<std::string>("wmx_gripper_topic", "/joint_action/no_param");
+  this->declare_parameter<int>("joint_number", 0);  
+  this->declare_parameter<std::string>("joint_trajectory_action", "/follow_joint_trajectory_server/no_param");
+  this->declare_parameter<std::string>("wmx_gripper_topic", "/follow_joint_trajectory_server/no_param");
 
-    this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
-    this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
+  this->get_parameter("joint_number", jointNumber_);
+  this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
+  this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
 }
 
 rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(const rclcpp_action::GoalUUID &uuid,
@@ -174,13 +178,11 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
       RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());        
     }
   }
-    
-  const size_t N = 6;  // expected DOF
 
   // Generate spline commands from trajectory.points
-  axisSel.axisCount = N;
-  spl.dimensionCount = N;
-  for (size_t j = 0; j < N; ++j) {
+  axisSel.axisCount = jointNumber_;
+  spl.dimensionCount = jointNumber_;
+  for (int j = 0; j < jointNumber_; ++j) {
     axisSel.axis[j] = j;
     spl.axis[j] = j;
   }
@@ -190,7 +192,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
     timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
     time_spl[i] = static_cast<unsigned int>(timeMilliseconds);
 
-    for (size_t j = 0; j < N; ++j) {
+    for (int j = 0; j < jointNumber_; ++j) {
       pt_spl[i].pos[j] = pt.positions.at(j);
     }
   }

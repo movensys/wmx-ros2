@@ -17,6 +17,6 @@ def generate_launch_description():
                                 name='follow_joint_trajectory_server', parameters=[config], output='screen')
 
     return LaunchDescription([
-        #start_manipulator_state,
+        start_manipulator_state,
         start_follow_joint_trajectory_server
     ])
