@@ -105,7 +105,7 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is stopped");
 }
 
-void ManipulatorState::setRosParameter(){
+void FollowJointTrajectoryServer::setRosParameter(){
     this->declare_parameter<std::string>("joint_trajectory_action", "/joint_action/no_param");
     this->declare_parameter<std::string>("wmx_gripper_topic", "/joint_action/no_param");
 
