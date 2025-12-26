@@ -90,23 +90,23 @@ target_link_libraries(follow_joint_trajectory_server
     imdll
 )
 
-add_executable(diff_drive_controller src/diff_drive_controller.cpp)
-target_link_libraries(diff_drive_controller
-  PRIVATE
-    ${rclcpp_LIBRARIES}
-    ${std_msgs_LIBRARIES}
-    ${sensor_msgs_LIBRARIES}
-    ${std_srvs_LIBRARIES}
-    coremotionapi
-    wmx3api
-    imdll
-)
+#add_executable(diff_drive_controller src/diff_drive_controller.cpp)
+#target_link_libraries(diff_drive_controller
+#  PRIVATE
+#    ${rclcpp_LIBRARIES}
+#    ${std_msgs_LIBRARIES}
+#    ${sensor_msgs_LIBRARIES}
+#    ${std_srvs_LIBRARIES}
+#    coremotionapi
+#    wmx3api
+#    imdll
+#)
 
 
 install(TARGETS 
   manipulator_state
   follow_joint_trajectory_server
-  diff_drive_controller
+  #diff_drive_controller
   wmx_ros2_general_node
   wmx_ros2_general_example
   DESTINATION lib/${PROJECT_NAME}
