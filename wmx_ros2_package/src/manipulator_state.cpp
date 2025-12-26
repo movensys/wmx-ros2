@@ -26,14 +26,14 @@ public:
 
     int jointNumber_;
     int jointFeedbackRate_;
+    float gripperCloseValue_;
+    float gripperOpenValue_;
     std::vector<std::string> jointNames_;
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
     std::string wmxParamFilePath_;
-    float gripperCloseValue_;
-    float gripperOpenValue_;
 
-    unsigned char outData_;
+    unsigned char gripperData_;
     int err_;
     char errString_[256];
 
@@ -59,8 +59,8 @@ private:
     void clearAlarm(int axis);
 };
 
-ManipulatorState::ManipulatorState() : Node("manipulator_state_node"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
-    RCLCPP_INFO(this->get_logger(), "start manipulator_state_node");
+ManipulatorState::ManipulatorState() : Node("manipulator_state"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
+    RCLCPP_INFO(this->get_logger(), "start manipulator_state");
 
     setRosParameter();
 
@@ -82,11 +82,11 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state_node"), wmx3LibCm
     isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);  
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
-    RCLCPP_INFO(this->get_logger(), "manipulator_state_node is ready");
+    RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");
 }
 
 ManipulatorState::~ManipulatorState(){
-    RCLCPP_INFO(this->get_logger(), "Stop manipulator_state_node");
+    RCLCPP_INFO(this->get_logger(), "Stop manipulator_state");
 
     for(int i=0; i<jointNumber_;i++){
         setServoOff(i);
@@ -95,7 +95,7 @@ ManipulatorState::~ManipulatorState(){
     stopCommunication();
     stopEngine();
     
-    RCLCPP_INFO(this->get_logger(), "manipulator_state_node is stopped");
+    RCLCPP_INFO(this->get_logger(), "manipulator_state is stopped");
 }
 
 void ManipulatorState::setRosParameter(){
@@ -104,9 +104,9 @@ void ManipulatorState::setRosParameter(){
     this->declare_parameter<float>("gripper_open_value", 0);
     this->declare_parameter<float>("gripper_close_value", 0);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
-    this->declare_parameter<std::string>("encoder_joint_topic", "/manipulator_node/no_param");
-    this->declare_parameter<std::string>("isaacsim_joint_topic", "/manipulator_node/no_param");
-    this->declare_parameter<std::string>("wmx_param_file_path", "/manipulator_node/no_param");
+    this->declare_parameter<std::string>("encoder_joint_topic", "/manipulator_state/no_param");
+    this->declare_parameter<std::string>("isaacsim_joint_topic", "/manipulator_state/no_param");
+    this->declare_parameter<std::string>("wmx_param_file_path", "/manipulator_state/no_param");
 
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
@@ -121,23 +121,18 @@ void ManipulatorState::setRosParameter(){
 void ManipulatorState::encoderJointStep() {
     wmx3LibCm_.GetStatus(&cmStatus_);
 
-    std::vector<CoreMotionAxisStatus*> cmAxisStatus_(jointNumber_);
-    for (int i = 0; i < jointNumber_; ++i) {
-        cmAxisStatus_[i] = &cmStatus_.axesStatus[i];
-    }
-
     sensor_msgs::msg::JointState encoderJointMsg_;
  
     for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
-        encoderJointMsg_.position.push_back(cmAxisStatus_[i]->actualPos);
-        encoderJointMsg_.velocity.push_back(cmAxisStatus_[i]->actualVelocity);
+        encoderJointMsg_.position.push_back(cmStatus_.axesStatus[i].actualPos);
+        encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[i].actualVelocity);
     }
 
     for (int i = 0; i < 2; ++i) {
-        encoderJointMsg_.name.push_back(jointNames_[6+i]);
-        Wmx3Lib_Io_.GetOutBit(0, 0, &outData_);
-        if(outData_){
+        encoderJointMsg_.name.push_back(jointNames_[jointNumber_+i]);
+        Wmx3Lib_Io_.GetOutBit(0, 0, &gripperData_);
+        if(gripperData_){
             encoderJointMsg_.position.push_back(gripperCloseValue_);
             encoderJointMsg_.velocity.push_back(0.000);
         }
