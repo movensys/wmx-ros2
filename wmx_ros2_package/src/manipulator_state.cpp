@@ -38,8 +38,8 @@ public:
     char errString_[256];
 
 private:
-    WMX3Api wmx3Lib_;            
-    CoreMotionStatus cmStatus_;  
+    WMX3Api wmx3Lib_;
+    CoreMotionStatus cmStatus_;
     CoreMotion wmx3LibCm_;
     Io Wmx3Lib_Io_;
     Config::AxisParam axisParam_;
@@ -53,7 +53,7 @@ private:
     void startEngine();
     void stopEngine();
     void setWmxParam(char* path);
-    void getWmxParam(int axis);
+    void getWmxParam();
     void startCommunication();
     void stopCommunication();
     void setServoOn(int axis);
@@ -69,10 +69,7 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state"), wmx3LibCm_(&wm
     startEngine();
     startCommunication();
     setWmxParam((char*)wmxParamFilePath_.c_str());
-
-    for (int i=0; i<jointNumber_; i++){
-        getWmxParam(i);
-    }
+    getWmxParam();
 
     for(int i=0; i<jointNumber_;i++){
         clearAlarm(i);
@@ -164,18 +161,20 @@ void ManipulatorState::setWmxParam(char* path){
     }
 }
 
-void ManipulatorState::getWmxParam(int axis){
-    err_ = wmx3LibCm_.config->GetAxisParam(axis, &axisParam_);
+void ManipulatorState::getWmxParam(){
+    err_ = wmx3LibCm_.config->GetAxisParam(&axisParam_);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to get param axis %d. Error=%d (%s)", axis, err_, errString_);
+        RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
     }
     else{
-        RCLCPP_INFO(this->get_logger(), "axis: %d, numerator: %f", axis, *axisParam_.gearRatioNumerator);
-        RCLCPP_INFO(this->get_logger(), "axis: %d, denominator: %f", axis, *axisParam_.gearRatioDenominator);
-        RCLCPP_INFO(this->get_logger(), "axis: %d, polarity: %d", axis, (int)*axisParam_.axisPolarity);
-        RCLCPP_INFO(this->get_logger(), "axis: %d, abs encoder: %d", axis, *axisParam_.absoluteEncoderMode);
-        RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, *axisParam_.axisCommandMode);
+        for (int axis = 0; axis < jointNumber_; axis++) {
+            RCLCPP_INFO(this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
+            RCLCPP_INFO(this->get_logger(), "axis: %d, denominator: %f", axis, axisParam_.gearRatioDenominator[axis]);
+            RCLCPP_INFO(this->get_logger(), "axis: %d, polarity: %d", axis, (int)axisParam_.axisPolarity[axis]);
+            RCLCPP_INFO(this->get_logger(), "axis: %d, abs encoder: %d", axis, axisParam_.absoluteEncoderMode[axis]);
+            RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, axisParam_.axisCommandMode[axis]);
+        }
     }
 }
 
