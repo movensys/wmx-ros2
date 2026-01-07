@@ -119,6 +119,25 @@ void ManipulatorState::setRosParameter(){
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
     this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
     this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
+
+    // Print parameter values
+    RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
+    RCLCPP_INFO(this->get_logger(), "joint_number: %d", jointNumber_);
+    RCLCPP_INFO(this->get_logger(), "joint_feedback_rate: %d", jointFeedbackRate_);
+    RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f", gripperOpenValue_);
+    RCLCPP_INFO(this->get_logger(), "gripper_close_value: %f", gripperCloseValue_);
+
+    std::string joint_names_str;
+    for (size_t i = 0; i < jointNames_.size(); ++i) {
+        if (i > 0) joint_names_str += ", ";
+        joint_names_str += jointNames_[i];
+    }
+    RCLCPP_INFO(this->get_logger(), "joint_name: [%s]", joint_names_str.c_str());
+
+    RCLCPP_INFO(this->get_logger(), "encoder_joint_topic: %s", encoderJointTopic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "isaacsim_joint_topic: %s", isaacsimJointTopic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
+    RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
 void ManipulatorState::encoderJointStep() {

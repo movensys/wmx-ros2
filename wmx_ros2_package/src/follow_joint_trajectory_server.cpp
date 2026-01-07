@@ -72,16 +72,16 @@ private:
   void stopCommunication();
 };
 
-FollowJointTrajectoryServer::FollowJointTrajectoryServer() 
+FollowJointTrajectoryServer::FollowJointTrajectoryServer()
   : Node("follow_joint_trajectory_server"){
-
-  wmx3LibCm_ = CoreMotion(&wmx3Lib_);
-  wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
-  Wmx3Lib_Io_ = Io(&wmx3Lib_); 
-  wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
   setRosParameter();
   startEngine();
+
+  wmx3LibCm_ = CoreMotion(&wmx3Lib_);
+  wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
+  Wmx3Lib_Io_ = Io(&wmx3Lib_);
+  wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this, 
                     jointTrajectoryAction_,
@@ -108,13 +108,20 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
 }
 
 void FollowJointTrajectoryServer::setRosParameter(){
-  this->declare_parameter<int>("joint_number", 0);  
+  this->declare_parameter<int>("joint_number", 0);
   this->declare_parameter<std::string>("joint_trajectory_action", "/follow_joint_trajectory_server/no_param");
   this->declare_parameter<std::string>("wmx_gripper_topic", "/follow_joint_trajectory_server/no_param");
 
   this->get_parameter("joint_number", jointNumber_);
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
   this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
+
+  // Print parameter values
+  RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
+  RCLCPP_INFO(this->get_logger(), "joint_number: %d", jointNumber_);
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
+  RCLCPP_INFO(this->get_logger(), "wmx_gripper_topic: %s", wmxGripperTopic_.c_str());
+  RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
 rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(const rclcpp_action::GoalUUID &uuid,
@@ -144,8 +151,8 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   double timeMilliseconds;
 
   if(num_points > MAX_TRAJ_POINTS) {
-    RCLCPP_WARN(this->get_logger(), 
-                "Too many trajectory point size! current points:%d / max traj points:%d \nAborting current goal.", 
+    RCLCPP_WARN(this->get_logger(),
+                "Too many trajectory point size! current points:%d / max traj points:%d \nAborting current goal.",
                 num_points, MAX_TRAJ_POINTS);
     goal_handle->abort(result);
     return;
@@ -190,7 +197,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   for (size_t i = 0; i < trajectory.points.size(); ++i) {
     const auto &pt = trajectory.points[i];
     timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
-    time_spl[i] = static_cast<unsigned int>(timeMilliseconds);
+    time_spl[i] = timeMilliseconds;
 
     for (int j = 0; j < jointNumber_; ++j) {
       pt_spl[i].pos[j] = pt.positions.at(j);
@@ -202,11 +209,9 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
     time_spl[0] = 0.0;
   }
 
-  // If last time interval is less than 1ms, ignore the last point
+  // if last time interval is less than 1ms, ignore the last point.
   double last = trajectory.points.size() - 1;
-  if(last > 0 && 
-     (rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - 
-      rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3)) {
+  if(rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3) {
     num_points -= 1;
   }
 
