@@ -215,26 +215,32 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
     num_points -= 1;
   }
 
-  RCLCPP_INFO(this->get_logger(), "Command Start!!!");
-  err_ = wmx3LibAm_.advMotion->StartCSplinePos(0, &spl, num_points, pt_spl, time_spl);
-  if(err_ != 0) {
-    wmx3LibAm_.ErrorToString(err_, errString_, 256);
-    RCLCPP_ERROR(this->get_logger(), "StartCSplinePos Error: %s", errString_);
-    result->error_code = err_;
-    goal_handle->abort(result);
-    return;
+  if(num_points==0){
+    RCLCPP_INFO(this->get_logger(), "Point count is zero. It is already in the targeted position");
   }
 
-  // TODO: instead of using blocking Wait function, monitor flags so that "goal_handle->is_canceling()" can be checked
-  err_ = wmx3LibCm_.motion->Wait(&axisSel);
-  if(err_ != 0) {
-    wmx3LibCm_.ErrorToString(err_, errString_, 256);
-    RCLCPP_ERROR(this->get_logger(), "Wait Error: %s", errString_);
-    result->error_code = err_;
-    goal_handle->abort(result);
-    return;
-  }
+  else{
+    RCLCPP_INFO(this->get_logger(), "Command Start!!!");
+    err_ = wmx3LibAm_.advMotion->StartCSplinePos(0, &spl, num_points, pt_spl, time_spl);
+    if(err_ != 0) {
+      wmx3LibAm_.ErrorToString(err_, errString_, 256);
+      RCLCPP_ERROR(this->get_logger(), "StartCSplinePos Error: %s", errString_);
+      result->error_code = err_;
+      goal_handle->abort(result);
+      return;
+    }
 
+    // TODO: instead of using blocking Wait function, monitor flags so that "goal_handle->is_canceling()" can be checked
+    err_ = wmx3LibCm_.motion->Wait(&axisSel);
+    if(err_ != 0) {
+      wmx3LibCm_.ErrorToString(err_, errString_, 256);
+      RCLCPP_ERROR(this->get_logger(), "Wait Error: %s", errString_);
+      result->error_code = err_;
+      goal_handle->abort(result);
+      return;
+    }
+  }
+  
   result->error_code = 0;
   goal_handle->succeed(result);
   RCLCPP_INFO(this->get_logger(), "Trajectory execution completed successfully");
