@@ -143,9 +143,11 @@ void FollowJointTrajectoryServer::handle_accepted(std::shared_ptr<GoalHandleFJT>
 }
 
 void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_handle){
-  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal!");
   const auto goal = goal_handle->get_goal();
   const auto &trajectory = goal->trajectory;
+
+  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal! Point number: [%zu]", traj.points.size());
+
   auto result = std::make_shared<FollowJointTrajectory::Result>();
   int num_points = trajectory.points.size();
   double timeMilliseconds;
@@ -158,14 +160,14 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
     return;
   }
 
-  // Log joint names
-  std::ostringstream jn;
-  for (size_t i = 0; i < trajectory.joint_names.size(); ++i) {
-    if (i) jn << ", ";
-    jn << trajectory.joint_names[i];
-  }
-  RCLCPP_INFO(this->get_logger(), "Joint Names: [%s]", jn.str().c_str());
-  RCLCPP_INFO(this->get_logger(), "Point number: [%zu]", trajectory.points.size());
+  // // Log joint names
+  // std::ostringstream jn;
+  // for (size_t i = 0; i < trajectory.joint_names.size(); ++i) {
+  //   if (i) jn << ", ";
+  //   jn << trajectory.joint_names[i];
+  // }
+  // RCLCPP_INFO(this->get_logger(), "Joint Names: [%s]", jn.str().c_str());
+  // RCLCPP_INFO(this->get_logger(), "Point number: [%zu]", trajectory.points.size());
 
   // // Log points
   // for (size_t i = 0; i < trajectory.points.size(); ++i) {
