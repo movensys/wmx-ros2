@@ -72,16 +72,16 @@ private:
   void stopCommunication();
 };
 
-FollowJointTrajectoryServer::FollowJointTrajectoryServer() 
+FollowJointTrajectoryServer::FollowJointTrajectoryServer()
   : Node("follow_joint_trajectory_server"){
-
-  wmx3LibCm_ = CoreMotion(&wmx3Lib_);
-  wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
-  Wmx3Lib_Io_ = Io(&wmx3Lib_); 
-  wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
   setRosParameter();
   startEngine();
+
+  wmx3LibCm_ = CoreMotion(&wmx3Lib_);
+  wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
+  Wmx3Lib_Io_ = Io(&wmx3Lib_);
+  wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this, 
                     jointTrajectoryAction_,
@@ -108,13 +108,20 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
 }
 
 void FollowJointTrajectoryServer::setRosParameter(){
-  this->declare_parameter<int>("joint_number", 0);  
+  this->declare_parameter<int>("joint_number", 0);
   this->declare_parameter<std::string>("joint_trajectory_action", "/follow_joint_trajectory_server/no_param");
   this->declare_parameter<std::string>("wmx_gripper_topic", "/follow_joint_trajectory_server/no_param");
 
   this->get_parameter("joint_number", jointNumber_);
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
   this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
+
+  // Print parameter values
+  RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
+  RCLCPP_INFO(this->get_logger(), "joint_number: %d", jointNumber_);
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
+  RCLCPP_INFO(this->get_logger(), "wmx_gripper_topic: %s", wmxGripperTopic_.c_str());
+  RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
 rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(const rclcpp_action::GoalUUID &uuid,
@@ -136,48 +143,51 @@ void FollowJointTrajectoryServer::handle_accepted(std::shared_ptr<GoalHandleFJT>
 }
 
 void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_handle){
-  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal!");
   const auto goal = goal_handle->get_goal();
   const auto &trajectory = goal->trajectory;
+
+  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal! Point number: [%zu]", traj.points.size());
+
   auto result = std::make_shared<FollowJointTrajectory::Result>();
   int num_points = trajectory.points.size();
   double timeMilliseconds;
 
   if(num_points > MAX_TRAJ_POINTS) {
-    RCLCPP_WARN(this->get_logger(), 
-                "Too many trajectory point size! current points:%d / max traj points:%d \nAborting current goal.", 
+    RCLCPP_WARN(this->get_logger(),
+                "Too many trajectory point size! current points:%d / max traj points:%d \nAborting current goal.",
                 num_points, MAX_TRAJ_POINTS);
     goal_handle->abort(result);
     return;
   }
 
-  // Log joint names
-  std::ostringstream jn;
-  for (size_t i = 0; i < trajectory.joint_names.size(); ++i) {
-    if (i) jn << ", ";
-    jn << trajectory.joint_names[i];
-  }
-  RCLCPP_INFO(this->get_logger(), "Joint Names: [%s]", jn.str().c_str());
+  // // Log joint names
+  // std::ostringstream jn;
+  // for (size_t i = 0; i < trajectory.joint_names.size(); ++i) {
+  //   if (i) jn << ", ";
+  //   jn << trajectory.joint_names[i];
+  // }
+  // RCLCPP_INFO(this->get_logger(), "Joint Names: [%s]", jn.str().c_str());
+  // RCLCPP_INFO(this->get_logger(), "Point number: [%zu]", trajectory.points.size());
 
-  // Log points
-  for (size_t i = 0; i < trajectory.points.size(); ++i) {
-    const auto &pt = trajectory.points[i];
-    std::ostringstream pos, vel, acc;
-    for (size_t k = 0; k < pt.positions.size(); ++k) { if (k) pos << ", "; pos << pt.positions[k]; }
-    for (size_t k = 0; k < pt.velocities.size(); ++k) { if (k) vel << ", "; vel << pt.velocities[k]; }
-    for (size_t k = 0; k < pt.accelerations.size(); ++k) { if (k) acc << ", "; acc << pt.accelerations[k]; }
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
-      i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
-      pt.time_from_start.sec, pt.time_from_start.nanosec);
+  // // Log points
+  // for (size_t i = 0; i < trajectory.points.size(); ++i) {
+  //   const auto &pt = trajectory.points[i];
+  //   std::ostringstream pos, vel, acc;
+  //   for (size_t k = 0; k < pt.positions.size(); ++k) { if (k) pos << ", "; pos << pt.positions[k]; }
+  //   for (size_t k = 0; k < pt.velocities.size(); ++k) { if (k) vel << ", "; vel << pt.velocities[k]; }
+  //   for (size_t k = 0; k < pt.accelerations.size(); ++k) { if (k) acc << ", "; acc << pt.accelerations[k]; }
+  //   RCLCPP_INFO(
+  //     this->get_logger(),
+  //     "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
+  //     i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
+  //     pt.time_from_start.sec, pt.time_from_start.nanosec);
     
-    if(i != 0) {
-      rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
-      rclcpp::Duration duration_pre(trajectory.points[i-1].time_from_start);
-      RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());        
-    }
-  }
+  //   if(i != 0) {
+  //     rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
+  //     rclcpp::Duration duration_pre(trajectory.points[i-1].time_from_start);
+  //     RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());        
+  //   }
+  // }
 
   // Generate spline commands from trajectory.points
   axisSel.axisCount = jointNumber_;
@@ -190,7 +200,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   for (size_t i = 0; i < trajectory.points.size(); ++i) {
     const auto &pt = trajectory.points[i];
     timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
-    time_spl[i] = static_cast<unsigned int>(timeMilliseconds);
+    time_spl[i] = timeMilliseconds;
 
     for (int j = 0; j < jointNumber_; ++j) {
       pt_spl[i].pos[j] = pt.positions.at(j);
@@ -202,34 +212,38 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
     time_spl[0] = 0.0;
   }
 
-  // If last time interval is less than 1ms, ignore the last point
+  // if last time interval is less than 1ms, ignore the last point.
   double last = trajectory.points.size() - 1;
-  if(last > 0 && 
-     (rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - 
-      rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3)) {
+  if(rclcpp::Duration(trajectory.points[last].time_from_start).seconds() - rclcpp::Duration(trajectory.points[last-1].time_from_start).seconds() < 1e-3) {
     num_points -= 1;
   }
 
-  RCLCPP_INFO(this->get_logger(), "Command Start!!!");
-  err_ = wmx3LibAm_.advMotion->StartCSplinePos(0, &spl, num_points, pt_spl, time_spl);
-  if(err_ != 0) {
-    wmx3LibAm_.ErrorToString(err_, errString_, 256);
-    RCLCPP_ERROR(this->get_logger(), "StartCSplinePos Error: %s", errString_);
-    result->error_code = err_;
-    goal_handle->abort(result);
-    return;
+  if(num_points==0){
+    RCLCPP_INFO(this->get_logger(), "Point count is zero. It is already in the targeted position");
   }
 
-  // TODO: instead of using blocking Wait function, monitor flags so that "goal_handle->is_canceling()" can be checked
-  err_ = wmx3LibCm_.motion->Wait(&axisSel);
-  if(err_ != 0) {
-    wmx3LibCm_.ErrorToString(err_, errString_, 256);
-    RCLCPP_ERROR(this->get_logger(), "Wait Error: %s", errString_);
-    result->error_code = err_;
-    goal_handle->abort(result);
-    return;
-  }
+  else{
+    RCLCPP_INFO(this->get_logger(), "Command Start!!!");
+    err_ = wmx3LibAm_.advMotion->StartCSplinePos(0, &spl, num_points, pt_spl, time_spl);
+    if(err_ != 0) {
+      wmx3LibAm_.ErrorToString(err_, errString_, 256);
+      RCLCPP_ERROR(this->get_logger(), "StartCSplinePos Error: %s", errString_);
+      result->error_code = err_;
+      goal_handle->abort(result);
+      return;
+    }
 
+    // TODO: instead of using blocking Wait function, monitor flags so that "goal_handle->is_canceling()" can be checked
+    err_ = wmx3LibCm_.motion->Wait(&axisSel);
+    if(err_ != 0) {
+      wmx3LibCm_.ErrorToString(err_, errString_, 256);
+      RCLCPP_ERROR(this->get_logger(), "Wait Error: %s", errString_);
+      result->error_code = err_;
+      goal_handle->abort(result);
+      return;
+    }
+  }
+  
   result->error_code = 0;
   goal_handle->succeed(result);
   RCLCPP_INFO(this->get_logger(), "Trajectory execution completed successfully");
