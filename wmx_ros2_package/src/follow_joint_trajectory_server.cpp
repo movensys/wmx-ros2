@@ -146,7 +146,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   const auto goal = goal_handle->get_goal();
   const auto &trajectory = goal->trajectory;
 
-  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal! Point number: [%zu]", traj.points.size());
+  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal! Point number: [%zu]", trajectory.points.size());
 
   auto result = std::make_shared<FollowJointTrajectory::Result>();
   int num_points = trajectory.points.size();
