@@ -165,26 +165,27 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
     jn << trajectory.joint_names[i];
   }
   RCLCPP_INFO(this->get_logger(), "Joint Names: [%s]", jn.str().c_str());
+  RCLCPP_INFO(this->get_logger(), "Point number: [%zu]", trajectory.points.size());
 
-  // Log points
-  for (size_t i = 0; i < trajectory.points.size(); ++i) {
-    const auto &pt = trajectory.points[i];
-    std::ostringstream pos, vel, acc;
-    for (size_t k = 0; k < pt.positions.size(); ++k) { if (k) pos << ", "; pos << pt.positions[k]; }
-    for (size_t k = 0; k < pt.velocities.size(); ++k) { if (k) vel << ", "; vel << pt.velocities[k]; }
-    for (size_t k = 0; k < pt.accelerations.size(); ++k) { if (k) acc << ", "; acc << pt.accelerations[k]; }
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
-      i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
-      pt.time_from_start.sec, pt.time_from_start.nanosec);
+  // // Log points
+  // for (size_t i = 0; i < trajectory.points.size(); ++i) {
+  //   const auto &pt = trajectory.points[i];
+  //   std::ostringstream pos, vel, acc;
+  //   for (size_t k = 0; k < pt.positions.size(); ++k) { if (k) pos << ", "; pos << pt.positions[k]; }
+  //   for (size_t k = 0; k < pt.velocities.size(); ++k) { if (k) vel << ", "; vel << pt.velocities[k]; }
+  //   for (size_t k = 0; k < pt.accelerations.size(); ++k) { if (k) acc << ", "; acc << pt.accelerations[k]; }
+  //   RCLCPP_INFO(
+  //     this->get_logger(),
+  //     "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
+  //     i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
+  //     pt.time_from_start.sec, pt.time_from_start.nanosec);
     
-    if(i != 0) {
-      rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
-      rclcpp::Duration duration_pre(trajectory.points[i-1].time_from_start);
-      RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());        
-    }
-  }
+  //   if(i != 0) {
+  //     rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
+  //     rclcpp::Duration duration_pre(trajectory.points[i-1].time_from_start);
+  //     RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());        
+  //   }
+  // }
 
   // Generate spline commands from trajectory.points
   axisSel.axisCount = jointNumber_;
