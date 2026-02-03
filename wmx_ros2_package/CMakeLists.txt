@@ -70,6 +70,7 @@ target_link_libraries(manipulator_state
     ${std_srvs_LIBRARIES}
     coremotionapi
     ioapi
+    ecapi
     wmx3api
     imdll
 )
