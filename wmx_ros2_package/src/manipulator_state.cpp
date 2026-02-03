@@ -283,6 +283,16 @@ void ManipulatorState::stopEngine(){
     else{
         RCLCPP_INFO(this->get_logger(), "Device stopped");
     }
+
+    unsigned int timeout = 10000; // 10000ms timeout
+    err_ = wmx3Lib_.StopEngine(timeout);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Device stopped");
+    }
 }
 
 void ManipulatorState::stopCommunication(){
