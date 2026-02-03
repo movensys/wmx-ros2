@@ -282,7 +282,8 @@ void FollowJointTrajectoryServer::setGripper(const std::shared_ptr<std_srvs::srv
 }
 
 void FollowJointTrajectoryServer::startEngine(){
-  err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
+  unsigned int timeout = 10000; // 10000ms timeout
+  err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
   wmx3Lib_.SetDeviceName("FollowJointTrajectoryServer");
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -307,7 +308,8 @@ void FollowJointTrajectoryServer::stopEngine()
 
 void FollowJointTrajectoryServer::stopCommunication()
 {
-  err_ = wmx3Lib_.StopCommunication(INFINITE);
+  unsigned int timeout = 10000; // 10000ms timeout
+  err_ = wmx3Lib_.StopCommunication(timeout);
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     RCLCPP_ERROR(this->get_logger(), "Failed to stop communication");

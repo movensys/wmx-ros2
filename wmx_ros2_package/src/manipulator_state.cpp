@@ -231,7 +231,8 @@ void ManipulatorState::setServoOff(int axis){
 }
 
 void ManipulatorState::startEngine(){
-    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
+    unsigned int timeout = 10000; // 10000ms timeout    
+    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
     wmx3Lib_.SetDeviceName("ManipulatorState");
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -243,7 +244,8 @@ void ManipulatorState::startEngine(){
 }
 
 void ManipulatorState::startCommunication(){
-    err_ = wmx3Lib_.StartCommunication(INFINITE);
+    unsigned int timeout = 10000; // 10000ms timeout
+    err_ = wmx3Lib_.StartCommunication(timeout);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to start communication. Error=%d (%s)", err_, errString_);
@@ -265,7 +267,8 @@ void ManipulatorState::stopEngine(){
 }
 
 void ManipulatorState::stopCommunication(){
-    err_ = wmx3Lib_.StopCommunication(INFINITE);
+    unsigned int timeout = 10000; // 10000ms timeout
+    err_ = wmx3Lib_.StopCommunication(timeout);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to stop communication");
