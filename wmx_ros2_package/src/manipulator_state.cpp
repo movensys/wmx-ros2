@@ -14,9 +14,11 @@
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 #include "IOApi.h"
+#include "EcApi.h"
 
 using std::placeholders::_1;
 using namespace wmx3Api;
+using namespace wmx3Api::ecApi;
 using namespace std;
 
 class ManipulatorState : public rclcpp::Node {
@@ -42,6 +44,7 @@ private:
     CoreMotionStatus cmStatus_;
     CoreMotion wmx3LibCm_;
     Io Wmx3Lib_Io_;
+    Ecat Wmx3Lib_Ecat_;
     Config::AxisParam axisParam_;
     
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
@@ -54,6 +57,7 @@ private:
     void stopEngine();
     void setWmxParam(char* path);
     void getWmxParam();
+    void scanNetwork();
     void startCommunication();
     void stopCommunication();
     void setServoOn(int axis);
@@ -61,12 +65,13 @@ private:
     void clearAlarm(int axis);
 };
 
-ManipulatorState::ManipulatorState() : Node("manipulator_state"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_)  {  
+ManipulatorState::ManipulatorState() : Node("manipulator_state"), wmx3LibCm_(&wmx3Lib_), Wmx3Lib_Io_(&wmx3Lib_), Wmx3Lib_Ecat_(&wmx3Lib_)  {  
     RCLCPP_INFO(this->get_logger(), "start manipulator_state");
 
     setRosParameter();
 
     startEngine();
+    scanNetwork();
     startCommunication();
     setWmxParam((char*)wmxParamFilePath_.c_str());
     getWmxParam();
@@ -231,19 +236,65 @@ void ManipulatorState::setServoOff(int axis){
 }
 
 void ManipulatorState::startEngine(){
-    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, INFINITE);
-    wmx3Lib_.SetDeviceName("ManipulatorState");
+    unsigned int timeout = 10000; // 10000ms timeout
+    int maxRetries = 5;
+    int retryDelay = 2000; // 2 seconds between retries
+    const int CreateDeviceLockError = 297; // Error code for lock errors
+    
+    // Add initial delay after reboot to let system services initialize
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+        if (attempt > 0) {
+            RCLCPP_INFO(this->get_logger(), "Retrying device creation (attempt %d/%d)...", attempt + 1, maxRetries);
+            std::this_thread::sleep_for(std::chrono::milliseconds(retryDelay));
+        }
+        
+        err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
+        wmx3Lib_.SetDeviceName("ManipulatorState");
+        
+        if (err_ == ErrorCode::None) {
+            RCLCPP_INFO(this->get_logger(), "Created a device (attempt %d)", attempt + 1);
+            return; // Success, exit the function
+        }
+        else {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            
+            // Special handling for lock errors
+            if (err_ == CreateDeviceLockError) {
+                RCLCPP_WARN(this->get_logger(), "Device lock error (attempt %d/%d). Waiting for lock to be released...", 
+                           attempt + 1, maxRetries);
+            }
+            else {
+                RCLCPP_WARN(this->get_logger(), "Failed to create device (attempt %d/%d). Error=%d (%s)", 
+                           attempt + 1, maxRetries, err_, errString_);
+            }
+        }
+    }
+    
+    // If we get here, all retries failed
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to create device after %d attempts. Error=%d (%s)", 
+                 maxRetries, err_, errString_);
+}
+
+void ManipulatorState::scanNetwork(){
+    int masterId = 0; // Default master ID is 0
+    
+    err_ = Wmx3Lib_Ecat_.ScanNetwork(masterId);
     if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to create device. Error=%d (%s)", err_, errString_);
+        char ecErrString_[256];
+        Ecat::ErrorToString(err_, ecErrString_, sizeof(ecErrString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to scan network. Error=%d (%s)", err_, ecErrString_);
     }
     else{
-        RCLCPP_INFO(this->get_logger(), "Created a device");
+        RCLCPP_INFO(this->get_logger(), "Scan network operation done!");
     }
 }
 
 void ManipulatorState::startCommunication(){
-    err_ = wmx3Lib_.StartCommunication(INFINITE);
+    unsigned int timeout = 10000; // 10000ms timeout
+    err_ = wmx3Lib_.StartCommunication(timeout);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to start communication. Error=%d (%s)", err_, errString_);
@@ -262,10 +313,21 @@ void ManipulatorState::stopEngine(){
     else{
         RCLCPP_INFO(this->get_logger(), "Device stopped");
     }
+
+    unsigned int timeout = 10000; // 10000ms timeout
+    err_ = wmx3Lib_.StopEngine(timeout);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Device stopped");
+    }
 }
 
 void ManipulatorState::stopCommunication(){
-    err_ = wmx3Lib_.StopCommunication(INFINITE);
+    unsigned int timeout = 10000; // 10000ms timeout
+    err_ = wmx3Lib_.StopCommunication(timeout);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to stop communication");
