@@ -109,8 +109,8 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
 
 void FollowJointTrajectoryServer::setRosParameter(){
   this->declare_parameter<int>("joint_number", 0);
-  this->declare_parameter<std::string>("joint_trajectory_action", "/follow_joint_trajectory_server/no_param");
-  this->declare_parameter<std::string>("wmx_gripper_topic", "/follow_joint_trajectory_server/no_param");
+  this->declare_parameter<std::string>("joint_trajectory_action", "/joint_trajectory_action/no_param");
+  this->declare_parameter<std::string>("wmx_gripper_topic", "/wmx_gripper_topic/no_param");
 
   this->get_parameter("joint_number", jointNumber_);
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);

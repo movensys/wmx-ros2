@@ -10,6 +10,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_msgs/msg/float64_multi_array.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
@@ -33,6 +34,7 @@ public:
     std::vector<std::string> jointNames_;
     std::string encoderJointTopic_;
     std::string isaacsimJointTopic_;
+    std::string gazeboJointTopic_;
     std::string wmxParamFilePath_;
 
     unsigned char gripperData_;
@@ -50,6 +52,7 @@ private:
     rclcpp::TimerBase::SharedPtr encoderJointTimer_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr gazeboJointPub_;
     void encoderJointStep();
     void setRosParameter();
 
@@ -87,7 +90,8 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state"), wmx3LibCm_(&wm
                                                  std::bind(&ManipulatorState::encoderJointStep, this)); 
 
     encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
-    isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);  
+    isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);
+    gazeboJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);  
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
     RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");
@@ -112,9 +116,10 @@ void ManipulatorState::setRosParameter(){
     this->declare_parameter<float>("gripper_open_value", 0);
     this->declare_parameter<float>("gripper_close_value", 0);
     this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
-    this->declare_parameter<std::string>("encoder_joint_topic", "/manipulator_state/no_param");
-    this->declare_parameter<std::string>("isaacsim_joint_topic", "/manipulator_state/no_param");
-    this->declare_parameter<std::string>("wmx_param_file_path", "/manipulator_state/no_param");
+    this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
+    this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
+    this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
+    this->declare_parameter<std::string>("wmx_param_file_path", "/wmx_param_file_path/no_param");
 
     this->get_parameter("joint_number", jointNumber_);
     this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
@@ -123,6 +128,7 @@ void ManipulatorState::setRosParameter(){
     this->get_parameter("joint_name", jointNames_);
     this->get_parameter("encoder_joint_topic", encoderJointTopic_);
     this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
+    this->get_parameter("gazebo_joint_topic", gazeboJointTopic_);
     this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
     // Print parameter values
@@ -141,6 +147,7 @@ void ManipulatorState::setRosParameter(){
 
     RCLCPP_INFO(this->get_logger(), "encoder_joint_topic: %s", encoderJointTopic_.c_str());
     RCLCPP_INFO(this->get_logger(), "isaacsim_joint_topic: %s", isaacsimJointTopic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "gazebo_joint_topic: %s", gazeboJointTopic_.c_str());
     RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
     RCLCPP_INFO(this->get_logger(), "===========================");
 }
@@ -149,11 +156,14 @@ void ManipulatorState::encoderJointStep() {
     wmx3LibCm_.GetStatus(&cmStatus_);
 
     sensor_msgs::msg::JointState encoderJointMsg_;
+    std_msgs::msg::Float64MultiArray gazeboJointMsg_;
+    joint_command.data.resize(8);
  
     for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
         encoderJointMsg_.position.push_back(cmStatus_.axesStatus[i].actualPos);
         encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[i].actualVelocity);
+        gazeboJointMsg_.data[i] = cmStatus_.axesStatus[i].actualPos;
     }
 
     for (int i = 0; i < 2; ++i) {
@@ -162,16 +172,20 @@ void ManipulatorState::encoderJointStep() {
         if(gripperData_){
             encoderJointMsg_.position.push_back(gripperCloseValue_);
             encoderJointMsg_.velocity.push_back(0.000);
+            gazeboJointMsg_.data[jointNumber_+i] = gripperCloseValue_;
         }
         else{
             encoderJointMsg_.position.push_back(gripperOpenValue_);
             encoderJointMsg_.velocity.push_back(0.000);
+            gazeboJointMsg_.data[jointNumber_+i] = gripperOpenValue_;
         }        
     }
 
     isaacsimJointPub_->publish(encoderJointMsg_);
     encoderJointMsg_.header.stamp = this->get_clock()->now();
     encoderJointPub_->publish(encoderJointMsg_);
+
+    gazeboJointPub_->publish(gazeboJointMsg_);
 }
 
 void ManipulatorState::setWmxParam(char* path){
