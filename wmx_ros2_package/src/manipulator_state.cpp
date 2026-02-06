@@ -157,7 +157,7 @@ void ManipulatorState::encoderJointStep() {
 
     sensor_msgs::msg::JointState encoderJointMsg_;
     std_msgs::msg::Float64MultiArray gazeboJointMsg_;
-    joint_command.data.resize(8);
+    gazeboJointMsg_.data.resize(8);
  
     for (int i = 0; i < jointNumber_; ++i) {
         encoderJointMsg_.name.push_back(jointNames_[i]);
