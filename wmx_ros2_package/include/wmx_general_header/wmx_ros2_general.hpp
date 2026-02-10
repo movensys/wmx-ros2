@@ -106,7 +106,8 @@ private:
     rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setHomingService_ = 
                     this->create_service<wmx_ros2_message::srv::SetAxis>("/wmx/axis/homing", 
                     std::bind(&WmxRos2General::setHoming, this, _1, _2));
-
+    
+    void startEngine();
     void stopEngine();
     void stopCommunication();
     void axisStateStep();
