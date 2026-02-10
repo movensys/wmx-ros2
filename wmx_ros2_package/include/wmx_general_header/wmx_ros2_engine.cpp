@@ -62,6 +62,50 @@ void WmxRos2General::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Reque
     }
 } 
 
+void WmxRos2General::startEngine(){
+    RCLCPP_INFO(this->get_logger(), "Starting engine WmxRos2General");
+    unsigned int timeout = 10000; // 10000ms timeout
+    int maxRetries = 5;
+    int retryDelay = 2000; // 2 seconds between retries
+    const int CreateDeviceLockError = 297; // Error code for lock errors
+    
+    // Add initial delay after reboot to let system services initialize
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+        if (attempt > 0) {
+            RCLCPP_INFO(this->get_logger(), "Retrying device creation (attempt %d/%d)...", attempt + 1, maxRetries);
+            std::this_thread::sleep_for(std::chrono::milliseconds(retryDelay));
+        }
+        
+        err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
+        wmx3Lib_.SetDeviceName("WmxRos2General");
+        
+        if (err_ == ErrorCode::None) {
+            RCLCPP_INFO(this->get_logger(), "Created a device (attempt %d)", attempt + 1);
+            return; // Success, exit the function
+        }
+        else {
+            wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+            
+            // Special handling for lock errors
+            if (err_ == CreateDeviceLockError) {
+                RCLCPP_WARN(this->get_logger(), "Device lock error (attempt %d/%d). Waiting for lock to be released...", 
+                           attempt + 1, maxRetries);
+            }
+            else {
+                RCLCPP_WARN(this->get_logger(), "Failed to create device (attempt %d/%d). Error=%d (%s)", 
+                           attempt + 1, maxRetries, err_, errString_);
+            }
+        }
+    }
+    
+    // If we get here, all retries failed
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to create device after %d attempts. Error=%d (%s)", 
+                 maxRetries, err_, errString_);
+}
+
 void WmxRos2General::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
                           std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response) {
     
