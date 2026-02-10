@@ -25,8 +25,10 @@ void WmxRos2General::getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigge
 
 void WmxRos2General::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                           std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
+
+    unsigned int timeout = 10000;
     if (request->data) {
-        err_ = wmx3Lib_.StartCommunication(INFINITE);
+        err_ = wmx3Lib_.StartCommunication(timeout);
 
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -43,7 +45,7 @@ void WmxRos2General::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Reque
         }
     } 
     else {
-        err_ = wmx3Lib_.StopCommunication(INFINITE);;
+        err_ = wmx3Lib_.StopCommunication(timeout);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
             snprintf(buffer_, sizeof(buffer_), "Failed to stop communication. Error=%d (%s)", err_, errString_);
@@ -62,8 +64,10 @@ void WmxRos2General::setComm(const std::shared_ptr<std_srvs::srv::SetBool::Reque
 
 void WmxRos2General::setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
                           std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response) {
+    
+    unsigned int timeout = 10000;
     if (request->data) {
-        err_ = wmx3Lib_.CreateDevice(request->path.c_str(), DeviceType::DeviceTypeNormal, INFINITE);
+        err_ = wmx3Lib_.CreateDevice(request->path.c_str(), DeviceType::DeviceTypeNormal, timeout);
         wmx3Lib_.SetDeviceName(request->name.c_str());
 
         if (err_ != ErrorCode::None) {
@@ -107,10 +111,20 @@ void WmxRos2General::stopEngine(){
     else{
         RCLCPP_INFO(this->get_logger(), "Device stopped");
     }
+    unsigned int timeout = 10000;
+    err_ = wmx3Lib_.StopEngine(timeout);
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        RCLCPP_ERROR(this->get_logger(), "Failed to stop engine");
+    }
+    else{
+        RCLCPP_INFO(this->get_logger(), "Engine stopped");
+    }
 }
 
 void WmxRos2General::stopCommunication(){
-    err_ = wmx3Lib_.StopCommunication(INFINITE);
+    unsigned int timeout = 10000;
+    err_ = wmx3Lib_.StopCommunication(timeout);
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(this->get_logger(), "Failed to stop communication");
