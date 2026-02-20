@@ -233,14 +233,26 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
       return;
     }
 
-    // TODO: instead of using blocking Wait function, monitor flags so that "goal_handle->is_canceling()" can be checked
-    err_ = wmx3LibCm_.motion->Wait(&axisSel);
-    if(err_ != 0) {
-      wmx3LibCm_.ErrorToString(err_, errString_, 256);
-      RCLCPP_ERROR(this->get_logger(), "Wait Error: %s", errString_);
-      result->error_code = err_;
-      goal_handle->abort(result);
-      return;
+    // Poll motion status so cancellation can be handled
+    while (true) {
+      if (goal_handle->is_canceling()) {
+        wmx3LibCm_.motion->Stop(&axisSel);
+        wmx3LibCm_.motion->Wait(&axisSel);
+        result->error_code = 0;
+        goal_handle->canceled(result);
+        RCLCPP_INFO(this->get_logger(), "Goal canceled, axes stopped");
+        return;
+      }
+
+      CoreMotionStatus cmStatus;
+      wmx3LibCm_.GetStatus(&cmStatus);
+      bool all_done = true;
+      for (int j = 0; j < jointNumber_; ++j) {
+        if (!cmStatus.axesStatus[j].inPos) { all_done = false; break; }
+      }
+      if (all_done) break;
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
   
