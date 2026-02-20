@@ -40,26 +40,12 @@ include_directories(
 include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
 link_directories(/opt/lmx/lib)
 
-add_library(wmx_ros2_general_lib include/wmx_general_header/wmx_ros2_general.cpp
-                                 include/wmx_general_header/wmx_ros2_engine.cpp
-                                 include/wmx_general_header/wmx_ros2_core_motion.cpp)
-set_target_properties(wmx_ros2_general_lib PROPERTIES LINKER_LANGUAGE CXX)
-ament_target_dependencies(wmx_ros2_general_lib rclcpp rclcpp_action wmx_ros2_message std_srvs)
-target_link_libraries(wmx_ros2_general_lib coremotionapi wmx3api imdll)
-
 install(DIRECTORY
   src
   config
   launch
-  example
   DESTINATION share/${PROJECT_NAME}/
 )
-
-add_executable(wmx_ros2_general_node src/wmx_ros2_general_node.cpp)
-target_link_libraries(wmx_ros2_general_node wmx_ros2_general_lib)
-
-add_executable(wmx_ros2_general_example example/wmx_ros2_general_example.cpp)
-ament_target_dependencies(wmx_ros2_general_example rclcpp wmx_ros2_message std_srvs)   
 
 add_executable(manipulator_state src/manipulator_state.cpp)
 target_link_libraries(manipulator_state
@@ -116,8 +102,6 @@ install(TARGETS
   manipulator_state
   follow_joint_trajectory_server
   #diff_drive_controller
-  wmx_ros2_general_node
-  wmx_ros2_general_example
   wmx_engine_node
   wmx_core_motion_node
   DESTINATION lib/${PROJECT_NAME}
