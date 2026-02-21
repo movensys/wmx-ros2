@@ -1,6 +1,6 @@
 #include "wmx_engine_node.hpp"
 
-WmxEngineNode::WmxEngineNode() : Node("wmx_engine_node") {
+WmxEngineNode::WmxEngineNode() : Node("wmx_engine_node"), wmx3Lib_Ecat_(&wmx3Lib_) {
     engineReadyPub_ = this->create_publisher<std_msgs::msg::Bool>("/wmx/engine/ready", 1);
 
     setEngineService_ = this->create_service<wmx_ros2_message::srv::SetEngine>(
@@ -14,6 +14,10 @@ WmxEngineNode::WmxEngineNode() : Node("wmx_engine_node") {
     getEngineStatusService_ = this->create_service<std_srvs::srv::Trigger>(
         "/wmx/engine/get_status",
         std::bind(&WmxEngineNode::getEngineStatus, this, _1, _2));
+
+    scanNetworkService_ = this->create_service<std_srvs::srv::Trigger>(
+        "/wmx/engine/scan_network",
+        std::bind(&WmxEngineNode::scanNetwork, this, _1, _2));
 
     readyTimer_ = this->create_wall_timer(
         std::chrono::milliseconds(1000),
@@ -139,6 +143,28 @@ void WmxEngineNode::getEngineStatus(
 
     response->success = true;
     response->message = status_str;
+}
+
+void WmxEngineNode::scanNetwork(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> /*request*/,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+
+    const int masterId = 0;
+    err_ = wmx3Lib_Ecat_.ScanNetwork(masterId);
+
+    if (err_ != ErrorCode::None) {
+        char ecErrString_[256];
+        wmx3Api::ecApi::Ecat::ErrorToString(err_, ecErrString_, sizeof(ecErrString_));
+        snprintf(buffer_, sizeof(buffer_),
+                 "Failed to scan network. Error=%d (%s)", err_, ecErrString_);
+        RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+        response->success = false;
+        response->message = std::string(buffer_);
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Scan network operation done!");
+        response->success = true;
+        response->message = "Scan network operation done!";
+    }
 }
 
 void WmxEngineNode::setComm(
