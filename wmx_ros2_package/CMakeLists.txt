@@ -88,12 +88,17 @@ add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
 ament_target_dependencies(wmx_core_motion_node rclcpp std_msgs std_srvs wmx_ros2_message)
 target_link_libraries(wmx_core_motion_node coremotionapi wmx3api imdll)
 
+add_executable(wmx_io_node src/wmx_io_node.cpp)
+ament_target_dependencies(wmx_io_node rclcpp std_msgs wmx_ros2_message)
+target_link_libraries(wmx_io_node ioapi wmx3api imdll)
+
 install(TARGETS
   manipulator_state
   follow_joint_trajectory_server
   #diff_drive_controller
   wmx_engine_node
   wmx_core_motion_node
+  wmx_io_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
