@@ -69,7 +69,7 @@ private:
                         std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
   void setRosParameter();
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+  void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
 };
 
 FollowJointTrajectoryServer::FollowJointTrajectoryServer()
@@ -102,7 +102,7 @@ FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is stopped");
 }
 
-void FollowJointTrajectoryServer::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
+void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg) {
   if (!msg->data || initialized_) {
     return;
   }
