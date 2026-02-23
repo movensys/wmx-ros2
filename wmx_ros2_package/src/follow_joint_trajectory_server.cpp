@@ -14,6 +14,7 @@
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 
 #define MAX_TRAJ_POINTS 1000
@@ -36,6 +37,8 @@ public:
   char errString_[256];
 
 private:
+  bool initialized_ = false;
+
   WMX3Api wmx3Lib_;
   CoreMotion wmx3LibCm_;
   AdvancedMotion wmx3LibAm_;
@@ -45,12 +48,13 @@ private:
   AxisSelection axisSel;
   Io Wmx3Lib_Io_;
 
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
 
   // Action server callback declarations
   rclcpp_action::GoalResponse handle_goal(
-    const rclcpp_action::GoalUUID &uuid, 
+    const rclcpp_action::GoalUUID &uuid,
     std::shared_ptr<const FollowJointTrajectory::Goal> goal);
 
   rclcpp_action::CancelResponse handle_cancel(
@@ -61,29 +65,69 @@ private:
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle);
 
   // Service callback declaration
-  void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, 
+  void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                         std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
   void setRosParameter();
-
-  // Helper functions
-  void startEngine();
-  void stopEngine();
-  void stopCommunication();
+  void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
 };
 
 FollowJointTrajectoryServer::FollowJointTrajectoryServer()
   : Node("follow_joint_trajectory_server"){
 
   setRosParameter();
-  startEngine();
+
+  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
+    "/wmx/engine/ready", 1,
+    std::bind(&FollowJointTrajectoryServer::onEngineReady, this, std::placeholders::_1));
+
+  RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server waiting for engine...");
+}
+
+FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
+  RCLCPP_INFO(this->get_logger(), "Stop follow_joint_trajectory_server");
+
+  if (initialized_) {
+    wmx3LibAm_.advMotion->FreeSplineBuffer(0);
+
+    err_ = wmx3Lib_.CloseDevice();
+    if (err_ != ErrorCode::None) {
+      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+      RCLCPP_ERROR(this->get_logger(), "Failed to close device");
+    } else {
+      RCLCPP_INFO(this->get_logger(), "Device closed");
+    }
+  }
+
+  RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is stopped");
+}
+
+void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg) {
+  if (!msg->data || initialized_) {
+    return;
+  }
+
+  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing AdvancedMotion...");
+
+  unsigned int timeout = 10000;
+  err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
+  wmx3Lib_.SetDeviceName("follow_joint_trajectory_server");
+
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(),
+                 "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    return;
+  }
+
+  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
   wmx3LibCm_ = CoreMotion(&wmx3Lib_);
   wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
   Wmx3Lib_Io_ = Io(&wmx3Lib_);
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
-  action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this, 
+  action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this,
                     jointTrajectoryAction_,
                     std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
                     std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
@@ -93,18 +137,10 @@ FollowJointTrajectoryServer::FollowJointTrajectoryServer()
                     std::bind(&FollowJointTrajectoryServer::setGripper, this,
                     std::placeholders::_1, std::placeholders::_2));
 
+  initialized_ = true;
+  engineReadySub_.reset();
+
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is ready");
-}
-
-FollowJointTrajectoryServer::~FollowJointTrajectoryServer(){
-  RCLCPP_INFO(this->get_logger(), "Stop follow_joint_trajectory_server");
-
-  wmx3LibAm_.advMotion->FreeSplineBuffer(0);
-
-  stopCommunication();
-  stopEngine();
-
-  RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server is stopped");
 }
 
 void FollowJointTrajectoryServer::setRosParameter(){
@@ -181,11 +217,11 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
       "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
       i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
       pt.time_from_start.sec, pt.time_from_start.nanosec);
-    
+
     if(i != 0) {
       rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
       rclcpp::Duration duration_pre(trajectory.points[i-1].time_from_start);
-      RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());        
+      RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());
     }
   }
 
@@ -255,7 +291,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
-  
+
   result->error_code = 0;
   goal_handle->succeed(result);
   RCLCPP_INFO(this->get_logger(), "Trajectory execution completed successfully");
@@ -276,7 +312,7 @@ void FollowJointTrajectoryServer::setGripper(const std::shared_ptr<std_srvs::srv
       response->success = true;
       response->message = "Gripper closed successfully";
     }
-  } 
+  }
   else {
     err_ = Wmx3Lib_Io_.SetOutBit(0, 0, 0);
     if (err_ != ErrorCode::None) {
@@ -290,74 +326,6 @@ void FollowJointTrajectoryServer::setGripper(const std::shared_ptr<std_srvs::srv
       response->success = true;
       response->message = "Gripper opened successfully";
     }
-  }
-}
-
-void FollowJointTrajectoryServer::startEngine(){
-  unsigned int timeout = 10000; // 10000ms timeout
-  int maxRetries = 5;
-  int retryDelay = 2000; // 2 seconds between retries
-  const int CreateDeviceLockError = 297; // Error code for lock errors
-  
-  // Add initial delay after reboot to let system services initialize
-  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-  
-  for (int attempt = 0; attempt < maxRetries; attempt++) {
-    if (attempt > 0) {
-      RCLCPP_INFO(this->get_logger(), "Retrying device creation (attempt %d/%d)...", attempt + 1, maxRetries);
-      std::this_thread::sleep_for(std::chrono::milliseconds(retryDelay));
-    }
-    
-    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
-    wmx3Lib_.SetDeviceName("FollowJointTrajectoryServer");
-    
-    if (err_ == ErrorCode::None) {
-      RCLCPP_INFO(this->get_logger(), "Created a device (attempt %d)", attempt + 1);
-      return; // Success, exit the function
-    }
-    else {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      
-      // Special handling for lock errors
-      if (err_ == CreateDeviceLockError) {
-        RCLCPP_WARN(this->get_logger(), "Device lock error (attempt %d/%d). Waiting for lock to be released...", 
-                   attempt + 1, maxRetries);
-      }
-      else {
-        RCLCPP_WARN(this->get_logger(), "Failed to create device (attempt %d/%d). Error=%d (%s)", 
-                   attempt + 1, maxRetries, err_, errString_);
-      }
-    }
-  }
-  
-  // If we get here, all retries failed
-  wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-  RCLCPP_ERROR(this->get_logger(), "Failed to create device after %d attempts. Error=%d (%s)", 
-               maxRetries, err_, errString_);
-}
-
-void FollowJointTrajectoryServer::stopEngine()
-{
-  err_ = wmx3Lib_.CloseDevice();
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to close device");
-  }
-  else {
-    RCLCPP_INFO(this->get_logger(), "Device stopped");
-  }
-}
-
-void FollowJointTrajectoryServer::stopCommunication()
-{
-  unsigned int timeout = 10000; // 10000ms timeout
-  err_ = wmx3Lib_.StopCommunication(timeout);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to stop communication");
-  }
-  else {
-    RCLCPP_INFO(this->get_logger(), "Communication stopped");
   }
 }
 

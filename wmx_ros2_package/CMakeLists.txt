@@ -48,18 +48,8 @@ install(DIRECTORY
 )
 
 add_executable(manipulator_state src/manipulator_state.cpp)
-target_link_libraries(manipulator_state
-  PRIVATE
-    ${rclcpp_LIBRARIES}
-    ${std_msgs_LIBRARIES}
-    ${sensor_msgs_LIBRARIES}
-    ${std_srvs_LIBRARIES}
-    coremotionapi
-    ioapi
-    ecapi
-    wmx3api
-    imdll
-)
+ament_target_dependencies(manipulator_state rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
+target_link_libraries(manipulator_state coremotionapi ioapi wmx3api imdll)
 
 add_executable(follow_joint_trajectory_server src/follow_joint_trajectory_server.cpp)
 target_link_libraries(follow_joint_trajectory_server
@@ -92,7 +82,7 @@ target_link_libraries(follow_joint_trajectory_server
 
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
 ament_target_dependencies(wmx_engine_node rclcpp std_msgs std_srvs wmx_ros2_message)
-target_link_libraries(wmx_engine_node wmx3api imdll)
+target_link_libraries(wmx_engine_node ecapi wmx3api imdll)
 
 add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
 ament_target_dependencies(wmx_core_motion_node rclcpp std_msgs std_srvs wmx_ros2_message)
