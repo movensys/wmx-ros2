@@ -58,7 +58,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr gazeboJointPub_;
 
     void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
-    void encoderJointStep();
+    void publishJointState();
     void setRosParameter();
     void setWmxParam(char* path);
     void getWmxParam();
@@ -167,7 +167,7 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
 
     encoderJointTimer_ = this->create_wall_timer(
         std::chrono::milliseconds(1000 / jointFeedbackRate_),
-        std::bind(&ManipulatorState::encoderJointStep, this));
+        std::bind(&ManipulatorState::publishJointState, this));
 
     initialized_ = true;
     engineReadySub_.reset();  // No longer needed.
@@ -250,7 +250,7 @@ void ManipulatorState::setRosParameter() {
     RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
-void ManipulatorState::encoderJointStep() {
+void ManipulatorState::publishJointState() {
     wmx3LibCm_->GetStatus(&cmStatus_);
 
     sensor_msgs::msg::JointState encoderJointMsg_;
