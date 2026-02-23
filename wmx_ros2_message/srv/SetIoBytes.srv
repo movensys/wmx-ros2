@@ -1,0 +1,5 @@
+int32 byte    # starting output IO byte address
+uint8[] data  # byte values to write
+---
+bool success    # true if the write succeeded
+string message  # response or error description
