@@ -29,4 +29,11 @@ def generate_launch_description():
             output='screen',
             parameters=[{'use_sim_time': use_sim_time}],
         ),
+        Node(
+            package='wmx_ros2_package',
+            executable='wmx_io_node',
+            name='wmx_io_node',
+            output='screen',
+            parameters=[{'use_sim_time': use_sim_time}],
+        )
     ])
