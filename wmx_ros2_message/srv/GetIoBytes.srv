@@ -1,0 +1,6 @@
+int32 byte    # starting IO byte address
+int32 length  # number of bytes to read (must be > 0)
+---
+bool success   # true if the read succeeded
+uint8[] data   # byte values read from IO
+string message # response or error description

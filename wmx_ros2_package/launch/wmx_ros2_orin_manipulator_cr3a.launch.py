@@ -26,10 +26,14 @@ def generate_launch_description():
     start_wmx_core_motion_node = Node(package='wmx_ros2_package', executable='wmx_core_motion_node', name='wmx_core_motion_node',
                                 parameters=[{'use_sim_time': use_sim_time}], output='screen')
 
+    start_wmx_io_node = Node(package='wmx_ros2_package', executable='wmx_io_node', name='wmx_io_node',
+                                parameters=[{'use_sim_time': use_sim_time}], output='screen')
+
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false', description='Use simulation clock if true'),
         start_manipulator_state,
         start_follow_joint_trajectory_server,
         start_wmx_engine_node,
-        start_wmx_core_motion_node
+        start_wmx_core_motion_node,
+        start_wmx_io_node
     ])

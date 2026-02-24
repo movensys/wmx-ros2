@@ -17,9 +17,13 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/SetEngine.srv" 
-  "srv/SetAxis.srv" 
+  "srv/SetEngine.srv"
+  "srv/SetAxis.srv"
   "srv/SetAxisGearRatio.srv"
+  "srv/GetIoBit.srv"
+  "srv/GetIoBytes.srv"
+  "srv/SetIoBit.srv"
+  "srv/SetIoBytes.srv"
 
   "msg/AxisVelocity.msg"
   "msg/AxisState.msg"
