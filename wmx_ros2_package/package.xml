@@ -14,6 +14,7 @@
 
   <depend>std_srvs</depend>
   <depend>wmx_ros2_message</depend>
+  <depend>diagnostic_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>rclcpp</exec_depend>

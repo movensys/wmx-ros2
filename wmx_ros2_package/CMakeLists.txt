@@ -21,9 +21,10 @@ find_package(std_srvs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(wmx_ros2_message REQUIRED) 
-find_package(control_msgs REQUIRED)        
-find_package(trajectory_msgs REQUIRED)     
+find_package(wmx_ros2_message REQUIRED)
+find_package(control_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 
 include_directories(
   ${rclcpp_INCLUDE_DIRS}
@@ -35,6 +36,7 @@ include_directories(
   ${nav_msgs_INCLUDE_DIRS}
   ${sensor_msgs_INCLUDE_DIRS}
   ${std_srvs_INCLUDE_DIRS}
+  ${diagnostic_msgs_INCLUDE_DIRS}
 )
 
 include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
@@ -92,6 +94,10 @@ add_executable(wmx_io_node src/wmx_io_node.cpp)
 ament_target_dependencies(wmx_io_node rclcpp std_msgs wmx_ros2_message)
 target_link_libraries(wmx_io_node ioapi wmx3api imdll)
 
+add_executable(wmx_ethercat_node src/wmx_ethercat_node.cpp)
+ament_target_dependencies(wmx_ethercat_node rclcpp std_msgs wmx_ros2_message diagnostic_msgs)
+target_link_libraries(wmx_ethercat_node ecapi wmx3api imdll)
+
 install(TARGETS
   manipulator_state
   follow_joint_trajectory_server
@@ -99,6 +105,7 @@ install(TARGETS
   wmx_engine_node
   wmx_core_motion_node
   wmx_io_node
+  wmx_ethercat_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
