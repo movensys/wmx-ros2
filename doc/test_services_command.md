@@ -182,12 +182,70 @@ ros2 service call /wmx_io_node/set_parameters rcl_interfaces/srv/SetParameters "
 ros2 service call /wmx_io_node/set_parameters_atomically rcl_interfaces/srv/SetParametersAtomically "{parameters: [{name: 'parameter_name', value: {type: 1, bool_value: true}}]}"
 ```
 
+## EtherCAT Services
+
+### Get Network State (ec-state)
+```bash
+# Get full master statistics and all slave details for master 0
+ros2 service call /wmx/ecat/get_network_state wmx_ros2_message/srv/EcatGetNetworkState "{master_id: 0}"
+
+# master 1
+ros2 service call /wmx/ecat/get_network_state wmx_ros2_message/srv/EcatGetNetworkState "{master_id: 1}"
+```
+
+### Register Read (ec-reg)
+```bash
+# Read 1 byte from slave 0, register 0x000 (type register)
+ros2 service call /wmx/ecat/register_read wmx_ros2_message/srv/EcatRegisterRead "{master_id: 0, slave_id: 0, reg_address: 0, length: 1}"
+
+# Read 4 bytes from slave 0, register 0x010 (vendor ID area)
+ros2 service call /wmx/ecat/register_read wmx_ros2_message/srv/EcatRegisterRead "{master_id: 0, slave_id: 0, reg_address: 16, length: 4}"
+
+# Read 16 bytes from slave 1, register 0x100 (DL status)
+ros2 service call /wmx/ecat/register_read wmx_ros2_message/srv/EcatRegisterRead "{master_id: 0, slave_id: 1, reg_address: 256, length: 16}"
+```
+
+### Reset Statistics (ec-reset)
+```bash
+# Reset ref-clock info, transmit statistics, and re-scan network on master 0
+ros2 service call /wmx/ecat/reset_statistics wmx_ros2_message/srv/EcatResetStatistics "{master_id: 0}"
+```
+
+### Start Hotconnect (ec-hc)
+```bash
+# Enable hot-connect mode on master 0 (allows slaves to join/leave without restart)
+ros2 service call /wmx/ecat/start_hotconnect wmx_ros2_message/srv/EcatStartHotconnect "{master_id: 0}"
+```
+
+## Parameter Services - wmx_ethercat_node
+
+### Describe Parameters
+```bash
+ros2 service call /wmx_ethercat_node/describe_parameters rcl_interfaces/srv/DescribeParameters "{names: ['parameter_name']}"
+```
+
+### Get Parameters
+```bash
+ros2 service call /wmx_ethercat_node/get_parameters rcl_interfaces/srv/GetParameters "{names: ['parameter_name']}"
+```
+
+### List Parameters
+```bash
+ros2 service call /wmx_ethercat_node/list_parameters rcl_interfaces/srv/ListParameters "{prefixes: [], depth: 0}"
+```
+
 ## Notes
 - Adjust array values (index, data, numerator, denumerator) based on your actual axis configuration
 - For SetDevice service, replace '/path/to/device' and 'device_name' with actual values
 - For parameter services, replace 'parameter_name' with actual parameter names from your nodes
 - For IO services, `byte` is the IO byte address and `bit` is the bit index within that byte (0–7)
 - `set_output_bit` value must be 0 or 1; `set_output_bytes` data values are decimal (e.g. 15 = 0x0F)
+- EtherCAT master state values: None=0, Init=1, Preop=2, Boot=4, Safeop=8, Op=16
+- EtherCAT master mode values: CyclicMode=0, PPMode=1, MonitorMode=2
+- `reg_address` is a 12-bit ESC register address (decimal or hex), valid range 0x000–0xFFF
+- `reg_address + length` must not exceed 0x1000 (4096 bytes)
+- `reset_statistics` calls ResetRefClockInfo + ResetTransmitStatisticsInfo + ScanNetwork in sequence
+- `start_hotconnect` enables dynamic slave discovery; call once after network is Op
 - Use `ros2 service type <service_name>` to verify service types
 - Use `ros2 service list` to see all available services
 
