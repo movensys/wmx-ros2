@@ -1,8 +1,0 @@
-int32 master_id
-int32 slave_id
-int32 index               # SDO object index e.g. 0x6040 = 24640
-int32 subindex
-uint8[] data              # raw bytes to write
----
-bool success
-string message

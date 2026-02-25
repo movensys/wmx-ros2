@@ -1,8 +1,0 @@
-int32 master_id
-int32 slave_id
-int32 index
-int32 subindex
-uint8[] data
----
-bool success
-string message
