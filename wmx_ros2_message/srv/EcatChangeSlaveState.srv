@@ -1,0 +1,7 @@
+int32 master_id
+int32 slave_id
+int32 state               # 1=Init 2=PreOp 4=SafeOp 8=Op
+---
+bool success
+int32 error_code
+string message

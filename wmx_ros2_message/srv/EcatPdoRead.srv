@@ -1,0 +1,10 @@
+int32 master_id
+int32 slave_id
+int32 index
+int32 subindex
+int32 length
+---
+bool success
+uint8[] data
+int32 actual_size
+string message

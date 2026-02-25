@@ -25,6 +25,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetIoBit.srv"
   "srv/SetIoBytes.srv"
 
+  "srv/EcatGetMasterInfoList.srv"
+  "srv/EcatGetMasterInfo.srv"
+  "srv/EcatChangeSlaveState.srv"
+  "srv/EcatSdoDownload.srv"
+  "srv/EcatSdoUpload.srv"
+  "srv/EcatPdoRead.srv"
+  "srv/EcatTxPdoWrite.srv"
+  "srv/EcatDiagnosisScan.srv"
+
   "msg/AxisVelocity.msg"
   "msg/AxisState.msg"
   "msg/AxisPose.msg"

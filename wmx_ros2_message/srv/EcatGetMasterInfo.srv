@@ -1,0 +1,10 @@
+int32 master_id
+---
+bool success
+int32 id
+int32 state               # EcStateMachine::T — 0=None 1=Init 2=Preop 4=Safeop 8=Op
+int32 num_of_slaves
+int32 online_slaves
+int32 offline_slaves
+int32 inaccessible_slaves
+string message

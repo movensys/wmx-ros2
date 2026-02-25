@@ -1,0 +1,5 @@
+# Request: empty
+---
+bool success
+int32 master_count
+string message
