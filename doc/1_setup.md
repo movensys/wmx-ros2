@@ -3,7 +3,7 @@
 **Note that this ROS2 application requires pre-installed `LMX`(WMX Linux runtime).**
 
 
-## Dependencies for humble ( ubuntu 22.04)
+### Dependencies for humble ( ubuntu 22.04)
 ```
 sudo apt install -y ros-humble-graph-msgs \
                     ros-humble-moveit* \
@@ -12,7 +12,7 @@ sudo apt install -y ros-humble-graph-msgs \
                     ros-humble-rmw-cyclonedds-cpp
 ```
 
-## Dependencies for jazzy ( ubuntu 24.04)
+### Dependencies for jazzy ( ubuntu 24.04)
 ```
 sudo apt install -y ros-jazzy-graph-msgs \
                     ros-jazzy-moveit* \
