@@ -477,45 +477,44 @@ void WmxCoreMotionNode::getWmxParams(
     wmx3LibCm_->config->GetParam(&sysParam);
     wmx3LibCm_->config->GetAxisParam(&axisParam);
 
-    std::ostringstream ss;
+    auto& lines = response->params_dump;
     for (int32_t i : request->index) {
-        ss << "=== Axis " << i << " ===\n";
+        lines.push_back("=== Axis " + std::to_string(i) + " ===");
 
-        ss << "[AxisParam]\n";
-        ss << "  GearRatio          = " << axisParam.gearRatioNumerator[i]
-           << " / " << axisParam.gearRatioDenominator[i] << "\n";
-        ss << "  AxisUnit           = " << axisParam.axisUnit[i] << "\n";
-        ss << "  AxisPolarity       = " << static_cast<int>(axisParam.axisPolarity[i]) << "\n";
-        ss << "  CommandMode        = " << static_cast<int>(axisParam.axisCommandMode[i]) << "\n";
-        ss << "  MaxTrqLimit        = " << axisParam.maxTrqLimit[i] << "\n";
-        ss << "  MaxMotorSpeed      = " << axisParam.maxMotorSpeed[i] << "\n";
-        ss << "  VelFeedforwardGain = " << axisParam.velocityFeedforwardGain[i] << "\n";
+        lines.push_back("[AxisParam]");
+        lines.push_back("  GearRatio          = " + std::to_string(axisParam.gearRatioNumerator[i])
+                        + " / " + std::to_string(axisParam.gearRatioDenominator[i]));
+        lines.push_back("  AxisUnit           = " + std::to_string(axisParam.axisUnit[i]));
+        lines.push_back("  AxisPolarity       = " + std::to_string(static_cast<int>(axisParam.axisPolarity[i])));
+        lines.push_back("  CommandMode        = " + std::to_string(static_cast<int>(axisParam.axisCommandMode[i])));
+        lines.push_back("  MaxTrqLimit        = " + std::to_string(axisParam.maxTrqLimit[i]));
+        lines.push_back("  MaxMotorSpeed      = " + std::to_string(axisParam.maxMotorSpeed[i]));
+        lines.push_back("  VelFeedforwardGain = " + std::to_string(axisParam.velocityFeedforwardGain[i]));
 
-        ss << "[HomeParam]\n";
-        ss << "  HomeType           = " << static_cast<int>(sysParam.homeParam[i].homeType) << "\n";
-        ss << "  HomeDirection      = " << static_cast<int>(sysParam.homeParam[i].homeDirection) << "\n";
-        ss << "  HomingVelSlow      = " << sysParam.homeParam[i].homingVelocitySlow << "\n";
-        ss << "  HomingVelFast      = " << sysParam.homeParam[i].homingVelocityFast << "\n";
-        ss << "  HomePosition       = " << sysParam.homeParam[i].homePosition << "\n";
+        lines.push_back("[HomeParam]");
+        lines.push_back("  HomeType           = " + std::to_string(static_cast<int>(sysParam.homeParam[i].homeType)));
+        lines.push_back("  HomeDirection      = " + std::to_string(static_cast<int>(sysParam.homeParam[i].homeDirection)));
+        lines.push_back("  HomingVelSlow      = " + std::to_string(sysParam.homeParam[i].homingVelocitySlow));
+        lines.push_back("  HomingVelFast      = " + std::to_string(sysParam.homeParam[i].homingVelocityFast));
+        lines.push_back("  HomePosition       = " + std::to_string(sysParam.homeParam[i].homePosition));
 
-        ss << "[FeedbackParam]\n";
-        ss << "  InPosWidth         = " << sysParam.feedbackParam[i].inPosWidth << "\n";
-        ss << "  PosSetWidth        = " << sysParam.feedbackParam[i].posSetWidth << "\n";
-        ss << "  DelayedPosSetWidth = " << sysParam.feedbackParam[i].delayedPosSetWidth << "\n";
+        lines.push_back("[FeedbackParam]");
+        lines.push_back("  InPosWidth         = " + std::to_string(sysParam.feedbackParam[i].inPosWidth));
+        lines.push_back("  PosSetWidth        = " + std::to_string(sysParam.feedbackParam[i].posSetWidth));
+        lines.push_back("  DelayedPosSetWidth = " + std::to_string(sysParam.feedbackParam[i].delayedPosSetWidth));
 
-        ss << "[AlarmParam]\n";
-        ss << "  FollowErrStopped   = " << sysParam.alarmParam[i].followingErrorStopped << "\n";
-        ss << "  FollowErrMoving    = " << sysParam.alarmParam[i].followingErrorMoving << "\n";
+        lines.push_back("[AlarmParam]");
+        lines.push_back("  FollowErrStopped   = " + std::to_string(sysParam.alarmParam[i].followingErrorStopped));
+        lines.push_back("  FollowErrMoving    = " + std::to_string(sysParam.alarmParam[i].followingErrorMoving));
 
-        ss << "[LimitParam]\n";
-        ss << "  SoftLimitPosPos    = " << sysParam.limitParam[i].softLimitPositivePos << "\n";
-        ss << "  SoftLimitNegPos    = " << sysParam.limitParam[i].softLimitNegativePos << "\n";
-        ss << "\n";
+        lines.push_back("[LimitParam]");
+        lines.push_back("  SoftLimitPosPos    = " + std::to_string(sysParam.limitParam[i].softLimitPositivePos));
+        lines.push_back("  SoftLimitNegPos    = " + std::to_string(sysParam.limitParam[i].softLimitNegativePos));
+        lines.push_back("");
     }
 
-    response->success    = true;
-    response->message    = "OK";
-    response->params_dump = ss.str();
+    response->success = true;
+    response->message = "OK";
 }
 
 int main(int argc, char ** argv) {
