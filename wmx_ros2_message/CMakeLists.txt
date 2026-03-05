@@ -30,6 +30,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/EcatResetStatistics.srv"
   "srv/EcatStartHotconnect.srv"
 
+  "srv/LoadWmxParams.srv"
+  "srv/GetWmxParams.srv"
+
   "msg/AxisVelocity.msg"
   "msg/AxisState.msg"
   "msg/AxisPose.msg"
