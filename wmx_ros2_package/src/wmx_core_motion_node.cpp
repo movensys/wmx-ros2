@@ -6,8 +6,6 @@ WmxCoreMotionNode::WmxCoreMotionNode() : Node("wmx_core_motion_node") {
         "/wmx/engine/ready", 1,
         std::bind(&WmxCoreMotionNode::onEngineReady, this, _1));
 
-    // Register axis services immediately — callers will get a "not ready" response
-    // until the engine is up and CoreMotion is initialized
     setAxisOnService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
         "/wmx/axis/set_on",
         std::bind(&WmxCoreMotionNode::setAxisOn, this, _1, _2));
@@ -102,7 +100,6 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) 
 
     initialized_ = true;
 
-    // Unsubscribe from ready topic — no longer needed
     engineReadySub_.reset();
 
     RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is ready (100 Hz)");
