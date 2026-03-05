@@ -49,4 +49,9 @@ To connect with `movensys_isaac_manipulator`, change action name in `follow_join
 
 ## Documentation
 
-For setup and execution, see [doc/1_setup.md](doc/1_setup.md)
+| Doc | Description |
+|-----|-------------|
+| [doc/1_setup.md](doc/1_setup.md) | Environment setup, dependencies, build |
+| [doc/2_run_wmx_ros2_package.md](doc/2_run_wmx_ros2_package.md) | Run the general package |
+| [doc/3_launch_cr3a_manipulator.md](doc/3_launch_cr3a_manipulator.md) | Launch the CR3A manipulator |
+| [doc/4_service_reference.md](doc/4_service_reference.md) | ROS2 service reference with startup sequence |
