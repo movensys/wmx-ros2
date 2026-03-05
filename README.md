@@ -31,7 +31,13 @@ Robot -> LMX(WMX Linux runtime) -> WMX3 API -> manipulator_state -> /joint_state
 
 **follow_joint_trajectory_server** - Receives trajectory action and executes via WMX3 C-Spline
 
-**wmx_ros2_general_node** - Low-level axis control via services and topics
+**wmx_core_motion_node** - Core motion control and trajectory execution
+
+**wmx_engine_node** - Engine and device initialization, overall state management
+
+**wmx_ethercat_node** - EtherCAT master operations and slave management
+
+**wmx_io_node** - IO control for input/output bits and bytes
 
 ## Launch Files
 
