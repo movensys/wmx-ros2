@@ -12,5 +12,5 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-     bash -c "source /opt/ros/humble/setup.bash && source /home/mic-743/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_thor_manipulator_cr3a.launch.py use_sim_time:=false"
+     bash -c "source /opt/ros/jazzy/setup.bash && source /home/mic-743/wmx_ros2_ws/install/setup.bash && ros2 launch wmx_ros2_package wmx_ros2_thor_manipulator_cr3a.launch.py use_sim_time:=false"
 ```
