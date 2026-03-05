@@ -234,6 +234,28 @@ ros2 service call /wmx_ethercat_node/get_parameters rcl_interfaces/srv/GetParame
 ros2 service call /wmx_ethercat_node/list_parameters rcl_interfaces/srv/ListParameters "{prefixes: [], depth: 0}"
 ```
 
+## WMX Parameter Services
+
+### Load Parameters from File
+```bash
+# Load CR3A parameters
+ros2 service call /wmx/params/load wmx_ros2_message/srv/LoadWmxParams \
+  "{file_path: '/home/engine/ros2_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/cr3a_wmx_parameters.xml'}"
+
+# Load Baymax parameters
+ros2 service call /wmx/params/load wmx_ros2_message/srv/LoadWmxParams \
+  "{file_path: '/home/engine/ros2_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/baymax_wmx_parameters.xml'}"
+```
+
+### Get Parameters (display all active params for specified axes)
+```bash
+# Display parameters for axis 0
+ros2 service call /wmx/params/get wmx_ros2_message/srv/GetWmxParams "{index: [0]}"
+
+# Display parameters for axes 0 and 1
+ros2 service call /wmx/params/get wmx_ros2_message/srv/GetWmxParams "{index: [0, 1]}"
+```
+
 ## Notes
 - Adjust array values (index, data, numerator, denumerator) based on your actual axis configuration
 - For SetDevice service, replace '/path/to/device' and 'device_name' with actual values
@@ -248,4 +270,9 @@ ros2 service call /wmx_ethercat_node/list_parameters rcl_interfaces/srv/ListPara
 - `start_hotconnect` enables dynamic slave discovery; call once after network is Op
 - Use `ros2 service type <service_name>` to verify service types
 - Use `ros2 service list` to see all available services
+- `params/load` requires an absolute path to a valid WMX3 XML parameter file; engine must be ready first
+- `params/get` returns a formatted string in `params_dump`; print it with `echo` or check the terminal output directly
+- `CommandMode` values: 0=Position, 1=Velocity, 2=Torque
+- `HomeType` values: 0=CurrentPos, 1=ZPulse, 2=HS, 4=HSZPulse (see CoreMotionApi.h `HomeType::T`)
+- `HomeDirection` values: 0=Positive, 1=Negative
 
