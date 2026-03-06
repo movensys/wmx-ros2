@@ -115,8 +115,12 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
 
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(),
-                 "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    if (err_ == ErrorCode::StartProcessLockError) {
+      RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying). Error=%d (%s)", err_, errString_);
+    } else {
+      RCLCPP_ERROR(this->get_logger(),
+                   "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    }
     return;
   }
 
