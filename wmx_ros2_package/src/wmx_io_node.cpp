@@ -61,7 +61,7 @@ void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         if (err_ == ErrorCode::StartProcessLockError) {
-            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying). Code=%d", err_);
+            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
         } else {
             RCLCPP_ERROR(this->get_logger(),
                          "Failed to attach to device. Error=%d (%s)", err_, errString_);
