@@ -115,8 +115,12 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
 
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(),
-                 "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    if (err_ == ErrorCode::StartProcessLockError) {
+      RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+    } else {
+      RCLCPP_ERROR(this->get_logger(),
+                   "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    }
     return;
   }
 
@@ -152,7 +156,6 @@ void FollowJointTrajectoryServer::setRosParameter(){
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
   this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
 
-  // Print parameter values
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "joint_number: %d", jointNumber_);
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
@@ -269,7 +272,6 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
       return;
     }
 
-    // Poll motion status so cancellation can be handled
     while (true) {
       if (goal_handle->is_canceling()) {
         wmx3LibCm_.motion->Stop(&axisSel);

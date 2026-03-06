@@ -15,6 +15,8 @@
 
 #include "wmx_ros2_message/srv/set_axis.hpp"
 #include "wmx_ros2_message/srv/set_axis_gear_ratio.hpp"
+#include "wmx_ros2_message/srv/load_wmx_params.hpp"
+#include "wmx_ros2_message/srv/get_wmx_params.hpp"
 #include "wmx_ros2_message/msg/axis_velocity.hpp"
 #include "wmx_ros2_message/msg/axis_state.hpp"
 #include "wmx_ros2_message/msg/axis_pose.hpp"
@@ -62,6 +64,8 @@ private:
     rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisPolarityService_;
     rclcpp::Service<wmx_ros2_message::srv::SetAxisGearRatio>::SharedPtr setAxisGearRatioService_;
     rclcpp::Service<wmx_ros2_message::srv::SetAxis>::SharedPtr setHomingService_;
+    rclcpp::Service<wmx_ros2_message::srv::LoadWmxParams>::SharedPtr loadParamsService_;
+    rclcpp::Service<wmx_ros2_message::srv::GetWmxParams>::SharedPtr  getParamsService_;
 
     void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
     void axisStateStep();
@@ -82,6 +86,10 @@ private:
                           std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response);
     void setHoming(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
                    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+    void loadWmxParams(const std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Request> request,
+                       std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Response> response);
+    void getWmxParams(const std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Request> request,
+                      std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Response> response);
 };
 
 #endif  // WMX_CORE_MOTION_NODE_HPP

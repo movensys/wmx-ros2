@@ -1,21 +1,24 @@
 # WMX ROS2 Application
 
-## Running On
-```
-Ubuntu 22.04
-ROS2 Humble 
-[WMX3Engine] Build: Jun  6 2025:18:10:19 (v3.5.0.0)
-```
-
 **Note that this ROS2 application requires pre-installed `LMX`(WMX Linux runtime).**
 
-## Dependencies 
+
+### Dependencies for humble ( ubuntu 22.04)
 ```
 sudo apt install -y ros-humble-graph-msgs \
                     ros-humble-moveit* \
                     ros-humble-ros2-control \
                     ros-humble-ros2-controllers \
                     ros-humble-rmw-cyclonedds-cpp
+```
+
+### Dependencies for jazzy ( ubuntu 24.04)
+```
+sudo apt install -y ros-jazzy-graph-msgs \
+                    ros-jazzy-moveit* \
+                    ros-jazzy-ros2-control \
+                    ros-jazzy-ros2-controllers \
+                    ros-jazzy-rmw-cyclonedds-cpp
 ```
 
 ## Setup

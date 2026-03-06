@@ -67,19 +67,6 @@ target_link_libraries(follow_joint_trajectory_server
     imdll
 )
 
-#add_executable(diff_drive_controller src/diff_drive_controller.cpp)
-#target_link_libraries(diff_drive_controller
-#  PRIVATE
-#    ${rclcpp_LIBRARIES}
-#    ${std_msgs_LIBRARIES}
-#    ${sensor_msgs_LIBRARIES}
-#    ${std_srvs_LIBRARIES}
-#    coremotionapi
-#    wmx3api
-#    imdll
-#)
-
-
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
 ament_target_dependencies(wmx_engine_node rclcpp std_msgs std_srvs wmx_ros2_message)
 target_link_libraries(wmx_engine_node ecapi wmx3api imdll)
@@ -99,7 +86,6 @@ target_link_libraries(wmx_ethercat_node ecapi wmx3api imdll)
 install(TARGETS
   manipulator_state
   follow_joint_trajectory_server
-  #diff_drive_controller
   wmx_engine_node
   wmx_core_motion_node
   wmx_io_node

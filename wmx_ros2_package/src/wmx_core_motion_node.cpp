@@ -6,8 +6,6 @@ WmxCoreMotionNode::WmxCoreMotionNode() : Node("wmx_core_motion_node") {
         "/wmx/engine/ready", 1,
         std::bind(&WmxCoreMotionNode::onEngineReady, this, _1));
 
-    // Register axis services immediately — callers will get a "not ready" response
-    // until the engine is up and CoreMotion is initialized
     setAxisOnService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
         "/wmx/axis/set_on",
         std::bind(&WmxCoreMotionNode::setAxisOn, this, _1, _2));
@@ -31,6 +29,14 @@ WmxCoreMotionNode::WmxCoreMotionNode() : Node("wmx_core_motion_node") {
     setHomingService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
         "/wmx/axis/homing",
         std::bind(&WmxCoreMotionNode::setHoming, this, _1, _2));
+
+    loadParamsService_ = this->create_service<wmx_ros2_message::srv::LoadWmxParams>(
+        "/wmx/params/load",
+        std::bind(&WmxCoreMotionNode::loadWmxParams, this, _1, _2));
+
+    getParamsService_ = this->create_service<wmx_ros2_message::srv::GetWmxParams>(
+        "/wmx/params/get",
+        std::bind(&WmxCoreMotionNode::getWmxParams, this, _1, _2));
 
     RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node waiting for engine...");
 }
@@ -64,8 +70,12 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) 
 
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(),
-                     "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        if (err_ == ErrorCode::StartProcessLockError) {
+            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+        } else {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        }
         return;
     }
 
@@ -94,7 +104,6 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) 
 
     initialized_ = true;
 
-    // Unsubscribe from ready topic — no longer needed
     engineReadySub_.reset();
 
     RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is ready (100 Hz)");
@@ -422,6 +431,91 @@ void WmxCoreMotionNode::setHoming(
 
     response->success = all_success;
     response->message = msg_stream.str();
+}
+
+void WmxCoreMotionNode::loadWmxParams(
+    const std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Response> response) {
+
+    if (!initialized_) {
+        response->success = false;
+        response->message = "CoreMotion not initialized. Engine not ready.";
+        return;
+    }
+
+    Config::SystemParam sysParamErr;
+    Config::AxisParam   axisParamErr;
+
+    err_ = wmx3LibCm_->config->ImportAndSetAll(
+        const_cast<char*>(request->file_path.c_str()), &sysParamErr, &axisParamErr);
+
+    if (err_ != ErrorCode::None) {
+        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+        snprintf(buffer_, sizeof(buffer_), "Failed to load params: %s", errString_);
+        RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+        response->success = false;
+        response->message = buffer_;
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Loaded WMX params from: %s", request->file_path.c_str());
+        response->success = true;
+        response->message = "Loaded params from: " + request->file_path;
+    }
+}
+
+void WmxCoreMotionNode::getWmxParams(
+    const std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Response> response) {
+
+    if (!initialized_) {
+        response->success = false;
+        response->message = "CoreMotion not initialized. Engine not ready.";
+        return;
+    }
+
+    Config::SystemParam sysParam;
+    Config::AxisParam   axisParam;
+
+    wmx3LibCm_->config->GetParam(&sysParam);
+    wmx3LibCm_->config->GetAxisParam(&axisParam);
+
+    auto& lines = response->params_dump;
+    for (int32_t i : request->index) {
+        lines.push_back("=== Axis " + std::to_string(i) + " ===");
+
+        lines.push_back("[AxisParam]");
+        lines.push_back("  GearRatio          = " + std::to_string(axisParam.gearRatioNumerator[i])
+                        + " / " + std::to_string(axisParam.gearRatioDenominator[i]));
+        lines.push_back("  AxisUnit           = " + std::to_string(axisParam.axisUnit[i]));
+        lines.push_back("  AxisPolarity       = " + std::to_string(static_cast<int>(axisParam.axisPolarity[i])));
+        lines.push_back("  CommandMode        = " + std::to_string(static_cast<int>(axisParam.axisCommandMode[i])));
+        lines.push_back("  MaxTrqLimit        = " + std::to_string(axisParam.maxTrqLimit[i]));
+        lines.push_back("  MaxMotorSpeed      = " + std::to_string(axisParam.maxMotorSpeed[i]));
+        lines.push_back("  VelFeedforwardGain = " + std::to_string(axisParam.velocityFeedforwardGain[i]));
+
+        lines.push_back("[HomeParam]");
+        lines.push_back("  HomeType           = " + std::to_string(static_cast<int>(sysParam.homeParam[i].homeType)));
+        lines.push_back("  HomeDirection      = " + std::to_string(static_cast<int>(sysParam.homeParam[i].homeDirection)));
+        lines.push_back("  HomingVelSlow      = " + std::to_string(sysParam.homeParam[i].homingVelocitySlow));
+        lines.push_back("  HomingVelFast      = " + std::to_string(sysParam.homeParam[i].homingVelocityFast));
+        lines.push_back("  HomePosition       = " + std::to_string(sysParam.homeParam[i].homePosition));
+
+        lines.push_back("[FeedbackParam]");
+        lines.push_back("  InPosWidth         = " + std::to_string(sysParam.feedbackParam[i].inPosWidth));
+        lines.push_back("  PosSetWidth        = " + std::to_string(sysParam.feedbackParam[i].posSetWidth));
+        lines.push_back("  DelayedPosSetWidth = " + std::to_string(sysParam.feedbackParam[i].delayedPosSetWidth));
+
+        lines.push_back("[AlarmParam]");
+        lines.push_back("  FollowErrStopped   = " + std::to_string(sysParam.alarmParam[i].followingErrorStopped));
+        lines.push_back("  FollowErrMoving    = " + std::to_string(sysParam.alarmParam[i].followingErrorMoving));
+
+        lines.push_back("[LimitParam]");
+        lines.push_back("  SoftLimitPosPos    = " + std::to_string(sysParam.limitParam[i].softLimitPositivePos));
+        lines.push_back("  SoftLimitNegPos    = " + std::to_string(sysParam.limitParam[i].softLimitNegativePos));
+        lines.push_back("");
+    }
+
+    response->success = true;
+    response->message = "OK";
 }
 
 int main(int argc, char ** argv) {

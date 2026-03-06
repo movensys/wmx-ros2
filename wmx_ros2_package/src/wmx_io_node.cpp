@@ -6,8 +6,6 @@ WmxIoNode::WmxIoNode() : Node("wmx_io_node") {
         "/wmx/engine/ready", 1,
         std::bind(&WmxIoNode::onEngineReady, this, _1));
 
-    // Register IO services immediately — callers will get a "not ready" response
-    // until the engine is up and IO is initialized
     getInputBitService_ = this->create_service<wmx_ros2_message::srv::GetIoBit>(
         "/wmx/io/get_input_bit",
         std::bind(&WmxIoNode::getInputBit, this, _1, _2));
@@ -62,8 +60,12 @@ void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
 
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(),
-                     "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        if (err_ == ErrorCode::StartProcessLockError) {
+            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+        } else {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        }
         return;
     }
 
@@ -72,7 +74,6 @@ void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
     wmxIo_ = std::make_unique<Io>(&wmx3Lib_);
     initialized_ = true;
 
-    // Unsubscribe from ready topic — no longer needed
     engineReadySub_.reset();
 
     RCLCPP_INFO(this->get_logger(), "wmx_io_node is ready");

@@ -6,7 +6,6 @@ WmxEtherCatNode::WmxEtherCatNode() : Node("wmx_ethercat_node"), wmxEcat_(&wmx3Li
         "/wmx/engine/ready", 1,
         std::bind(&WmxEtherCatNode::onEngineReady, this, _1));
 
-    // Register services immediately — callers receive "not initialized" until engine is up
     getNetworkStateService_ = this->create_service<wmx_ros2_message::srv::EcatGetNetworkState>(
         "/wmx/ecat/get_network_state",
         std::bind(&WmxEtherCatNode::getNetworkState, this, _1, _2));
@@ -52,20 +51,22 @@ void WmxEtherCatNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
 
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(),
-                     "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        if (err_ == ErrorCode::StartProcessLockError) {
+            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+        } else {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        }
         return;
     }
 
     initialized_ = true;
 
-    // Unsubscribe from ready topic — no longer needed
     engineReadySub_.reset();
 
     RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is ready");
 }
 
-// ec-state.cpp — GetMasterInfo with full master statistics and per-slave detail
 void WmxEtherCatNode::getNetworkState(
     const std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Request> request,
     std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Response> response) {
@@ -140,7 +141,7 @@ void WmxEtherCatNode::getNetworkState(
     response->message = std::string(buffer_);
 }
 
-// ec-reg.cpp — RegisterRead: raw register access from a slave
+
 void WmxEtherCatNode::registerRead(
     const std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Request> request,
     std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Response> response) {
@@ -199,7 +200,6 @@ void WmxEtherCatNode::registerRead(
     response->message = std::string(buffer_);
 }
 
-// ec-reset.cpp — ResetRefClockInfo + ResetTransmitStatisticsInfo + ScanNetwork
 void WmxEtherCatNode::resetStatistics(
     const std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Request> request,
     std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Response> response) {
@@ -245,7 +245,6 @@ void WmxEtherCatNode::resetStatistics(
     response->message = std::string(buffer_);
 }
 
-// ec-hc.cpp — StartHotconnect: enable dynamic slave discovery
 void WmxEtherCatNode::startHotconnect(
     const std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Request> request,
     std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Response> response) {

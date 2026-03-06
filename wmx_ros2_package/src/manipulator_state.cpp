@@ -135,7 +135,11 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
 
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        if (err_ == ErrorCode::StartProcessLockError) {
+            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_, errString_);
+        }
         return;
     }
 
@@ -147,7 +151,6 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
     setWmxParam((char*)wmxParamFilePath_.c_str());
     getWmxParam();
 
-    // Clear alarms and enable servos via wmx_core_motion_node services.
     std::vector<int32_t> allAxes;
     for (int i = 0; i < jointNumber_; i++) {
         allAxes.push_back(i);
@@ -170,7 +173,7 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
         std::bind(&ManipulatorState::publishJointState, this));
 
     initialized_ = true;
-    engineReadySub_.reset();  // No longer needed.
+    engineReadySub_.reset();
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
     RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");

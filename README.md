@@ -31,7 +31,13 @@ Robot -> LMX(WMX Linux runtime) -> WMX3 API -> manipulator_state -> /joint_state
 
 **follow_joint_trajectory_server** - Receives trajectory action and executes via WMX3 C-Spline
 
-**wmx_ros2_general_node** - Low-level axis control via services and topics
+**wmx_core_motion_node** - Core motion control and trajectory execution
+
+**wmx_engine_node** - Engine and device initialization, overall state management
+
+**wmx_ethercat_node** - EtherCAT master operations and slave management
+
+**wmx_io_node** - IO control for input/output bits and bytes
 
 ## Launch Files
 
@@ -49,4 +55,9 @@ To connect with `movensys_isaac_manipulator`, change action name in `follow_join
 
 ## Documentation
 
-For setup and execution, see [doc/1_setup.md](doc/1_setup.md)
+| Doc | Description |
+|-----|-------------|
+| [doc/1_setup.md](doc/1_setup.md) | Environment setup, dependencies, build |
+| [doc/2_run_wmx_ros2_package.md](doc/2_run_wmx_ros2_package.md) | Run the general package |
+| [doc/3_launch_cr3a_manipulator.md](doc/3_launch_cr3a_manipulator.md) | Launch the CR3A manipulator |
+| [doc/4_service_reference.md](doc/4_service_reference.md) | ROS2 service reference with startup sequence |
