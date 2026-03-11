@@ -195,9 +195,7 @@ bool ManipulatorState::callSetAxisService(
     request->data  = data;
 
     auto future = client->async_send_request(request);
-    auto result = rclcpp::spin_until_future_complete(
-        this->get_node_base_interface(), future, std::chrono::seconds(5));
-    if (result != rclcpp::FutureReturnCode::SUCCESS) {
+    if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
         RCLCPP_ERROR(this->get_logger(), "Service call %s timed out", description.c_str());
         return false;
     }
