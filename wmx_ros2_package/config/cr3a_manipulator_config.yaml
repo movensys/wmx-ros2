@@ -7,7 +7,7 @@ manipulator_state:
     joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "picker_1_joint", "picker_2_joint"]
     encoder_joint_topic: /joint_states
     gazebo_joint_topic: /gazebo_position_controller/commands
-    wmx_param_file_path: /home/mvsk/wmx_ros2_ws/src/wmx_ros2_application/wmx_ros2_package/config/cr3a_wmx_parameters.xml
+    wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
 follow_joint_trajectory_server:
   ros__parameters:

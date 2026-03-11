@@ -8,14 +8,15 @@ import os
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
 
-    config = os.path.join(
-        get_package_share_directory('wmx_ros2_package'),
-        'config',
-        'cr3a_manipulator_config.yaml'
-    )
+    pkg_share = get_package_share_directory('wmx_ros2_package')
+
+    config = os.path.join(pkg_share, 'config', 'cr3a_manipulator_config.yaml')
+
+    wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr3a_wmx_parameters.xml')
 
     start_manipulator_state = Node(package='wmx_ros2_package', executable='manipulator_state', name='manipulator_state',
-                                parameters=[config, {'use_sim_time': use_sim_time}], output='screen')
+                                parameters=[config, {'use_sim_time': use_sim_time,
+                                                     'wmx_param_file_path': wmx_param_file_path}], output='screen')
 
     start_follow_joint_trajectory_server = Node(package='wmx_ros2_package', executable='follow_joint_trajectory_server',
                                 name='follow_joint_trajectory_server', parameters=[config, {'use_sim_time': use_sim_time}], output='screen')
