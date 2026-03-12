@@ -119,7 +119,7 @@ ros2 service call /wmx/axis/set_polarity wmx_ros2_message/srv/SetAxis "{index: [
 ### Set Gear Ratio
 ```bash
 ros2 service call /wmx/axis/set_gear_ratio wmx_ros2_message/srv/SetAxisGearRatio \
-  "{index: [0,1], numerator: [1.0,1.0], denumerator: [1.0,1.0]}"
+  "{index: [0,1], numerator: [1.0,1.0], denominator: [1.0,1.0]}"
 ```
 
 ### Homing (sets current position as home)

@@ -1,6 +1,8 @@
 # WMX ROS2 Application
 
-ROS2 interface for WMX motion control software to control CR3A manipulator robot.
+ROS2 interface for [WMX3](https://www.movensys.com/), a real-time EtherCAT motion control SDK by Movensys, enabling control of industrial robots and multi-axis systems from the ROS2 ecosystem.
+
+This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, and actions — so you can drive WMX3-controlled hardware (e.g. the CR3A manipulator) using MoveIt2, Nav2, or any ROS2-compatible planner without writing vendor-specific motion code.
 
 ## Architecture
 

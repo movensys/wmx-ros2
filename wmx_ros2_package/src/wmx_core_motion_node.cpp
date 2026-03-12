@@ -118,7 +118,7 @@ void WmxCoreMotionNode::axisStateStep() {
     axisStateMsg_.amp_alarm.clear();
     axisStateMsg_.servo_on.clear();
     axisStateMsg_.home_done.clear();
-    axisStateMsg_.in_pos.clear();
+    axisStateMsg_.motion_complete.clear();
     axisStateMsg_.negative_ls.clear();
     axisStateMsg_.positive_ls.clear();
     axisStateMsg_.home_switch.clear();
@@ -128,13 +128,16 @@ void WmxCoreMotionNode::axisStateStep() {
     axisStateMsg_.actual_velocity.clear();
     axisStateMsg_.actual_torque.clear();
 
+    axisStateMsg_.header.stamp = this->now();
+    axisStateMsg_.header.frame_id = "base_link";
+
     wmx3LibCm_->GetStatus(&cmStatus_);
 
     for (int i = 0; i < axisCount_; ++i) {
         axisStateMsg_.amp_alarm.push_back(cmStatus_.axesStatus[i].ampAlarm);
         axisStateMsg_.servo_on.push_back(cmStatus_.axesStatus[i].servoOn);
         axisStateMsg_.home_done.push_back(cmStatus_.axesStatus[i].homeDone);
-        axisStateMsg_.in_pos.push_back(cmStatus_.axesStatus[i].inPos);
+        axisStateMsg_.motion_complete.push_back(cmStatus_.axesStatus[i].motionComplete);
         axisStateMsg_.negative_ls.push_back(cmStatus_.axesStatus[i].negativeLS);
         axisStateMsg_.positive_ls.push_back(cmStatus_.axesStatus[i].positiveLS);
         axisStateMsg_.home_switch.push_back(cmStatus_.axesStatus[i].homeSwitch);
@@ -383,7 +386,7 @@ void WmxCoreMotionNode::setAxisGearRatio(
 
     for (size_t i = 0; i < request->index.size(); ++i) {
         err_ = wmx3LibCm_->config->SetGearRatio(
-            request->index[i], request->numerator[i], request->denumerator[i]);
+            request->index[i], request->numerator[i], request->denominator[i]);
         if (err_ != ErrorCode::None) {
             all_success = false;
             snprintf(buffer_, sizeof(buffer_),

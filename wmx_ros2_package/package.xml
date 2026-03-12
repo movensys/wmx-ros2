@@ -2,29 +2,36 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>wmx_ros2_package</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <version>0.1.0</version>
+  <description>ROS 2 interface package for WMX3 motion control SDK</description>
   <maintainer email="mfikih@movensys.com">mfikih15</maintainer>
   <maintainer email="mali@movensys.com">mohsinarf</maintainer>
-  <license>TODO: License declaration</license>
+  <maintainer email="daniel@movensys.com">Daniel Hong</maintainer>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <build_depend>rclcpp</build_depend>
-
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
   <depend>std_srvs</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>control_msgs</depend>
+  <depend>trajectory_msgs</depend>
   <depend>wmx_ros2_message</depend>
-  <depend>diagnostic_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
-  <exec_depend>rclcpp</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
-  <exec_depend>rviz</exec_depend>
+  <exec_depend>rviz2</exec_depend>
   <exec_depend>xacro</exec_depend>
-  
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
