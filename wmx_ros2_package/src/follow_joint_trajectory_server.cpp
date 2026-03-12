@@ -44,7 +44,7 @@ private:
   AdvancedMotion wmx3LibAm_;
   AdvMotion::PointTimeSplineCommand spl;
   AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
-  unsigned int time_spl[MAX_TRAJ_POINTS];
+  double time_spl[MAX_TRAJ_POINTS];
   AxisSelection axisSel;
   Io Wmx3Lib_Io_;
 
