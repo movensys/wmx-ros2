@@ -1,10 +1,15 @@
 #include "wmx_core_motion_node.hpp"
 
 WmxCoreMotionNode::WmxCoreMotionNode() : Node("wmx_core_motion_node") {
-    
+
+    init_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+    rclcpp::SubscriptionOptions sub_opts;
+    sub_opts.callback_group = init_cb_group_;
+
     engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
         "/wmx/engine/ready", 1,
-        std::bind(&WmxCoreMotionNode::onEngineReady, this, _1));
+        std::bind(&WmxCoreMotionNode::onEngineReady, this, _1), sub_opts);
 
     setAxisOnService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
         "/wmx/axis/set_on",
@@ -218,7 +223,7 @@ void WmxCoreMotionNode::setAxisOn(
         int axis_index = request->index[i];
         int on_off = request->data[i];
 
-        err_ = wmx3LibCm_->axisControl->SetServoOn(axis_index, on_off);
+        err_ = wmx3LibCm_->axisControl->SetServoOn(axis_index, on_off, 1000);
         if (err_ != ErrorCode::None) {
             wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
             snprintf(buffer_, sizeof(buffer_),
@@ -521,7 +526,9 @@ void WmxCoreMotionNode::getWmxParams(
 int main(int argc, char ** argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<WmxCoreMotionNode>();
-    rclcpp::spin(node);
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
     rclcpp::shutdown();
     return 0;
 }

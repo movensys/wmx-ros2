@@ -4,6 +4,7 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -41,6 +42,7 @@ public:
 
 private:
     bool initialized_ = false;
+    std::atomic<bool> initializing_{false};
 
     WMX3Api wmx3Lib_;
     CoreMotionStatus cmStatus_;
@@ -57,16 +59,19 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr gazeboJointPub_;
 
+    std::thread init_thread_;
+
     void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+    void runInitSequence();
+    bool callSetAxisService(
+        rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+        const std::string & service_name,
+        const std::vector<int32_t> & index,
+        const std::vector<int32_t> & data);
     void publishJointState();
     void setRosParameter();
     void setWmxParam(char* path);
     void getWmxParam();
-    bool callSetAxisService(
-        rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr& client,
-        const std::vector<int32_t>& indices,
-        const std::vector<int32_t>& data,
-        const std::string& description);
 };
 
 ManipulatorState::ManipulatorState() : Node("manipulator_state") {
@@ -74,26 +79,25 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state") {
 
     setRosParameter();
 
-    auto init_group   = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    auto client_group = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-
-    rclcpp::SubscriptionOptions sub_opts;
-    sub_opts.callback_group = init_group;
     engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
         "/wmx/engine/ready", 1,
-        std::bind(&ManipulatorState::onEngineReady, this, _1), sub_opts);
+        std::bind(&ManipulatorState::onEngineReady, this, _1));
 
     clearAlarmClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/clear_alarm", rmw_qos_profile_services_default, client_group);
+        "/wmx/axis/clear_alarm");
 
     setAxisOnClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/set_on", rmw_qos_profile_services_default, client_group);
+        "/wmx/axis/set_on");
 
     RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for engine...");
 }
 
 ManipulatorState::~ManipulatorState() {
     RCLCPP_INFO(this->get_logger(), "Stop manipulator_state");
+
+    if (init_thread_.joinable()) {
+        init_thread_.join();
+    }
 
     if (initialized_) {
         if (encoderJointTimer_) {
@@ -123,12 +127,22 @@ ManipulatorState::~ManipulatorState() {
 }
 
 void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
-    if (!msg->data || initialized_) {
+    if (!msg->data || initialized_ || initializing_.exchange(true)) {
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Engine ready — initializing ManipulatorState...");
+    RCLCPP_INFO(this->get_logger(), "Engine ready — starting init on dedicated thread...");
 
+    // Join any previous thread (e.g. from a failed retry)
+    if (init_thread_.joinable()) {
+        init_thread_.join();
+    }
+
+    // Spawn dedicated thread so blocking wait_for() doesn't block executor
+    init_thread_ = std::thread(&ManipulatorState::runInitSequence, this);
+}
+
+void ManipulatorState::runInitSequence() {
     unsigned int timeout = 10000;
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
     wmx3Lib_.SetDeviceName("ManipulatorState");
@@ -140,6 +154,7 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
         } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_, errString_);
         }
+        initializing_ = false;
         return;
     }
 
@@ -151,19 +166,27 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
     setWmxParam((char*)wmxParamFilePath_.c_str());
     getWmxParam();
 
+    // Build axis index/data vectors
     std::vector<int32_t> allAxes;
+    std::vector<int32_t> zeroData(jointNumber_, 0);
+    std::vector<int32_t> onData(jointNumber_, 1);
     for (int i = 0; i < jointNumber_; i++) {
         allAxes.push_back(i);
     }
 
-    std::vector<int32_t> zeroData(jointNumber_, 0);
-    callSetAxisService(clearAlarmClient_, allAxes, zeroData, "/wmx/axis/clear_alarm");
+    // Clear alarms on all axes
+    if (!callSetAxisService(clearAlarmClient_, "/wmx/axis/clear_alarm", allAxes, zeroData)) {
+        RCLCPP_ERROR(this->get_logger(), "Init failed at clear_alarm — node will not retry");
+        return;
+    }
 
-    std::vector<int32_t> onData(jointNumber_, 1);
-    callSetAxisService(setAxisOnClient_, allAxes, onData, "/wmx/axis/set_on");
+    // Set servo on for all axes
+    if (!callSetAxisService(setAxisOnClient_, "/wmx/axis/set_on", allAxes, onData)) {
+        RCLCPP_ERROR(this->get_logger(), "Init failed at set_on — node will not retry");
+        return;
+    }
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-
+    // Create publishers and timer on the node (thread-safe in rclcpp)
     encoderJointPub_   = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
     isaacsimJointPub_  = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);
     gazeboJointPub_    = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);
@@ -174,42 +197,59 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
 
     initialized_ = true;
     engineReadySub_.reset();
-
-    std::this_thread::sleep_for(std::chrono::seconds(3));
     RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");
 }
 
 bool ManipulatorState::callSetAxisService(
-    rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr& client,
-    const std::vector<int32_t>& indices,
-    const std::vector<int32_t>& data,
-    const std::string& description)
+    rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+    const std::string & service_name,
+    const std::vector<int32_t> & index,
+    const std::vector<int32_t> & data)
 {
-    if (!client->wait_for_service(std::chrono::seconds(5))) {
-        RCLCPP_ERROR(this->get_logger(), "Service %s not available", description.c_str());
+    const int max_retries = 5;
+    const auto service_timeout = std::chrono::seconds(10);
+    const auto call_timeout = std::chrono::seconds(15);
+
+    if (!client->wait_for_service(service_timeout)) {
+        RCLCPP_ERROR(this->get_logger(), "Service %s not available", service_name.c_str());
         return false;
     }
 
-    auto request = std::make_shared<wmx_ros2_message::srv::SetAxis::Request>();
-    request->index = indices;
-    request->data  = data;
+    for (int attempt = 1; attempt <= max_retries; attempt++) {
+        auto request = std::make_shared<wmx_ros2_message::srv::SetAxis::Request>();
+        request->index = index;
+        request->data = data;
 
-    auto future = client->async_send_request(request);
-    if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-        RCLCPP_ERROR(this->get_logger(), "Service call %s timed out", description.c_str());
-        return false;
+        RCLCPP_INFO(this->get_logger(), "Calling %s (attempt %d/%d)", service_name.c_str(), attempt, max_retries);
+
+        auto future = client->async_send_request(request);
+        if (future.wait_for(call_timeout) != std::future_status::ready) {
+            RCLCPP_WARN(this->get_logger(), "Service call %s timed out (attempt %d/%d)",
+                service_name.c_str(), attempt, max_retries);
+            continue;
+        }
+
+        auto response = future.get();
+        if (!response->success) {
+            // Server may not be initialized yet -- retry instead of aborting
+            if (response->message.find("not initialized") != std::string::npos) {
+                RCLCPP_WARN(this->get_logger(),
+                    "%s: server not ready yet (attempt %d/%d), retrying...",
+                    service_name.c_str(), attempt, max_retries);
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+                continue;
+            }
+            RCLCPP_ERROR(this->get_logger(), "%s failed: %s",
+                service_name.c_str(), response->message.c_str());
+            return false;
+        }
+
+        RCLCPP_INFO(this->get_logger(), "%s succeeded: %s", service_name.c_str(), response->message.c_str());
+        return true;
     }
 
-    auto response = future.get();
-    if (!response->success) {
-        RCLCPP_ERROR(this->get_logger(), "Service %s failed: %s",
-                     description.c_str(), response->message.c_str());
-        return false;
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Service %s succeeded: %s",
-                description.c_str(), response->message.c_str());
-    return true;
+    RCLCPP_ERROR(this->get_logger(), "Service call %s failed after %d attempts", service_name.c_str(), max_retries);
+    return false;
 }
 
 void ManipulatorState::setRosParameter() {
@@ -317,9 +357,7 @@ void ManipulatorState::getWmxParam() {
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulatorState>();
-    rclcpp::executors::MultiThreadedExecutor executor;
-    executor.add_node(node);
-    executor.spin();
+    rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }
