@@ -48,6 +48,10 @@ private:
   AxisSelection axisSel;
   Io Wmx3Lib_Io_;
 
+  rclcpp::CallbackGroup::SharedPtr sdk_group_;
+  rclcpp::TimerBase::SharedPtr retryTimer_;
+  int deviceRetryCount_ = 0;
+  static constexpr int kMaxDeviceRetries = 30;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
@@ -77,8 +81,9 @@ FollowJointTrajectoryServer::FollowJointTrajectoryServer()
 
   setRosParameter();
 
+  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "/wmx/engine/ready", 1,
+    "wmx/engine/ready", ready_qos,
     std::bind(&FollowJointTrajectoryServer::onEngineReady, this, std::placeholders::_1));
 
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server waiting for engine...");
@@ -111,12 +116,26 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
 
   unsigned int timeout = 10000;
   err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
-  wmx3Lib_.SetDeviceName("follow_joint_trajectory_server");
 
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+      if (++deviceRetryCount_ > kMaxDeviceRetries) {
+        RCLCPP_FATAL(this->get_logger(),
+                     "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
+        return;
+      }
+      RCLCPP_WARN(this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
+                  deviceRetryCount_, kMaxDeviceRetries);
+      retryTimer_ = this->create_wall_timer(
+          std::chrono::seconds(1),
+          [this]() {
+              retryTimer_->cancel();
+              retryTimer_.reset();
+              auto msg = std::make_shared<std_msgs::msg::Bool>();
+              msg->data = true;
+              onEngineReady(msg);
+          });
     } else {
       RCLCPP_ERROR(this->get_logger(),
                    "Failed to attach to device. Error=%d (%s)", err_, errString_);
@@ -124,6 +143,7 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
     return;
   }
 
+  wmx3Lib_.SetDeviceName("follow_joint_trajectory_server");
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
   wmx3LibCm_ = CoreMotion(&wmx3Lib_);
@@ -131,15 +151,24 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
   Wmx3Lib_Io_ = Io(&wmx3Lib_);
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
+  // MutuallyExclusive callback group serializes SDK access between
+  // trajectory execution and gripper service callbacks.
+  sdk_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+  rcl_action_server_options_t action_options = rcl_action_server_get_default_options();
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(this,
                     jointTrajectoryAction_,
                     std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
                     std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
-                    std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1));
+                    std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1),
+                    action_options,
+                    sdk_group_);
 
   setGripperService_ = this->create_service<std_srvs::srv::SetBool>(wmxGripperTopic_,
                     std::bind(&FollowJointTrajectoryServer::setGripper, this,
-                    std::placeholders::_1, std::placeholders::_2));
+                    std::placeholders::_1, std::placeholders::_2),
+                    rclcpp::ServicesQoS().get_rmw_qos_profile(),
+                    sdk_group_);
 
   initialized_ = true;
   engineReadySub_.reset();

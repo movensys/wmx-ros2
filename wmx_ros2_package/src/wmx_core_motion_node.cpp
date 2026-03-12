@@ -7,40 +7,41 @@ WmxCoreMotionNode::WmxCoreMotionNode() : Node("wmx_core_motion_node") {
     rclcpp::SubscriptionOptions sub_opts;
     sub_opts.callback_group = init_cb_group_;
 
+    auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
     engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "/wmx/engine/ready", 1,
+        "wmx/engine/ready", ready_qos,
         std::bind(&WmxCoreMotionNode::onEngineReady, this, _1), sub_opts);
 
     setAxisOnService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/set_on",
+        "wmx/axis/set_on",
         std::bind(&WmxCoreMotionNode::setAxisOn, this, _1, _2));
 
     clearAlarmService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/clear_alarm",
+        "wmx/axis/clear_alarm",
         std::bind(&WmxCoreMotionNode::clearAlarm, this, _1, _2));
 
     setAxisModeService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/set_mode",
+        "wmx/axis/set_mode",
         std::bind(&WmxCoreMotionNode::setAxisMode, this, _1, _2));
 
     setAxisPolarityService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/set_polarity",
+        "wmx/axis/set_polarity",
         std::bind(&WmxCoreMotionNode::setAxisPolarity, this, _1, _2));
 
     setAxisGearRatioService_ = this->create_service<wmx_ros2_message::srv::SetAxisGearRatio>(
-        "/wmx/axis/set_gear_ratio",
+        "wmx/axis/set_gear_ratio",
         std::bind(&WmxCoreMotionNode::setAxisGearRatio, this, _1, _2));
 
     setHomingService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/homing",
+        "wmx/axis/homing",
         std::bind(&WmxCoreMotionNode::setHoming, this, _1, _2));
 
     loadParamsService_ = this->create_service<wmx_ros2_message::srv::LoadWmxParams>(
-        "/wmx/params/load",
+        "wmx/params/load",
         std::bind(&WmxCoreMotionNode::loadWmxParams, this, _1, _2));
 
     getParamsService_ = this->create_service<wmx_ros2_message::srv::GetWmxParams>(
-        "/wmx/params/get",
+        "wmx/params/get",
         std::bind(&WmxCoreMotionNode::getWmxParams, this, _1, _2));
 
     RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node waiting for engine...");
@@ -71,12 +72,26 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) 
 
     unsigned int timeout = 10000;
     err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
-    wmx3Lib_.SetDeviceName("wmx_core_motion_node");
 
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         if (err_ == ErrorCode::StartProcessLockError) {
-            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+            if (++deviceRetryCount_ > kMaxDeviceRetries) {
+                RCLCPP_FATAL(this->get_logger(),
+                             "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
+                return;
+            }
+            RCLCPP_WARN(this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
+                        deviceRetryCount_, kMaxDeviceRetries);
+            retryTimer_ = this->create_wall_timer(
+                std::chrono::seconds(1),
+                [this]() {
+                    retryTimer_->cancel();
+                    retryTimer_.reset();
+                    auto msg = std::make_shared<std_msgs::msg::Bool>();
+                    msg->data = true;
+                    onEngineReady(msg);
+                });
         } else {
             RCLCPP_ERROR(this->get_logger(),
                          "Failed to attach to device. Error=%d (%s)", err_, errString_);
@@ -84,23 +99,24 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) 
         return;
     }
 
+    wmx3Lib_.SetDeviceName("wmx_core_motion_node");
     RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
     wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
 
     axisStatePub_ = this->create_publisher<wmx_ros2_message::msg::AxisState>(
-        "/wmx/axis/state", 1);
+        "wmx/axis/state", 1);
 
     axisVelSub_ = this->create_subscription<wmx_ros2_message::msg::AxisVelocity>(
-        "/wmx/axis/velocity", 1,
+        "wmx/axis/velocity", 1,
         std::bind(&WmxCoreMotionNode::axisVelCallback, this, _1));
 
     axisPoseSub_ = this->create_subscription<wmx_ros2_message::msg::AxisPose>(
-        "/wmx/axis/position", 1,
+        "wmx/axis/position", 1,
         std::bind(&WmxCoreMotionNode::axisPoseCallback, this, _1));
 
     axisPoseRelativeSub_ = this->create_subscription<wmx_ros2_message::msg::AxisPose>(
-        "/wmx/axis/position/relative", 1,
+        "wmx/axis/position/relative", 1,
         std::bind(&WmxCoreMotionNode::axisPoseRelativeCallback, this, _1));
 
     axisStateTimer_ = this->create_wall_timer(

@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -17,22 +18,17 @@
 #include "WMX3Api.h"
 #include "EcApi.h"
 
-using std::placeholders::_1;
-using std::placeholders::_2;
-using namespace wmx3Api;
-
 class WmxEngineNode : public rclcpp::Node {
 public:
     WmxEngineNode();
     ~WmxEngineNode();
 
 private:
-    WMX3Api wmx3Lib_;
+    wmx3Api::WMX3Api wmx3Lib_;
     wmx3Api::ecApi::Ecat wmx3Lib_Ecat_;
-    bool commStarted_ = false;
-    int err_;
-    char errString_[256];
-    char buffer_[512];
+    std::atomic<bool> commStarted_{false};
+    std::atomic<bool> startComplete_{false};
+    std::thread startThread_;
 
     rclcpp::TimerBase::SharedPtr readyTimer_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr engineReadyPub_;
