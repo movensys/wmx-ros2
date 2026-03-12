@@ -1,5 +1,12 @@
 ## Testing WMX ROS2 Package
 
+> **WARNING: Do NOT run tests on a machine connected to real EtherCAT hardware.**
+> Integration tests start and stop the WMX3 engine, send service calls, and may trigger axis commands. Running them while connected to real hardware (e.g. the CR3A manipulator) could cause unexpected motor movement, servo faults, or equipment damage.
+>
+> Tests are designed to run with the WMX3 SDK in **standalone mode** (no EtherCAT slaves connected). The SDK creates the device successfully but cannot communicate with real drives, so service calls return safely with error responses. No special simulation configuration is needed — just ensure no EtherCAT hardware is connected.
+>
+> For full WMX3 simulation with virtual axes (using `SimuApi` and the simulation platform at `/opt/lmx/platform/simu/`), refer to the WMX3 SDK documentation.
+
 ### Prerequisites
 
 - WMX3 SDK installed at `/opt/lmx/`
