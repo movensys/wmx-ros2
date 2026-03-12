@@ -89,6 +89,25 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   set(ament_cmake_copyright_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_pytest REQUIRED)
+  find_package(launch_testing_ament_cmake REQUIRED)
+
+  ament_add_pytest_test(test_message_interfaces test/test_message_interfaces.py
+    TIMEOUT 30
+  )
+  add_launch_test(test/test_engine_lifecycle.py
+    TIMEOUT 60
+  )
+  add_launch_test(test/test_core_motion_node.py
+    TIMEOUT 90
+  )
+  add_launch_test(test/test_io_node.py
+    TIMEOUT 60
+  )
+  add_launch_test(test/test_ethercat_node.py
+    TIMEOUT 60
+  )
 endif()
 
 ament_package()
