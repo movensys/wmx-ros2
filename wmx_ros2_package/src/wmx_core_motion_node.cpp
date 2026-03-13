@@ -12,6 +12,9 @@ WmxCoreMotionNode::WmxCoreMotionNode() : Node("wmx_core_motion_node") {
         "wmx/engine/ready", ready_qos,
         std::bind(&WmxCoreMotionNode::onEngineReady, this, _1), sub_opts);
 
+    coreMotionReadyPub_ = this->create_publisher<std_msgs::msg::Bool>(
+        "wmx/core_motion/ready", ready_qos);
+
     setAxisOnService_ = this->create_service<wmx_ros2_message::srv::SetAxis>(
         "wmx/axis/set_on",
         std::bind(&WmxCoreMotionNode::setAxisOn, this, _1, _2));
@@ -109,6 +112,10 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) 
         std::bind(&WmxCoreMotionNode::axisStateStep, this));
 
     initialized_ = true;
+
+    auto ready_msg = std_msgs::msg::Bool();
+    ready_msg.data = true;
+    coreMotionReadyPub_->publish(ready_msg);
 
     engineReadySub_.reset();
 

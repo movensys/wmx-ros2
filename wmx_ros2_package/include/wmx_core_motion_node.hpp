@@ -55,6 +55,7 @@ private:
 
     rclcpp::CallbackGroup::SharedPtr init_cb_group_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr coreMotionReadyPub_;
     rclcpp::Publisher<wmx_ros2_message::msg::AxisState>::SharedPtr axisStatePub_;
     rclcpp::Subscription<wmx_ros2_message::msg::AxisVelocity>::SharedPtr axisVelSub_;
     rclcpp::Subscription<wmx_ros2_message::msg::AxisPose>::SharedPtr axisPoseSub_;

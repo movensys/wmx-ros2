@@ -50,7 +50,7 @@ private:
     std::unique_ptr<Io> wmx3Lib_Io_;
     Config::AxisParam axisParam_;
 
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr coreMotionReadySub_;
     rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmClient_;
     rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisOnClient_;
 
@@ -61,7 +61,7 @@ private:
 
     std::thread init_thread_;
 
-    void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+    void onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg);
     void runInitSequence();
     bool callSetAxisService(
         rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
@@ -80,9 +80,9 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state") {
     setRosParameter();
 
     auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-    engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "wmx/engine/ready", ready_qos,
-        std::bind(&ManipulatorState::onEngineReady, this, _1));
+    coreMotionReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
+        "wmx/core_motion/ready", ready_qos,
+        std::bind(&ManipulatorState::onCoreMotionReady, this, _1));
 
     clearAlarmClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
         "wmx/axis/clear_alarm");
@@ -90,7 +90,7 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state") {
     setAxisOnClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
         "wmx/axis/set_on");
 
-    RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for engine...");
+    RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for core_motion...");
 }
 
 ManipulatorState::~ManipulatorState() {
@@ -127,12 +127,12 @@ ManipulatorState::~ManipulatorState() {
     RCLCPP_INFO(this->get_logger(), "manipulator_state is stopped");
 }
 
-void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
+void ManipulatorState::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg) {
     if (!msg->data || initialized_ || initializing_.exchange(true)) {
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Engine ready — starting init on dedicated thread...");
+    RCLCPP_INFO(this->get_logger(), "CoreMotion ready — starting init on dedicated thread...");
 
     // Join any previous thread (e.g. from a failed retry)
     if (init_thread_.joinable()) {
@@ -212,7 +212,7 @@ void ManipulatorState::runInitSequence() {
         std::bind(&ManipulatorState::publishJointState, this));
 
     initialized_ = true;
-    engineReadySub_.reset();
+    coreMotionReadySub_.reset();
     RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");
 }
 
