@@ -4,8 +4,8 @@
   <name>wmx_ros2_package</name>
   <version>0.1.0</version>
   <description>ROS 2 interface package for WMX3 motion control SDK</description>
-  <maintainer email="mfikih@movensys.com">mfikih15</maintainer>
-  <maintainer email="mali@movensys.com">mohsinarf</maintainer>
+  <maintainer email="mfikih@movensys.com">Fikih Muhamad</maintainer>
+  <maintainer email="mali@movensys.com">Moshin Ali</maintainer>
   <maintainer email="daniel@movensys.com">Daniel Hong</maintainer>
   <license>MIT</license>
 
