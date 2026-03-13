@@ -1,6 +1,7 @@
 #ifndef WMX_CORE_MOTION_NODE_HPP
 #define WMX_CORE_MOTION_NODE_HPP
 
+#include <atomic>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -34,7 +35,7 @@ public:
     ~WmxCoreMotionNode();
 
 private:
-    bool initialized_ = false;
+    std::atomic<bool> initialized_{false};
     int axisCount_ = 2;
     int err_;
     char errString_[256];
@@ -52,6 +53,7 @@ private:
     rclcpp::TimerBase::SharedPtr axisStateTimer_;
     wmx_ros2_message::msg::AxisState axisStateMsg_;
 
+    rclcpp::CallbackGroup::SharedPtr init_cb_group_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
     rclcpp::Publisher<wmx_ros2_message::msg::AxisState>::SharedPtr axisStatePub_;
     rclcpp::Subscription<wmx_ros2_message::msg::AxisVelocity>::SharedPtr axisVelSub_;
