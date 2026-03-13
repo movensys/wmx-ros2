@@ -18,30 +18,14 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 
-include_directories(
-  ${rclcpp_INCLUDE_DIRS}
-  ${rclcpp_action_INCLUDE_DIRS}
-  ${std_msgs_INCLUDE_DIRS}
-  ${control_msgs_INCLUDE_DIRS}
-  ${trajectory_msgs_INCLUDE_DIRS}
-  ${geometry_msgs_INCLUDE_DIRS}
-  ${nav_msgs_INCLUDE_DIRS}
-  ${sensor_msgs_INCLUDE_DIRS}
-  ${std_srvs_INCLUDE_DIRS}
-)
-
-include_directories(include /opt/lmx/include /opt/lmx/sample/Header)
-link_directories(/opt/lmx/lib)
+set(WMX3_SDK_PATH "/opt/lmx" CACHE PATH "Path to WMX3 SDK installation")
 
 install(DIRECTORY
-  src
   config
   launch
   DESTINATION share/${PROJECT_NAME}/
@@ -49,39 +33,46 @@ install(DIRECTORY
 
 add_executable(manipulator_state src/manipulator_state.cpp)
 ament_target_dependencies(manipulator_state rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
+target_include_directories(manipulator_state PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(manipulator_state coremotionapi ioapi wmx3api imdll)
+target_link_directories(manipulator_state PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(manipulator_state PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(follow_joint_trajectory_server src/follow_joint_trajectory_server.cpp)
-target_link_libraries(follow_joint_trajectory_server
-  PRIVATE
-    ${rclcpp_LIBRARIES}
-    ${rclcpp_action_LIBRARIES}
-    ${control_msgs_LIBRARIES}
-    ${trajectory_msgs_LIBRARIES}
-    ${std_msgs_LIBRARIES}
-    ${std_srvs_LIBRARIES}
-    coremotionapi
-    advancedmotionapi
-    ioapi
-    wmx3api
-    imdll
-)
+ament_target_dependencies(follow_joint_trajectory_server
+  rclcpp rclcpp_action std_msgs std_srvs control_msgs trajectory_msgs wmx_ros2_message)
+target_include_directories(follow_joint_trajectory_server PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(follow_joint_trajectory_server coremotionapi advancedmotionapi ioapi wmx3api imdll)
+target_link_directories(follow_joint_trajectory_server PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(follow_joint_trajectory_server PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
 ament_target_dependencies(wmx_engine_node rclcpp std_msgs std_srvs wmx_ros2_message)
+target_include_directories(wmx_engine_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(wmx_engine_node ecapi wmx3api imdll)
+target_link_directories(wmx_engine_node PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(wmx_engine_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
 ament_target_dependencies(wmx_core_motion_node rclcpp std_msgs std_srvs wmx_ros2_message)
+target_include_directories(wmx_core_motion_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(wmx_core_motion_node coremotionapi wmx3api imdll)
+target_link_directories(wmx_core_motion_node PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(wmx_core_motion_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(wmx_io_node src/wmx_io_node.cpp)
 ament_target_dependencies(wmx_io_node rclcpp std_msgs wmx_ros2_message)
+target_include_directories(wmx_io_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(wmx_io_node ioapi wmx3api imdll)
+target_link_directories(wmx_io_node PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(wmx_io_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(wmx_ethercat_node src/wmx_ethercat_node.cpp)
 ament_target_dependencies(wmx_ethercat_node rclcpp std_msgs wmx_ros2_message)
+target_include_directories(wmx_ethercat_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(wmx_ethercat_node ecapi wmx3api imdll)
+target_link_directories(wmx_ethercat_node PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(wmx_ethercat_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 install(TARGETS
   manipulator_state

@@ -15,6 +15,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetEngine.srv"
@@ -36,6 +37,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AxisVelocity.msg"
   "msg/AxisState.msg"
   "msg/AxisPose.msg"
+  DEPENDENCIES std_msgs
 )
 
 install(DIRECTORY
