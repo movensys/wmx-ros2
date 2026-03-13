@@ -54,9 +54,6 @@ private:
     wmx_ros2_message::msg::AxisState axisStateMsg_;
 
     rclcpp::CallbackGroup::SharedPtr init_cb_group_;
-    rclcpp::TimerBase::SharedPtr retryTimer_;
-    int deviceRetryCount_ = 0;
-    static constexpr int kMaxDeviceRetries = 30;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
     rclcpp::Publisher<wmx_ros2_message::msg::AxisState>::SharedPtr axisStatePub_;
     rclcpp::Subscription<wmx_ros2_message::msg::AxisVelocity>::SharedPtr axisVelSub_;

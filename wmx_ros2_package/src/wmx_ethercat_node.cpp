@@ -52,22 +52,7 @@ void WmxEtherCatNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         if (err_ == ErrorCode::StartProcessLockError) {
-            if (++deviceRetryCount_ > kMaxDeviceRetries) {
-                RCLCPP_FATAL(this->get_logger(),
-                             "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
-                return;
-            }
-            RCLCPP_WARN(this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-                        deviceRetryCount_, kMaxDeviceRetries);
-            retryTimer_ = this->create_wall_timer(
-                std::chrono::seconds(1),
-                [this]() {
-                    retryTimer_->cancel();
-                    retryTimer_.reset();
-                    auto msg = std::make_shared<std_msgs::msg::Bool>();
-                    msg->data = true;
-                    onEngineReady(msg);
-                });
+            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
         } else {
             RCLCPP_ERROR(this->get_logger(),
                          "Failed to attach to device. Error=%d (%s)", err_, errString_);

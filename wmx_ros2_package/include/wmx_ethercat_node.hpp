@@ -37,9 +37,6 @@ private:
     WMX3Api wmx3Lib_;
     wmx3Api::ecApi::Ecat wmxEcat_;
 
-    rclcpp::TimerBase::SharedPtr retryTimer_;
-    int deviceRetryCount_ = 0;
-    static constexpr int kMaxDeviceRetries = 30;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
     rclcpp::Service<wmx_ros2_message::srv::EcatGetNetworkState>::SharedPtr getNetworkStateService_;

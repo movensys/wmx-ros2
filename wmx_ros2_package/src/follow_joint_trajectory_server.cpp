@@ -49,9 +49,6 @@ private:
   Io Wmx3Lib_Io_;
 
   rclcpp::CallbackGroup::SharedPtr sdk_group_;
-  rclcpp::TimerBase::SharedPtr retryTimer_;
-  int deviceRetryCount_ = 0;
-  static constexpr int kMaxDeviceRetries = 30;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
@@ -120,22 +117,7 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     if (err_ == ErrorCode::StartProcessLockError) {
-      if (++deviceRetryCount_ > kMaxDeviceRetries) {
-        RCLCPP_FATAL(this->get_logger(),
-                     "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
-        return;
-      }
-      RCLCPP_WARN(this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-                  deviceRetryCount_, kMaxDeviceRetries);
-      retryTimer_ = this->create_wall_timer(
-          std::chrono::seconds(1),
-          [this]() {
-              retryTimer_->cancel();
-              retryTimer_.reset();
-              auto msg = std::make_shared<std_msgs::msg::Bool>();
-              msg->data = true;
-              onEngineReady(msg);
-          });
+      RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
     } else {
       RCLCPP_ERROR(this->get_logger(),
                    "Failed to attach to device. Error=%d (%s)", err_, errString_);
