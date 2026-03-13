@@ -57,9 +57,20 @@ To connect with `movensys_isaac_manipulator`, change action name in `follow_join
 
 ## Documentation
 
+To quickly set up the WMX ROS2 package and explore its key features, follow these steps:
 | Doc | Description |
 |-----|-------------|
 | [doc/1_setup.md](doc/1_setup.md) | Environment setup, dependencies, build |
 | [doc/2_run_wmx_ros2_package.md](doc/2_run_wmx_ros2_package.md) | Run the general package |
 | [doc/3_launch_cr3a_manipulator.md](doc/3_launch_cr3a_manipulator.md) | Launch the CR3A manipulator |
 | [doc/4_service_reference.md](doc/4_service_reference.md) | ROS2 service reference with startup sequence |
+
+For the complete and up-to-date documentation, please visit the official site:
+[https://movensys.github.io/wmx-ros2-doc/]([url](https://movensys.github.io/wmx-ros2-doc/))
+
+## Demo Videos
+
+### Digital Twin Pick & Place with NVIDIA Isaac Sim, MoveIt2, and WMX Next
+[![“WMX Next” with NVIDIA Isaac](https://img.youtube.com/vi/XL_lD-he2DM/0.jpg)](https://www.youtube.com/watch?v=XL_lD-he2DM)
+
+
