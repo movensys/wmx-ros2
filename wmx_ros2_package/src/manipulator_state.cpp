@@ -148,7 +148,7 @@ void ManipulatorState::runInitSequence() {
     static constexpr int kMaxDeviceRetries = 30;
 
     for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
-        err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
+        err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
         if (err_ == ErrorCode::None) {
             break;
         }

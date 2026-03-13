@@ -47,7 +47,7 @@ void WmxEtherCatNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Engine ready — initializing EtherCAT node...");
 
     unsigned int timeout = 10000;
-    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
+    err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
 
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));

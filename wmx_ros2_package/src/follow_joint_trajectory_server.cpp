@@ -112,7 +112,7 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
   RCLCPP_INFO(this->get_logger(), "Engine ready — initializing AdvancedMotion...");
 
   unsigned int timeout = 10000;
-  err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
+  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
 
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
