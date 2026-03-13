@@ -66,11 +66,10 @@ To quickly set up the WMX ROS2 package and explore its key features, follow thes
 | [doc/4_service_reference.md](doc/4_service_reference.md) | ROS2 service reference with startup sequence |
 
 For the complete and up-to-date documentation, please visit the official site:
-[https://movensys.github.io/wmx-ros2-doc/]([url](https://movensys.github.io/wmx-ros2-doc/))
+**[WMX ROS2 Documentation](https://movensys.github.io/wmx-ros2-doc/)**
 
 ## Demo Videos
 
 ### Digital Twin Pick & Place with NVIDIA Isaac Sim, MoveIt2, and WMX Next
-[![“WMX Next” with NVIDIA Isaac](https://img.youtube.com/vi/XL_lD-he2DM/0.jpg)](https://www.youtube.com/watch?v=XL_lD-he2DM)
-
+[![“WMX Next” with NVIDIA Isaac](https://img.youtube.com/vi/XL_lD-he2DM/maxresdefault.jpg)](https://www.youtube.com/watch?v=XL_lD-he2DM/)
 
