@@ -2,10 +2,10 @@ std_msgs/Header header
 bool[] amp_alarm
 bool[] servo_on
 bool[] home_done
-bool[] motion_complete
+bool[] home_switch
 bool[] negative_ls
 bool[] positive_ls
-bool[] home_switch
+bool[] motion_complete
 
 float64[] pos_cmd
 float64[] velocity_cmd

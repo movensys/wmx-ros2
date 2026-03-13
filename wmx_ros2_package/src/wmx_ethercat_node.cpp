@@ -2,24 +2,25 @@
 
 WmxEtherCatNode::WmxEtherCatNode() : Node("wmx_ethercat_node"), wmxEcat_(&wmx3Lib_) {
 
+    auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
     engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "/wmx/engine/ready", 1,
+        "wmx/engine/ready", ready_qos,
         std::bind(&WmxEtherCatNode::onEngineReady, this, _1));
 
     getNetworkStateService_ = this->create_service<wmx_ros2_message::srv::EcatGetNetworkState>(
-        "/wmx/ecat/get_network_state",
+        "wmx/ecat/get_network_state",
         std::bind(&WmxEtherCatNode::getNetworkState, this, _1, _2));
 
     registerReadService_ = this->create_service<wmx_ros2_message::srv::EcatRegisterRead>(
-        "/wmx/ecat/register_read",
+        "wmx/ecat/register_read",
         std::bind(&WmxEtherCatNode::registerRead, this, _1, _2));
 
     resetStatisticsService_ = this->create_service<wmx_ros2_message::srv::EcatResetStatistics>(
-        "/wmx/ecat/reset_statistics",
+        "wmx/ecat/reset_statistics",
         std::bind(&WmxEtherCatNode::resetStatistics, this, _1, _2));
 
     startHotconnectService_ = this->create_service<wmx_ros2_message::srv::EcatStartHotconnect>(
-        "/wmx/ecat/start_hotconnect",
+        "wmx/ecat/start_hotconnect",
         std::bind(&WmxEtherCatNode::startHotconnect, this, _1, _2));
 
     RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node waiting for engine...");
@@ -46,13 +47,12 @@ void WmxEtherCatNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Engine ready — initializing EtherCAT node...");
 
     unsigned int timeout = 10000;
-    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
-    wmx3Lib_.SetDeviceName("wmx_ethercat_node");
+    err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
 
     if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         if (err_ == ErrorCode::StartProcessLockError) {
-            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, will retry on next signal).");
         } else {
             RCLCPP_ERROR(this->get_logger(),
                          "Failed to attach to device. Error=%d (%s)", err_, errString_);
@@ -60,6 +60,7 @@ void WmxEtherCatNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
         return;
     }
 
+    wmx3Lib_.SetDeviceName("wmx_ethercat_node");
     initialized_ = true;
 
     engineReadySub_.reset();

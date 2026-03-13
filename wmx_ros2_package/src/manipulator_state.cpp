@@ -50,7 +50,7 @@ private:
     std::unique_ptr<Io> wmx3Lib_Io_;
     Config::AxisParam axisParam_;
 
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr coreMotionReadySub_;
     rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmClient_;
     rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr setAxisOnClient_;
 
@@ -61,7 +61,7 @@ private:
 
     std::thread init_thread_;
 
-    void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+    void onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg);
     void runInitSequence();
     bool callSetAxisService(
         rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
@@ -79,17 +79,18 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state") {
 
     setRosParameter();
 
-    engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-        "/wmx/engine/ready", 1,
-        std::bind(&ManipulatorState::onEngineReady, this, _1));
+    auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
+    coreMotionReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
+        "wmx/core_motion/ready", ready_qos,
+        std::bind(&ManipulatorState::onCoreMotionReady, this, _1));
 
     clearAlarmClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/clear_alarm");
+        "wmx/axis/clear_alarm");
 
     setAxisOnClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
-        "/wmx/axis/set_on");
+        "wmx/axis/set_on");
 
-    RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for engine...");
+    RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for core_motion...");
 }
 
 ManipulatorState::~ManipulatorState() {
@@ -126,12 +127,12 @@ ManipulatorState::~ManipulatorState() {
     RCLCPP_INFO(this->get_logger(), "manipulator_state is stopped");
 }
 
-void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
+void ManipulatorState::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg) {
     if (!msg->data || initialized_ || initializing_.exchange(true)) {
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Engine ready — starting init on dedicated thread...");
+    RCLCPP_INFO(this->get_logger(), "CoreMotion ready — starting init on dedicated thread...");
 
     // Join any previous thread (e.g. from a failed retry)
     if (init_thread_.joinable()) {
@@ -144,19 +145,32 @@ void ManipulatorState::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg) {
 
 void ManipulatorState::runInitSequence() {
     unsigned int timeout = 10000;
-    err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
-    wmx3Lib_.SetDeviceName("ManipulatorState");
+    static constexpr int kMaxDeviceRetries = 30;
 
-    if (err_ != ErrorCode::None) {
+    for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
+        err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
+        if (err_ == ErrorCode::None) {
+            break;
+        }
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         if (err_ == ErrorCode::StartProcessLockError) {
-            RCLCPP_WARN(this->get_logger(), "Failed to attach to device (lock busy, retrying).");
+            RCLCPP_WARN(this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
+                        attempt, kMaxDeviceRetries);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_, errString_);
+            initializing_ = false;
+            return;
         }
+    }
+
+    if (err_ != ErrorCode::None) {
+        RCLCPP_FATAL(this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
         initializing_ = false;
         return;
     }
+
+    wmx3Lib_.SetDeviceName("ManipulatorState");
 
     RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
@@ -175,14 +189,16 @@ void ManipulatorState::runInitSequence() {
     }
 
     // Clear alarms on all axes
-    if (!callSetAxisService(clearAlarmClient_, "/wmx/axis/clear_alarm", allAxes, zeroData)) {
+    if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", allAxes, zeroData)) {
         RCLCPP_ERROR(this->get_logger(), "Init failed at clear_alarm — node will not retry");
+        initializing_ = false;
         return;
     }
 
     // Set servo on for all axes
-    if (!callSetAxisService(setAxisOnClient_, "/wmx/axis/set_on", allAxes, onData)) {
+    if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", allAxes, onData)) {
         RCLCPP_ERROR(this->get_logger(), "Init failed at set_on — node will not retry");
+        initializing_ = false;
         return;
     }
 
@@ -196,7 +212,7 @@ void ManipulatorState::runInitSequence() {
         std::bind(&ManipulatorState::publishJointState, this));
 
     initialized_ = true;
-    engineReadySub_.reset();
+    coreMotionReadySub_.reset();
     RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");
 }
 
