@@ -23,7 +23,7 @@ find_package(wmx_ros2_message REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 
-set(WMX3_SDK_PATH "/opt/lmx" CACHE PATH "Path to WMX3 SDK installation")
+set(WMX3_SDK_PATH "/opt/wmx3" CACHE PATH "Path to WMX3 SDK installation")
 
 install(DIRECTORY
   config
