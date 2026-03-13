@@ -49,9 +49,6 @@ void WmxEngineNode::publishReady() {
     auto msg = std_msgs::msg::Bool();
     msg.data = commStarted_.load();
     engineReadyPub_->publish(msg);
-    if (commStarted_.load() && readyTimer_) {
-        readyTimer_->cancel();
-    }
 }
 
 void WmxEngineNode::startEngine() {
