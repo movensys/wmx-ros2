@@ -23,44 +23,45 @@ using std::placeholders::_1;
 using std::placeholders::_2;
 using namespace wmx3Api;
 
-class WmxEtherCatNode : public rclcpp::Node {
+class WmxEtherCatNode : public rclcpp::Node
+{
 public:
-    WmxEtherCatNode();
-    ~WmxEtherCatNode();
+  WmxEtherCatNode();
+  ~WmxEtherCatNode();
 
 private:
-    bool initialized_ = false;
-    int err_;
-    char errString_[256];
-    char buffer_[512];
+  bool initialized_ = false;
+  int err_;
+  char errString_[256];
+  char buffer_[512];
 
-    WMX3Api wmx3Lib_;
-    wmx3Api::ecApi::Ecat wmxEcat_;
+  WMX3Api wmx3Lib_;
+  wmx3Api::ecApi::Ecat wmxEcat_;
 
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
-    rclcpp::Service<wmx_ros2_message::srv::EcatGetNetworkState>::SharedPtr getNetworkStateService_;
-    rclcpp::Service<wmx_ros2_message::srv::EcatRegisterRead>::SharedPtr registerReadService_;
-    rclcpp::Service<wmx_ros2_message::srv::EcatResetStatistics>::SharedPtr resetStatisticsService_;
-    rclcpp::Service<wmx_ros2_message::srv::EcatStartHotconnect>::SharedPtr startHotconnectService_;
+  rclcpp::Service<wmx_ros2_message::srv::EcatGetNetworkState>::SharedPtr getNetworkStateService_;
+  rclcpp::Service<wmx_ros2_message::srv::EcatRegisterRead>::SharedPtr registerReadService_;
+  rclcpp::Service<wmx_ros2_message::srv::EcatResetStatistics>::SharedPtr resetStatisticsService_;
+  rclcpp::Service<wmx_ros2_message::srv::EcatStartHotconnect>::SharedPtr startHotconnectService_;
 
-    void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
 
-    void getNetworkState(
-        const std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Request> request,
-        std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Response> response);
+  void getNetworkState(
+    const std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Response> response);
 
-    void registerRead(
-        const std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Request> request,
-        std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Response> response);
+  void registerRead(
+    const std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Response> response);
 
-    void resetStatistics(
-        const std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Request> request,
-        std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Response> response);
+  void resetStatistics(
+    const std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Response> response);
 
-    void startHotconnect(
-        const std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Request> request,
-        std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Response> response);
+  void startHotconnect(
+    const std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Response> response);
 };
 
 #endif  // WMX_ETHERCAT_NODE_HPP
