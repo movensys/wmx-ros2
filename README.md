@@ -70,6 +70,5 @@ For the complete and up-to-date documentation, please visit the official site:
 
 ## Demo Videos
 
-### Digital Twin Pick & Place with NVIDIA Isaac Sim, MoveIt2, and WMX Next
-[![“WMX Next” with NVIDIA Isaac](https://img.youtube.com/vi/XL_lD-he2DM/maxresdefault.jpg)](https://www.youtube.com/watch?v=XL_lD-he2DM/)
-
+### Physical AI powered by WMX ROS2 on NVIDIA Jetson Thor
+[![“WMX Next” with NVIDIA Isaac](images/wmx_gtc_presentation)](https://youtu.be/fUEmNoovdCs?si=W0B1jxY7-t3GnhNI)
