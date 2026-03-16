@@ -71,4 +71,4 @@ For the complete and up-to-date documentation, please visit the official site:
 ## Demo Videos
 
 ### Physical AI powered by WMX ROS2 on NVIDIA Jetson Thor
-[![“WMX Next” with NVIDIA Isaac](images/wmx_gtc_presentation.png)](https://youtu.be/fUEmNoovdCs?si=W0B1jxY7-t3GnhNI)
+[![“WMX Next” with NVIDIA Isaac](images/wmx_gtc_presentation.png)](https://www.youtube.com/watch?v=h-G9vtAGAIU)
