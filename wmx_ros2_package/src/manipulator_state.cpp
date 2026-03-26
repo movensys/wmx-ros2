@@ -339,7 +339,7 @@ void ManipulatorState::publishJointState()
 
   sensor_msgs::msg::JointState encoderJointMsg_;
   std_msgs::msg::Float64MultiArray gazeboJointMsg_;
-  gazeboJointMsg_.data.resize(8);
+  gazeboJointMsg_.data.resize(jointNames_.size());
 
   for (int i = 0; i < jointNumber_; ++i) {
     encoderJointMsg_.name.push_back(jointNames_[i]);
@@ -348,7 +348,7 @@ void ManipulatorState::publishJointState()
     gazeboJointMsg_.data[i] = cmStatus_.axesStatus[i].actualPos;
   }
 
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < (int)jointNames_.size() - jointNumber_; ++i) {
     encoderJointMsg_.name.push_back(jointNames_[jointNumber_ + i]);
     wmx3Lib_Io_->GetOutBit(0, 0, &gripperData_);
     if (gripperData_) {
