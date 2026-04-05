@@ -12,7 +12,7 @@ This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, 
 ---
 title: Low-level Control
 ---
-graph LR
+graph LR;
     A[ROS2 Services/Topics] --> B[wmx_engine_node];
     A --> C[wmx_core_motion_node];
     A --> D[wmx_io_node];
@@ -33,7 +33,7 @@ graph LR
 ---
 title: Trajectory Control
 ---
-graph LR
+graph LR;
     A["/follow_joint_trajectory"] -->|action| B[follow_joint_trajectory_server];
     B --> C[WMX3 API];
     C --> D[WMX Engine];
