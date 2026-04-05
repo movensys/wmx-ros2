@@ -6,7 +6,7 @@ This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, 
 
 ## Architecture
 
-**Low-level Control ([wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py)):**
+### Low-level Control ([wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py))
 
 ```mermaid
 ---
@@ -27,7 +27,7 @@ graph LR
 - services/topics -> [wmx_engine_node](wmx_ros2_package/src/wmx_engine_node.cpp) (CreateDevice, StartCommunication) / [wmx_core_motion_node](wmx_ros2_package/src/wmx_core_motion_node.cpp) (CoreMotion) / [wmx_io_node](wmx_ros2_package/src/wmx_io_node.cpp) (IO) / [wmx_ethercat_node](wmx_ros2_package/src/wmx_ethercat_node.cpp) (EtherCAT) -> WMX3 API -> WMX Engine
 
 
-**Trajectory Control ([wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)):**
+### Trajectory Control ([wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py))
 
 ```mermaid
 ---
