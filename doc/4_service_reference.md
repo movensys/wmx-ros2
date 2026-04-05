@@ -44,7 +44,7 @@ ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: false}"
 ```bash
 # Create
 ros2 service call /wmx/engine/set_device wmx_ros2_message/srv/SetEngine \
-  "{data: true, path: '/opt/lmx/', name: 'my_device'}"
+  "{data: true, path: '/opt/wmx3/', name: 'my_device'}"
 
 # Close
 ros2 service call /wmx/engine/set_device wmx_ros2_message/srv/SetEngine \

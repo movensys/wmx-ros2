@@ -1,6 +1,6 @@
 # WMX ROS2 Application
 
-**Note that this ROS2 application requires pre-installed `LMX`(WMX Linux runtime).**
+**Note that this ROS2 application requires pre-installed WMX Linux.**
 
 
 ### Dependencies for humble ( ubuntu 22.04)
