@@ -9,16 +9,19 @@ This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, 
 **Low-level Control ([wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py)):**
 
 ```mermaid
+---
+title: Low-level Control
+---
 graph LR
-    A[ROS2 Services/Topics] --> B[wmx_engine_node]
-    A --> C[wmx_core_motion_node]
-    A --> D[wmx_io_node]
-    A --> E[wmx_ethercat_node]
-    B --> F[WMX3 API]
-    C --> F
-    D --> F
-    E --> F
-    F --> G[WMX Engine]
+    A[ROS2 Services/Topics] --> B[wmx_engine_node];
+    A --> C[wmx_core_motion_node];
+    A --> D[wmx_io_node];
+    A --> E[wmx_ethercat_node];
+    B --> F[WMX3 API];
+    C --> F;
+    D --> F;
+    E --> F;
+    F --> G[WMX Engine];
 ```
 
 - services/topics -> [wmx_engine_node](wmx_ros2_package/src/wmx_engine_node.cpp) (CreateDevice, StartCommunication) / [wmx_core_motion_node](wmx_ros2_package/src/wmx_core_motion_node.cpp) (CoreMotion) / [wmx_io_node](wmx_ros2_package/src/wmx_io_node.cpp) (IO) / [wmx_ethercat_node](wmx_ros2_package/src/wmx_ethercat_node.cpp) (EtherCAT) -> WMX3 API -> WMX Engine
@@ -27,15 +30,18 @@ graph LR
 **Trajectory Control ([wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)):**
 
 ```mermaid
+---
+title: Trajectory Control
+---
 graph LR
-    A["/follow_joint_trajectory"] -->|action| B[follow_joint_trajectory_server]
-    B --> C[WMX3 API]
-    C --> D[WMX Engine]
-    D --> E[Robot]
-    E --> D[WMX Engine]
-    D --> C[WMX3 API]
-    C --> F[manipulator_state]
-    F --> G["/joint_states"]
+    A["/follow_joint_trajectory"] -->|action| B[follow_joint_trajectory_server];
+    B --> C[WMX3 API];
+    C --> D[WMX Engine];
+    D --> E[Robot];
+    E --> D[WMX Engine];
+    D --> C[WMX3 API];
+    C --> F[manipulator_state];
+    F --> G["/joint_states"];
 ```
 
 - `/follow_joint_trajectory` (action) -> `follow_joint_trajectory_server` -> WMX3 API -> WMX Engine -> Robot
