@@ -17,10 +17,10 @@ def generate_launch_description():
     wmx_param_file_path = os.path.join(
         pkg_share, 'config', 'cr3a_wmx_parameters.xml')
 
-    start_manipulator_state = Node(
+    start_joint_state_broadcaster = Node(
         package='wmx_ros2_package',
-        executable='manipulator_state',
-        name='manipulator_state',
+        executable='joint_state_broadcaster',
+        name='joint_state_broadcaster',
         parameters=[
             config,
             {
@@ -69,7 +69,7 @@ def generate_launch_description():
             default_value='false',
             description='Use simulation clock if true',
         ),
-        start_manipulator_state,
+        start_joint_state_broadcaster,
         start_joint_trajectory_controller,
         start_wmx_engine_node,
         start_wmx_core_motion_node,

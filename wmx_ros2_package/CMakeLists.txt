@@ -31,12 +31,12 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
-add_executable(manipulator_state src/manipulator_state.cpp)
-ament_target_dependencies(manipulator_state rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
-target_include_directories(manipulator_state PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
-target_link_libraries(manipulator_state coremotionapi ioapi wmx3api imdll)
-target_link_directories(manipulator_state PRIVATE ${WMX3_SDK_PATH}/lib)
-target_compile_definitions(manipulator_state PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+add_executable(joint_state_broadcaster src/joint_state_broadcaster.cpp)
+ament_target_dependencies(joint_state_broadcaster rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
+target_include_directories(joint_state_broadcaster PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(joint_state_broadcaster coremotionapi ioapi wmx3api imdll)
+target_link_directories(joint_state_broadcaster PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(joint_state_broadcaster PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(joint_trajectory_controller src/joint_trajectory_controller.cpp)
 ament_target_dependencies(joint_trajectory_controller
@@ -75,7 +75,7 @@ target_link_directories(wmx_ethercat_node PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(wmx_ethercat_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 install(TARGETS
-  manipulator_state
+  joint_state_broadcaster
   joint_trajectory_controller
   wmx_engine_node
   wmx_core_motion_node

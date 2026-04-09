@@ -40,13 +40,13 @@ flowchart LR;
     D --> E[Robot];
     E --> D[WMX Engine];
     D --> C[WMX3 API];
-    C --> F[manipulator_state];
+    C --> F[joint_state_broadcaster];
     F --> G["/joint_states"];
 ```
 
 - `/follow_joint_trajectory` (action) -> `joint_trajectory_controller` -> WMX3 API -> WMX Engine -> Robot
 
-- Robot -> WMX Engine -> WMX3 API -> `manipulator_state` -> `/joint_states`
+- Robot -> WMX Engine -> WMX3 API -> `joint_state_broadcaster` -> `/joint_states`
 
 ## Packages
 
@@ -56,7 +56,7 @@ flowchart LR;
 
 ## Nodes
 
-**manipulator_state** - Publishes joint feedback from WMX3 encoder to `/joint_states`
+**joint_state_broadcaster** - Publishes joint feedback from WMX3 encoder to `/joint_states`
 
 **joint_trajectory_controller** - Receives trajectory action and executes via WMX3 C-Spline
 
@@ -70,7 +70,7 @@ flowchart LR;
 
 ## Launch Files
 
-**[wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)** - For trajectory control (starts `manipulator_state` + `joint_trajectory_controller`)
+**[wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)** - For trajectory control (starts `joint_state_broadcaster` + `joint_trajectory_controller`)
 
 **[wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py)** - For low-level axis control (starts `wmx_ros2_general_node`)
 

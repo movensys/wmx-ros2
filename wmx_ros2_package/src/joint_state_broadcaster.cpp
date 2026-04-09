@@ -21,11 +21,11 @@ using std::placeholders::_1;
 using namespace wmx3Api;
 using namespace std;
 
-class ManipulatorState : public rclcpp::Node
+class JointStateBroadcaster : public rclcpp::Node
 {
 public:
-  ManipulatorState();
-  ~ManipulatorState();
+  JointStateBroadcaster();
+  ~JointStateBroadcaster();
 
   int jointNumber_;
   int jointFeedbackRate_;
@@ -75,17 +75,17 @@ private:
   void getWmxParam();
 };
 
-ManipulatorState::ManipulatorState()
-: Node("manipulator_state")
+JointStateBroadcaster::JointStateBroadcaster()
+: Node("joint_state_broadcaster")
 {
-  RCLCPP_INFO(this->get_logger(), "start manipulator_state");
+  RCLCPP_INFO(this->get_logger(), "start joint_state_broadcaster");
 
   setRosParameter();
 
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   coreMotionReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/core_motion/ready", ready_qos,
-    std::bind(&ManipulatorState::onCoreMotionReady, this, _1));
+    std::bind(&JointStateBroadcaster::onCoreMotionReady, this, _1));
 
   clearAlarmClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
     "wmx/axis/clear_alarm");
@@ -93,12 +93,12 @@ ManipulatorState::ManipulatorState()
   setAxisOnClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
     "wmx/axis/set_on");
 
-  RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for core_motion...");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster waiting for core_motion...");
 }
 
-ManipulatorState::~ManipulatorState()
+JointStateBroadcaster::~JointStateBroadcaster()
 {
-  RCLCPP_INFO(this->get_logger(), "Stop manipulator_state");
+  RCLCPP_INFO(this->get_logger(), "Stop joint_state_broadcaster");
 
   if (init_thread_.joinable()) {
     init_thread_.join();
@@ -130,10 +130,10 @@ ManipulatorState::~ManipulatorState()
     }
   }
 
-  RCLCPP_INFO(this->get_logger(), "manipulator_state is stopped");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is stopped");
 }
 
-void ManipulatorState::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg)
+void JointStateBroadcaster::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg)
 {
   if (!msg->data || initialized_ || initializing_.exchange(true)) {
     return;
@@ -147,10 +147,10 @@ void ManipulatorState::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr ms
   }
 
   // Spawn dedicated thread so blocking wait_for() doesn't block executor
-  init_thread_ = std::thread(&ManipulatorState::runInitSequence, this);
+  init_thread_ = std::thread(&JointStateBroadcaster::runInitSequence, this);
 }
 
-void ManipulatorState::runInitSequence()
+void JointStateBroadcaster::runInitSequence()
 {
   unsigned int timeout = 10000;
   static constexpr int kMaxDeviceRetries = 30;
@@ -182,7 +182,7 @@ void ManipulatorState::runInitSequence()
     return;
   }
 
-  wmx3Lib_.SetDeviceName("ManipulatorState");
+  wmx3Lib_.SetDeviceName("joint_state_broadcaster");
 
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
@@ -221,14 +221,14 @@ void ManipulatorState::runInitSequence()
 
   encoderJointTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / jointFeedbackRate_),
-    std::bind(&ManipulatorState::publishJointState, this));
+    std::bind(&JointStateBroadcaster::publishJointState, this));
 
   initialized_ = true;
   coreMotionReadySub_.reset();
-  RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is ready");
 }
 
-bool ManipulatorState::callSetAxisService(
+bool JointStateBroadcaster::callSetAxisService(
   rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
   const std::string & service_name,
   const std::vector<int32_t> & index,
@@ -289,7 +289,7 @@ bool ManipulatorState::callSetAxisService(
   return false;
 }
 
-void ManipulatorState::setRosParameter()
+void JointStateBroadcaster::setRosParameter()
 {
   this->declare_parameter<int>("joint_number", 0);
   this->declare_parameter<int>("joint_feedback_rate", 0);
@@ -333,7 +333,7 @@ void ManipulatorState::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
-void ManipulatorState::publishJointState()
+void JointStateBroadcaster::publishJointState()
 {
   wmx3LibCm_->GetStatus(&cmStatus_);
 
@@ -369,7 +369,7 @@ void ManipulatorState::publishJointState()
   gazeboJointPub_->publish(gazeboJointMsg_);
 }
 
-void ManipulatorState::setWmxParam(char * path)
+void JointStateBroadcaster::setWmxParam(char * path)
 {
   err_ = wmx3LibCm_->config->ImportAndSetAll(path);
   if (err_ != ErrorCode::None) {
@@ -380,7 +380,7 @@ void ManipulatorState::setWmxParam(char * path)
   }
 }
 
-void ManipulatorState::getWmxParam()
+void JointStateBroadcaster::getWmxParam()
 {
   err_ = wmx3LibCm_->config->GetAxisParam(&axisParam_);
   if (err_ != ErrorCode::None) {
@@ -407,7 +407,7 @@ void ManipulatorState::getWmxParam()
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<ManipulatorState>();
+  auto node = std::make_shared<JointStateBroadcaster>();
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;

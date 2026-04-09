@@ -1,4 +1,4 @@
-manipulator_state:
+joint_state_broadcaster:
   ros__parameters:
     joint_number: 6
     joint_feedback_rate: 500
