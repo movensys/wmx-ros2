@@ -11,14 +11,10 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
 
     pkg_share = get_package_share_directory('wmx_ros2_package')
+    manipulator_config = os.path.join(pkg_share, 'config', 'cr3a_manipulator_config.yaml')
+    wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr3a_wmx_parameters.xml')
 
-    config = os.path.join(
-        pkg_share, 'config', 'cr3a_manipulator_config.yaml')
-
-    wmx_param_file_path = os.path.join(
-        pkg_share, 'config', 'cr3a_wmx_parameters.xml')
-
-    general_launch = IncludeLaunchDescription(
+    start_wmx_ros2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_share, 'launch', 'wmx_ros2_general_nodes.launch.py')
         ),
@@ -30,7 +26,7 @@ def generate_launch_description():
         executable='joint_state_broadcaster',
         name='joint_state_broadcaster',
         parameters=[
-            config,
+            manipulator_config,
             {
                 'use_sim_time': use_sim_time,
                 'wmx_param_file_path': wmx_param_file_path,
@@ -43,7 +39,7 @@ def generate_launch_description():
         package='wmx_ros2_package',
         executable='joint_trajectory_controller',
         name='joint_trajectory_controller',
-        parameters=[config, {'use_sim_time': use_sim_time}],
+        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
 
@@ -53,7 +49,7 @@ def generate_launch_description():
             default_value='false',
             description='Use simulation clock if true',
         ),
-        general_launch,
+        start_wmx_ros2_general_nodes,
         start_joint_state_broadcaster,
         start_joint_trajectory_controller,
     ])
