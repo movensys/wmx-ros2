@@ -10,7 +10,7 @@ manipulator_state:
     gazebo_joint_topic: /gazebo_position_controller/commands
     wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
-follow_joint_trajectory_server:
+joint_trajectory_controller:
   ros__parameters:
     joint_number: 6
     wmx_gripper_topic: /wmx/set_gripper

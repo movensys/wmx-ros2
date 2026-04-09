@@ -31,10 +31,10 @@ def generate_launch_description():
         output='screen',
     )
 
-    start_follow_joint_trajectory_server = Node(
+    start_joint_trajectory_controller = Node(
         package='wmx_ros2_package',
-        executable='follow_joint_trajectory_server',
-        name='follow_joint_trajectory_server',
+        executable='joint_trajectory_controller',
+        name='joint_trajectory_controller',
         parameters=[config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
@@ -70,7 +70,7 @@ def generate_launch_description():
             description='Use simulation clock if true',
         ),
         start_manipulator_state,
-        start_follow_joint_trajectory_server,
+        start_joint_trajectory_controller,
         start_wmx_engine_node,
         start_wmx_core_motion_node,
         start_wmx_io_node,
