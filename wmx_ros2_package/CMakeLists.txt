@@ -38,7 +38,7 @@ target_link_libraries(manipulator_state coremotionapi ioapi wmx3api imdll)
 target_link_directories(manipulator_state PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(manipulator_state PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
-add_executable(follow_joint_trajectory_server src/follow_joint_trajectory_server.cpp)
+add_executable(follow_joint_trajectory_server src/joint_trajectory_controller.cpp)
 ament_target_dependencies(follow_joint_trajectory_server
   rclcpp rclcpp_action std_msgs std_srvs control_msgs trajectory_msgs wmx_ros2_message)
 target_include_directories(follow_joint_trajectory_server PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
