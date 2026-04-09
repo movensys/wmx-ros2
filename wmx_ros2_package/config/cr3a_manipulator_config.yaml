@@ -4,14 +4,14 @@ joint_state_broadcaster:
     joint_feedback_rate: 500
     gripper_open_value: 0.00
     gripper_close_value: 0.045
-    joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "picker_1_joint", "picker_2_joint"]
+    joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", 
+    gripper_joint_name: ["picker_1_joint", "picker_2_joint"]
     encoder_joint_topic: /joint_states
     isaacsim_joint_topic: /isaacsim/joint_command
     gazebo_joint_topic: /gazebo_position_controller/commands
-    wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
 joint_trajectory_controller:
   ros__parameters:
     joint_number: 6
-    wmx_gripper_topic: /wmx/set_gripper
+    wmx_gripper_service: /wmx/set_gripper
     joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_trajectory

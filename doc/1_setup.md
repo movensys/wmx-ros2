@@ -10,7 +10,7 @@ export ROS_DOMAIN_ID=70                         #use any number
 export ROS_DISTRO=jazzy                         #support {jazzy, humble}
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/$ROS_DISTRO/setup.bash
 source ~/workspaces/wmx_ros2_ws/install/setup.bash
 ```
 ```

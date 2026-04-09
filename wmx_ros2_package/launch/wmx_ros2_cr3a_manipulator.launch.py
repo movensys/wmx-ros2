@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -16,6 +17,13 @@ def generate_launch_description():
 
     wmx_param_file_path = os.path.join(
         pkg_share, 'config', 'cr3a_wmx_parameters.xml')
+
+    general_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_share, 'launch', 'wmx_ros2_general_nodes.launch.py')
+        ),
+        launch_arguments={'use_sim_time': use_sim_time}.items(),
+    )
 
     start_joint_state_broadcaster = Node(
         package='wmx_ros2_package',
@@ -39,39 +47,13 @@ def generate_launch_description():
         output='screen',
     )
 
-    start_wmx_engine_node = Node(
-        package='wmx_ros2_package',
-        executable='wmx_engine_node',
-        name='wmx_engine_node',
-        parameters=[{'use_sim_time': use_sim_time}],
-        output='screen',
-    )
-
-    start_wmx_core_motion_node = Node(
-        package='wmx_ros2_package',
-        executable='wmx_core_motion_node',
-        name='wmx_core_motion_node',
-        parameters=[{'use_sim_time': use_sim_time}],
-        output='screen',
-    )
-
-    start_wmx_io_node = Node(
-        package='wmx_ros2_package',
-        executable='wmx_io_node',
-        name='wmx_io_node',
-        parameters=[{'use_sim_time': use_sim_time}],
-        output='screen',
-    )
-
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
             default_value='false',
             description='Use simulation clock if true',
         ),
+        general_launch,
         start_joint_state_broadcaster,
         start_joint_trajectory_controller,
-        start_wmx_engine_node,
-        start_wmx_core_motion_node,
-        start_wmx_io_node,
     ])
