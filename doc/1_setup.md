@@ -3,49 +3,46 @@
 **Note that this ROS2 application requires pre-installed WMX Linux.**
 
 
-### Dependencies for humble ( ubuntu 22.04)
+## 1. Bashrc Configuration
+- Add the following environment variables to your `~/.bashrc`:
 ```
-sudo apt install -y ros-humble-graph-msgs \
-                    ros-humble-moveit* \
-                    ros-humble-ros2-control \
-                    ros-humble-ros2-controllers \
-                    ros-humble-rmw-cyclonedds-cpp
+export ROS_DOMAIN_ID=70                         #use any number
+export ROS_DISTRO=jazzy                         #support {jazzy, humble}
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+source /opt/ros/jazzy/setup.bash
+source ~/workspaces/wmx_ros2_ws/install/setup.bash
+```
+```
+source ~/.bashrc
 ```
 
-### Dependencies for jazzy ( ubuntu 24.04)
+### Dependencies 
 ```
-sudo apt install -y ros-jazzy-graph-msgs \
-                    ros-jazzy-moveit* \
-                    ros-jazzy-ros2-control \
-                    ros-jazzy-ros2-controllers \
-                    ros-jazzy-rmw-cyclonedds-cpp
+sudo apt install -y ros-${ROS_DISTRO}-graph-msgs \
+                    ros-${ROS_DISTRO}-moveit-ros \
+                    ros-${ROS_DISTRO}-moveit-planners \
+                    ros-${ROS_DISTRO}-moveit-plugins \
+                    ros-${ROS_DISTRO}-moveit-setup-assistant \
+                    ros-${ROS_DISTRO}-moveit-configs-utils \
+                    ros-${ROS_DISTRO}-moveit-task-constructor-core \
+                    ros-${ROS_DISTRO}-ros2-control \
+                    ros-${ROS_DISTRO}-ros2-controllers \
+                    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
 ```
 
 ## Setup
 ```
-mkdir -p ~/wmx_ros2_ws/src
-cd ~/wmx_ros2_ws/src && \
+mkdir -p ~/workspaces/wmx_ros2_ws/src
+cd ~/workspaces/wmx_ros2_ws/src && \
    git clone https://github.com/movensys/wmx-ros2.git
 ```
 
 ## Build
 ```
-cd ~/wmx_ros2_ws
+cd ~/workspaces/wmx_ros2_ws
 colcon build --packages-select wmx_ros2_message
 source install/setup.bash
 colcon build
-source ~/.bashrc
-```
-
-## Bashrc
-```
-export ROS_DOMAIN_ID=70
-
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-source /opt/ros/humble/setup.bash
-source ~/wmx_ros2_ws/install/setup.bash
-```
-```
 source ~/.bashrc
 ```
