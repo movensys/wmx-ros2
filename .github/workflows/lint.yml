@@ -39,7 +39,7 @@ jobs:
             --suppress=missingInclude --suppress=missingIncludeSystem \
             --error-exitcode=1 \
             --template='::error file={file},line={line},col={column}::{severity}: {message} [{id}]' \
-            wmx_ros2_package/src/ wmx_ros2_package/include/
+            wmx_ros2_package/src/ wmx_ros2_package/include/ 2>&1 1>/dev/null
 
   python-lint:
     name: Python (flake8)
