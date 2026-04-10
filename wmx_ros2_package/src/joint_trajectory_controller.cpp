@@ -6,7 +6,6 @@
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 #include "AdvancedMotionApi.h"
-#include "IOApi.h"
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -45,7 +44,6 @@ private:
   AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
   double time_spl[MAX_TRAJ_POINTS];
   AxisSelection axisSel;
-  Io Wmx3Lib_Io_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
@@ -129,7 +127,6 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
 
   wmx3LibCm_ = CoreMotion(&wmx3Lib_);
   wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
-  Wmx3Lib_Io_ = Io(&wmx3Lib_);
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(

@@ -46,6 +46,13 @@ target_link_libraries(joint_trajectory_controller coremotionapi advancedmotionap
 target_link_directories(joint_trajectory_controller PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(joint_trajectory_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
+add_executable(gripper_controller src/gripper_controller.cpp)
+ament_target_dependencies(gripper_controller rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
+target_include_directories(gripper_controller PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(gripper_controller coremotionapi ioapi wmx3api imdll)
+target_link_directories(gripper_controller PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(gripper_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
 ament_target_dependencies(wmx_engine_node rclcpp std_msgs std_srvs wmx_ros2_message)
 target_include_directories(wmx_engine_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)

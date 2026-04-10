@@ -1,6 +1,5 @@
 joint_state_broadcaster:
   ros__parameters:
-    joint_number: 6
     joint_feedback_rate: 500
     gripper_open_value: 0.00
     gripper_close_value: 0.045
@@ -18,3 +17,5 @@ joint_trajectory_controller:
 gripper_controller:
   ros_parameter:
     wmx_gripper_service: /wmx/set_gripper
+    bytes_address:0
+    bit_address:0
