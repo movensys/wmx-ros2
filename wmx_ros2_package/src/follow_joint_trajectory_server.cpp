@@ -1,21 +1,19 @@
-#include <memory>
-#include <thread>
-#include <sstream>
 #include <chrono>
+#include <memory>
+#include <sstream>
+#include <thread>
 
-#include "WMX3Api.h"
-#include "CoreMotionApi.h"
 #include "AdvancedMotionApi.h"
+#include "CoreMotionApi.h"
 #include "IOApi.h"
-
+#include "WMX3Api.h"
+#include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
-
-#include "control_msgs/action/follow_joint_trajectory.hpp"
-#include "trajectory_msgs/msg/joint_trajectory.hpp"
-#include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/set_bool.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
+#include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 
 #define MAX_TRAJ_POINTS 1000
 
@@ -55,36 +53,31 @@ private:
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
 
   // Action server callback declarations
-  rclcpp_action::GoalResponse handle_goal(
-    const rclcpp_action::GoalUUID & uuid,
-    std::shared_ptr<const FollowJointTrajectory::Goal> goal);
+  rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID& uuid,
+                                          std::shared_ptr<const FollowJointTrajectory::Goal> goal);
 
-  rclcpp_action::CancelResponse handle_cancel(
-    std::shared_ptr<GoalHandleFJT> goal_handle);
+  rclcpp_action::CancelResponse handle_cancel(std::shared_ptr<GoalHandleFJT> goal_handle);
 
   void handle_accepted(std::shared_ptr<GoalHandleFJT> goal_handle);
 
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle);
 
   // Service callback declaration
-  void setGripper(
-    const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-    std::shared_ptr<std_srvs::srv::SetBool::Response> response);
+  void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                  std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
   void setRosParameter();
   void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
 };
 
-FollowJointTrajectoryServer::FollowJointTrajectoryServer()
-: Node("follow_joint_trajectory_server")
+FollowJointTrajectoryServer::FollowJointTrajectoryServer() : Node("follow_joint_trajectory_server")
 {
-
   setRosParameter();
 
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&FollowJointTrajectoryServer::onEngineReady, this, std::placeholders::_1));
+      "wmx/engine/ready", ready_qos,
+      std::bind(&FollowJointTrajectoryServer::onEngineReady, this, std::placeholders::_1));
 
   RCLCPP_INFO(this->get_logger(), "follow_joint_trajectory_server waiting for engine...");
 }
@@ -122,12 +115,11 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Failed to attach to device (lock busy, will retry on next signal).");
+      RCLCPP_WARN(this->get_logger(),
+                  "Failed to attach to device (lock busy, will retry on next signal).");
     } else {
-      RCLCPP_ERROR(
-        this->get_logger(),
-        "Failed to attach to device. Error=%d (%s)", err_, errString_);
+      RCLCPP_ERROR(this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_,
+                   errString_);
     }
     return;
   }
@@ -146,23 +138,18 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
 
   rcl_action_server_options_t action_options = rcl_action_server_get_default_options();
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
-    this,
-    jointTrajectoryAction_,
-    std::bind(
-      &FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1,
-      std::placeholders::_2),
-    std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
-    std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1),
-    action_options,
-    sdk_group_);
+      this, jointTrajectoryAction_,
+      std::bind(&FollowJointTrajectoryServer::handle_goal, this, std::placeholders::_1,
+                std::placeholders::_2),
+      std::bind(&FollowJointTrajectoryServer::handle_cancel, this, std::placeholders::_1),
+      std::bind(&FollowJointTrajectoryServer::handle_accepted, this, std::placeholders::_1),
+      action_options, sdk_group_);
 
   setGripperService_ = this->create_service<std_srvs::srv::SetBool>(
-    wmxGripperTopic_,
-    std::bind(
-      &FollowJointTrajectoryServer::setGripper, this,
-      std::placeholders::_1, std::placeholders::_2),
-    rclcpp::ServicesQoS().get_rmw_qos_profile(),
-    sdk_group_);
+      wmxGripperTopic_,
+      std::bind(&FollowJointTrajectoryServer::setGripper, this, std::placeholders::_1,
+                std::placeholders::_2),
+      rclcpp::ServicesQoS().get_rmw_qos_profile(), sdk_group_);
 
   initialized_ = true;
   engineReadySub_.reset();
@@ -173,9 +160,8 @@ void FollowJointTrajectoryServer::onEngineReady(std_msgs::msg::Bool::ConstShared
 void FollowJointTrajectoryServer::setRosParameter()
 {
   this->declare_parameter<int>("joint_number", 0);
-  this->declare_parameter<std::string>(
-    "joint_trajectory_action",
-    "/joint_trajectory_action/no_param");
+  this->declare_parameter<std::string>("joint_trajectory_action",
+                                       "/joint_trajectory_action/no_param");
   this->declare_parameter<std::string>("wmx_gripper_topic", "/wmx_gripper_topic/no_param");
 
   this->get_parameter("joint_number", jointNumber_);
@@ -190,8 +176,7 @@ void FollowJointTrajectoryServer::setRosParameter()
 }
 
 rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(
-  const rclcpp_action::GoalUUID & uuid,
-  std::shared_ptr<const FollowJointTrajectory::Goal> goal)
+    const rclcpp_action::GoalUUID& uuid, std::shared_ptr<const FollowJointTrajectory::Goal> goal)
 {
   (void)uuid;
   (void)goal;
@@ -200,7 +185,7 @@ rclcpp_action::GoalResponse FollowJointTrajectoryServer::handle_goal(
 }
 
 rclcpp_action::CancelResponse FollowJointTrajectoryServer::handle_cancel(
-  std::shared_ptr<GoalHandleFJT> goal_handle)
+    std::shared_ptr<GoalHandleFJT> goal_handle)
 {
   (void)goal_handle;
   RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
@@ -210,27 +195,27 @@ rclcpp_action::CancelResponse FollowJointTrajectoryServer::handle_cancel(
 void FollowJointTrajectoryServer::handle_accepted(std::shared_ptr<GoalHandleFJT> goal_handle)
 {
   std::thread{std::bind(&FollowJointTrajectoryServer::execute, this, std::placeholders::_1),
-    goal_handle}.detach();
+              goal_handle}
+      .detach();
 }
 
 void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_handle)
 {
   const auto goal = goal_handle->get_goal();
-  const auto & trajectory = goal->trajectory;
+  const auto& trajectory = goal->trajectory;
 
-  RCLCPP_INFO(
-    this->get_logger(), "Received a new trajectory goal! Point number: [%zu]",
-    trajectory.points.size());
+  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal! Point number: [%zu]",
+              trajectory.points.size());
 
   auto result = std::make_shared<FollowJointTrajectory::Result>();
   int num_points = trajectory.points.size();
   double timeMilliseconds;
 
   if (num_points > MAX_TRAJ_POINTS) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Too many trajectory point size! current points:%d / max traj points:%d \nAborting current goal.",
-      num_points, MAX_TRAJ_POINTS);
+    RCLCPP_WARN(this->get_logger(),
+                "Too many trajectory point size! current points:%d / max traj points:%d \nAborting "
+                "current goal.",
+                num_points, MAX_TRAJ_POINTS);
     goal_handle->abort(result);
     return;
   }
@@ -238,7 +223,9 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   // Log joint names
   std::ostringstream jn;
   for (size_t i = 0; i < trajectory.joint_names.size(); ++i) {
-    if (i) {jn << ", ";}
+    if (i) {
+      jn << ", ";
+    }
     jn << trajectory.joint_names[i];
   }
   RCLCPP_INFO(this->get_logger(), "Joint Names: [%s]", jn.str().c_str());
@@ -246,7 +233,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
 
   // Log points
   for (size_t i = 0; i < trajectory.points.size(); ++i) {
-    const auto & pt = trajectory.points[i];
+    const auto& pt = trajectory.points[i];
     std::ostringstream pos, vel, acc;
     for (size_t k = 0; k < pt.positions.size(); ++k) {
       if (k) {
@@ -266,11 +253,11 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
       }
       acc << pt.accelerations[k];
     }
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
-      i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
-      pt.time_from_start.sec, pt.time_from_start.nanosec);
+    RCLCPP_INFO(this->get_logger(),
+                "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: "
+                "%d s %u ns",
+                i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(), pt.time_from_start.sec,
+                pt.time_from_start.nanosec);
 
     if (i != 0) {
       rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
@@ -288,7 +275,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   }
 
   for (size_t i = 0; i < trajectory.points.size(); ++i) {
-    const auto & pt = trajectory.points[i];
+    const auto& pt = trajectory.points[i];
     timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
     time_spl[i] = timeMilliseconds;
 
@@ -305,8 +292,8 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
   // if last time interval is less than 1ms, ignore the last point.
   double last = trajectory.points.size() - 1;
   if (rclcpp::Duration(trajectory.points[last].time_from_start).seconds() -
-    rclcpp::Duration(trajectory.points[last - 1].time_from_start).seconds() < 1e-3)
-  {
+          rclcpp::Duration(trajectory.points[last - 1].time_from_start).seconds() <
+      1e-3) {
     num_points -= 1;
   }
 
@@ -337,9 +324,14 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
       wmx3LibCm_.GetStatus(&cmStatus);
       bool all_done = true;
       for (int j = 0; j < jointNumber_; ++j) {
-        if (!cmStatus.axesStatus[j].inPos) {all_done = false; break;}
+        if (!cmStatus.axesStatus[j].inPos) {
+          all_done = false;
+          break;
+        }
       }
-      if (all_done) {break;}
+      if (all_done) {
+        break;
+      }
 
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -351,8 +343,8 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
 }
 
 void FollowJointTrajectoryServer::setGripper(
-  const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-  std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+    const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+    std::shared_ptr<std_srvs::srv::SetBool::Response> response)
 {
   if (request->data) {
     err_ = Wmx3Lib_Io_.SetOutBit(0, 0, 1);
@@ -381,7 +373,7 @@ void FollowJointTrajectoryServer::setGripper(
   }
 }
 
-int main(int argc, char ** argv)
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<FollowJointTrajectoryServer>();
