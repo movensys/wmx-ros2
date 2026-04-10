@@ -189,7 +189,7 @@ void ManipulatorState::runInitSequence()
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
   wmx3Lib_Io_ = std::make_unique<Io>(&wmx3Lib_);
 
-  setWmxParam((char *)wmxParamFilePath_.c_str());
+  setWmxParam((char *)wmxParamFilePath_.c_str());  // TODO: fix C-style cast
   getWmxParam();
 
   // Build axis index/data vectors
