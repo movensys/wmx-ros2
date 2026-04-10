@@ -20,7 +20,7 @@ joint_trajectory_controller:
     joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_trajectory
 
 gripper_controller:
-  ros_parameter:
-    wmx_gripper_service: /wmx/set_gripper
+  ros__parameters:
+    wmx_gripper_topic: /wmx/set_gripper
     gripper_bytes_address: 0
     gripper_bit_address: 0
