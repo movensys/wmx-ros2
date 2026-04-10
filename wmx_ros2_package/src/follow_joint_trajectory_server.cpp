@@ -209,7 +209,6 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
 
   auto result = std::make_shared<FollowJointTrajectory::Result>();
   int num_points = trajectory.points.size();
-  double timeMilliseconds;
 
   if (num_points > MAX_TRAJ_POINTS) {
     RCLCPP_WARN(this->get_logger(),
@@ -276,7 +275,7 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
 
   for (size_t i = 0; i < trajectory.points.size(); ++i) {
     const auto& pt = trajectory.points[i];
-    timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
+    double timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
     time_spl[i] = timeMilliseconds;
 
     for (int j = 0; j < jointNumber_; ++j) {
@@ -284,10 +283,8 @@ void FollowJointTrajectoryServer::execute(std::shared_ptr<GoalHandleFJT> goal_ha
     }
   }
 
-  // If first time interval is not zero, make it zero
-  if (time_spl[0] != 0.0) {
-    time_spl[0] = 0.0;
-  }
+  // Ensure first time interval is zero
+  time_spl[0] = 0.0;
 
   // if last time interval is less than 1ms, ignore the last point.
   double last = trajectory.points.size() - 1;

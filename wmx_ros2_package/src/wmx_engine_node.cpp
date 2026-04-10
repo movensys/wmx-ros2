@@ -108,9 +108,9 @@ void WmxEngineNode::stopCommunication()
 {
   unsigned int timeout = 10000;
   int err;
-  char errString[256];
   err = wmx3Lib_.StopCommunication(timeout);
   if (err != wmx3Api::ErrorCode::None) {
+    char errString[256];
     wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
     RCLCPP_ERROR(this->get_logger(), "Failed to stop communication");
   } else {
@@ -190,13 +190,12 @@ void WmxEngineNode::scanNetwork(const std::shared_ptr<std_srvs::srv::Trigger::Re
     return;
   }
 
-  int err;
-  char ecErrString[256];
-  char buffer[512];
   const int masterId = 0;
-  err = wmx3Lib_Ecat_.ScanNetwork(masterId);
+  int err = wmx3Lib_Ecat_.ScanNetwork(masterId);
 
   if (err != wmx3Api::ErrorCode::None) {
+    char ecErrString[256];
+    char buffer[512];
     wmx3Api::ecApi::Ecat::ErrorToString(err, ecErrString, sizeof(ecErrString));
     snprintf(buffer, sizeof(buffer), "Failed to scan network. Error=%d (%s)", err, ecErrString);
     RCLCPP_ERROR(this->get_logger(), "%s", buffer);
@@ -269,11 +268,11 @@ void WmxEngineNode::setEngine(
     return;
   }
 
-  unsigned int timeout = 10000;
   int err;
   char errString[256];
   char buffer[512];
   if (request->data) {
+    unsigned int timeout = 10000;
     err = wmx3Lib_.CreateDevice(request->path.c_str(), wmx3Api::DeviceType::DeviceTypeNormal,
                                 timeout);
     if (err != wmx3Api::ErrorCode::None) {

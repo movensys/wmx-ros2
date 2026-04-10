@@ -21,6 +21,22 @@ jobs:
           find . -name '*.cpp' -o -name '*.hpp' -o -name '*.h' | \
             xargs clang-format --dry-run --Werror
 
+  cpp-check:
+    name: C++ (cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=warning,style,performance,portability \
+            --suppress=missingInclude --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            wmx_ros2_package/src/ wmx_ros2_package/include/
+
   python-lint:
     name: Python (flake8)
     runs-on: ubuntu-latest
