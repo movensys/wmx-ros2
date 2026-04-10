@@ -38,10 +38,12 @@ jobs:
           cppcheck --enable=warning,style,performance,portability \
             --suppress=missingInclude --suppress=missingIncludeSystem \
             --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
-            wmx_ros2_package/src/ wmx_ros2_package/include/ 2>&1 1>/dev/null | \
-            tee /tmp/cppcheck.txt | \
-            sed 's|^\(.*\):\([0-9]*\):\([0-9]*\): \(.*\)|::error file=\1,line=\2,col=\3::\4|'
-          test ! -s /tmp/cppcheck.txt
+            wmx_ros2_package/src/ wmx_ros2_package/include/ \
+            2>/tmp/cppcheck.txt 1>/dev/null
+          if [ -s /tmp/cppcheck.txt ]; then
+            sed 's|^\(.*\):\([0-9]*\):\([0-9]*\): \(.*\)|::error file=\1,line=\2,col=\3::\4|' /tmp/cppcheck.txt
+            exit 1
+          fi
 
   python-lint:
     name: Python (flake8)
