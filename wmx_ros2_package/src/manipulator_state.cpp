@@ -179,7 +179,7 @@ void ManipulatorState::runInitSequence()
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
   wmx3Lib_Io_ = std::make_unique<Io>(&wmx3Lib_);
 
-  setWmxParam((char *)wmxParamFilePath_.c_str());
+  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
   getWmxParam();
 
   // Build axis index/data vectors
@@ -376,7 +376,7 @@ void ManipulatorState::getWmxParam()
       RCLCPP_INFO(this->get_logger(), "axis: %d, denominator: %f", axis,
                   axisParam_.gearRatioDenominator[axis]);
       RCLCPP_INFO(this->get_logger(), "axis: %d, polarity: %d", axis,
-                  (int)axisParam_.axisPolarity[axis]);
+                  static_cast<int>(axisParam_.axisPolarity[axis]));
       RCLCPP_INFO(this->get_logger(), "axis: %d, abs encoder: %d", axis,
                   axisParam_.absoluteEncoderMode[axis]);
       RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, axisParam_.axisCommandMode[axis]);
