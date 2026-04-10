@@ -1,0 +1,85 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cpp-lint:
+    name: C++ (clang-format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Check C++ formatting
+        run: |
+          find . -name '*.cpp' -o -name '*.hpp' -o -name '*.h' | \
+            xargs clang-format --dry-run --Werror 2>&1 | \
+            sed -n 's|^\(.*\):\([0-9]*\):\([0-9]*\): error: \(.*\)|::error file=\1,line=\2,col=\3::\4|p'
+          find . -name '*.cpp' -o -name '*.hpp' -o -name '*.h' | \
+            xargs clang-format --dry-run --Werror
+
+  cpp-check:
+    name: C++ (cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=warning,style,performance,portability \
+            --suppress=missingInclude --suppress=missingIncludeSystem \
+            --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
+            wmx_ros2_package/src/ wmx_ros2_package/include/ \
+            2>/tmp/cppcheck.txt 1>/dev/null
+          if [ -s /tmp/cppcheck.txt ]; then
+            sed 's|^\(.*\):\([0-9]*\):\([0-9]*\): \(.*\)|::error file=\1,line=\2,col=\3::\4|' /tmp/cppcheck.txt
+            exit 1
+          fi
+
+  python-lint:
+    name: Python (flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Install flake8
+        run: pip install flake8
+
+      - name: Run flake8
+        run: flake8 --max-line-length 120 --extend-ignore=E501 --format='::error file=%(path)s,line=%(row)d,col=%(col)d::%(code)s %(text)s' .
+
+  xml-lint:
+    name: XML (package.xml)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Check XML well-formedness
+        run: |
+          find . -name 'package.xml' | while read -r f; do
+            xmllint --noout "$f" 2>&1 | while IFS= read -r line; do
+              file=$(echo "$line" | sed -n 's|^\(.*\):\([0-9]*\):.*|\1|p')
+              lineno=$(echo "$line" | sed -n 's|^\(.*\):\([0-9]*\):.*|\2|p')
+              msg=$(echo "$line" | sed 's|^[^:]*:[0-9]*: ||')
+              if [ -n "$file" ] && [ -n "$lineno" ]; then
+                echo "::error file=${file},line=${lineno}::${msg}"
+              fi
+            done
+            xmllint --noout "$f"
+          done
