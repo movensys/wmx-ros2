@@ -1,5 +1,7 @@
 joint_state_broadcaster:
   ros__parameters:
+    joint_number: 6
+    gripper_joint_number: 2
     joint_feedback_rate: 500
     gripper_open_value: 0.00
     gripper_close_value: 0.045
@@ -10,6 +12,7 @@ joint_state_broadcaster:
     encoder_joint_topic: /joint_states
     isaacsim_joint_topic: /isaacsim/joint_command
     gazebo_joint_topic: /gazebo_position_controller/commands
+    wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
 joint_trajectory_controller:
   ros__parameters:
