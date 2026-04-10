@@ -35,6 +35,7 @@ jobs:
           cppcheck --enable=warning,style,performance,portability \
             --suppress=missingInclude --suppress=missingIncludeSystem \
             --error-exitcode=1 \
+            --template='::error file={file},line={line},col={column}::{severity}: {message} [{id}]' \
             wmx_ros2_package/src/ wmx_ros2_package/include/
 
   python-lint:
