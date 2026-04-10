@@ -84,6 +84,7 @@ target_compile_definitions(wmx_ethercat_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_P
 install(TARGETS
   joint_state_broadcaster
   joint_trajectory_controller
+  gripper_controller
   wmx_engine_node
   wmx_core_motion_node
   wmx_io_node
