@@ -1,20 +1,22 @@
 #ifndef WMX_ENGINE_NODE_HPP
 #define WMX_ENGINE_NODE_HPP
 
-#include <atomic>
-#include <chrono>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <chrono>
 #include <thread>
+#include <atomic>
 
-#include "EcApi.h"
-#include "WMX3Api.h"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
+
 #include "wmx_ros2_message/srv/set_engine.hpp"
+
+#include "WMX3Api.h"
+#include "EcApi.h"
 
 class WmxEngineNode : public rclcpp::Node
 {
@@ -42,14 +44,18 @@ private:
   void stopCommunication();
   void publishReady();
 
-  void setEngine(const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
-                 std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response);
-  void setComm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-               std::shared_ptr<std_srvs::srv::SetBool::Response> response);
-  void getEngineStatus(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-                       std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  void scanNetwork(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-                   std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  void setEngine(
+    const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response);
+  void setComm(
+    const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+    std::shared_ptr<std_srvs::srv::SetBool::Response> response);
+  void getEngineStatus(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  void scanNetwork(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
 };
 
 #endif  // WMX_ENGINE_NODE_HPP

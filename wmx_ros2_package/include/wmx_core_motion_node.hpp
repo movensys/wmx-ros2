@@ -2,26 +2,28 @@
 #define WMX_CORE_MOTION_NODE_HPP
 
 #include <atomic>
-#include <chrono>
 #include <iostream>
 #include <memory>
-#include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
+#include <sstream>
+#include <chrono>
+#include <thread>
 
-#include "CoreMotionApi.h"
-#include "WMX3Api.h"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/set_bool.hpp"
-#include "wmx_ros2_message/msg/axis_pose.hpp"
-#include "wmx_ros2_message/msg/axis_state.hpp"
-#include "wmx_ros2_message/msg/axis_velocity.hpp"
-#include "wmx_ros2_message/srv/get_wmx_params.hpp"
-#include "wmx_ros2_message/srv/load_wmx_params.hpp"
+
 #include "wmx_ros2_message/srv/set_axis.hpp"
 #include "wmx_ros2_message/srv/set_axis_gear_ratio.hpp"
+#include "wmx_ros2_message/srv/load_wmx_params.hpp"
+#include "wmx_ros2_message/srv/get_wmx_params.hpp"
+#include "wmx_ros2_message/msg/axis_velocity.hpp"
+#include "wmx_ros2_message/msg/axis_state.hpp"
+#include "wmx_ros2_message/msg/axis_pose.hpp"
+
+#include "WMX3Api.h"
+#include "CoreMotionApi.h"
 
 using std::placeholders::_1;
 using std::placeholders::_2;
@@ -76,23 +78,30 @@ private:
   void axisPoseRelativeCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg);
   void axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg);
 
-  void setAxisOn(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
-                 std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
-  void setAxisMode(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
-                   std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
-  void clearAlarm(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
-                  std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
-  void setAxisPolarity(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
-                       std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+  void setAxisOn(
+    const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+  void setAxisMode(
+    const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+  void clearAlarm(
+    const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+  void setAxisPolarity(
+    const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
   void setAxisGearRatio(
-      const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
-      std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response);
-  void setHoming(const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
-                 std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
-  void loadWmxParams(const std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Request> request,
-                     std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Response> response);
-  void getWmxParams(const std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Request> request,
-                    std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Response> response);
+    const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response);
+  void setHoming(
+    const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response);
+  void loadWmxParams(
+    const std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Response> response);
+  void getWmxParams(
+    const std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Request> request,
+    std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Response> response);
 };
 
 #endif  // WMX_CORE_MOTION_NODE_HPP

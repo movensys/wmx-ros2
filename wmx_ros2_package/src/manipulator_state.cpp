@@ -1,19 +1,21 @@
-#include <atomic>
-#include <chrono>
 #include <iostream>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
+#include <chrono>
+#include <thread>
+#include <atomic>
 
-#include "CoreMotionApi.h"
-#include "IOApi.h"
-#include "WMX3Api.h"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
+
 #include "wmx_ros2_message/srv/set_axis.hpp"
+
+#include "WMX3Api.h"
+#include "CoreMotionApi.h"
+#include "IOApi.h"
 
 using std::placeholders::_1;
 using namespace wmx3Api;
@@ -62,16 +64,19 @@ private:
 
   void onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg);
   void runInitSequence();
-  bool callSetAxisService(rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
-                          const std::string &service_name, const std::vector<int32_t> &index,
-                          const std::vector<int32_t> &data);
+  bool callSetAxisService(
+    rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+    const std::string & service_name,
+    const std::vector<int32_t> & index,
+    const std::vector<int32_t> & data);
   void publishJointState();
   void setRosParameter();
-  void setWmxParam(char *path);
+  void setWmxParam(char * path);
   void getWmxParam();
 };
 
-ManipulatorState::ManipulatorState() : Node("manipulator_state")
+ManipulatorState::ManipulatorState()
+: Node("manipulator_state")
 {
   RCLCPP_INFO(this->get_logger(), "start manipulator_state");
 
@@ -79,12 +84,14 @@ ManipulatorState::ManipulatorState() : Node("manipulator_state")
 
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   coreMotionReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-      "wmx/core_motion/ready", ready_qos,
-      std::bind(&ManipulatorState::onCoreMotionReady, this, _1));
+    "wmx/core_motion/ready", ready_qos,
+    std::bind(&ManipulatorState::onCoreMotionReady, this, _1));
 
-  clearAlarmClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>("wmx/axis/clear_alarm");
+  clearAlarmClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
+    "wmx/axis/clear_alarm");
 
-  setAxisOnClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>("wmx/axis/set_on");
+  setAxisOnClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
+    "wmx/axis/set_on");
 
   RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for core_motion...");
 }
@@ -106,8 +113,9 @@ ManipulatorState::~ManipulatorState()
       err_ = wmx3LibCm_->axisControl->SetServoOn(i, 0);
       if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(this->get_logger(), "Servo %d error to off. Error=%d (%s)", i, err_,
-                     errString_);
+        RCLCPP_ERROR(
+          this->get_logger(), "Servo %d error to off. Error=%d (%s)", i, err_,
+          errString_);
       } else {
         RCLCPP_INFO(this->get_logger(), "Servo %d off", i);
       }
@@ -154,20 +162,22 @@ void ManipulatorState::runInitSequence()
     }
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)", attempt,
-                  kMaxDeviceRetries);
+      RCLCPP_WARN(
+        this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
+        attempt, kMaxDeviceRetries);
       std::this_thread::sleep_for(std::chrono::seconds(1));
     } else {
-      RCLCPP_ERROR(this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_,
-                   errString_);
+      RCLCPP_ERROR(
+        this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_,
+        errString_);
       initializing_ = false;
       return;
     }
   }
 
   if (err_ != ErrorCode::None) {
-    RCLCPP_FATAL(this->get_logger(), "Device lock busy after %d retries, giving up",
-                 kMaxDeviceRetries);
+    RCLCPP_FATAL(
+      this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
     initializing_ = false;
     return;
   }
@@ -179,7 +189,7 @@ void ManipulatorState::runInitSequence()
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
   wmx3Lib_Io_ = std::make_unique<Io>(&wmx3Lib_);
 
-  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
+  setWmxParam((char *)wmxParamFilePath_.c_str());
   getWmxParam();
 
   // Build axis index/data vectors
@@ -209,9 +219,9 @@ void ManipulatorState::runInitSequence()
   isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);
   gazeboJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);
 
-  encoderJointTimer_ =
-      this->create_wall_timer(std::chrono::milliseconds(1000 / jointFeedbackRate_),
-                              std::bind(&ManipulatorState::publishJointState, this));
+  encoderJointTimer_ = this->create_wall_timer(
+    std::chrono::milliseconds(1000 / jointFeedbackRate_),
+    std::bind(&ManipulatorState::publishJointState, this));
 
   initialized_ = true;
   coreMotionReadySub_.reset();
@@ -219,9 +229,10 @@ void ManipulatorState::runInitSequence()
 }
 
 bool ManipulatorState::callSetAxisService(
-    rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
-    const std::string &service_name, const std::vector<int32_t> &index,
-    const std::vector<int32_t> &data)
+  rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+  const std::string & service_name,
+  const std::vector<int32_t> & index,
+  const std::vector<int32_t> & data)
 {
   const int max_retries = 5;
   const auto service_timeout = std::chrono::seconds(10);
@@ -237,13 +248,15 @@ bool ManipulatorState::callSetAxisService(
     request->index = index;
     request->data = data;
 
-    RCLCPP_INFO(this->get_logger(), "Calling %s (attempt %d/%d)", service_name.c_str(), attempt,
-                max_retries);
+    RCLCPP_INFO(
+      this->get_logger(), "Calling %s (attempt %d/%d)",
+      service_name.c_str(), attempt, max_retries);
 
     auto future = client->async_send_request(request);
     if (future.wait_for(call_timeout) != std::future_status::ready) {
-      RCLCPP_WARN(this->get_logger(), "Service call %s timed out (attempt %d/%d)",
-                  service_name.c_str(), attempt, max_retries);
+      RCLCPP_WARN(
+        this->get_logger(), "Service call %s timed out (attempt %d/%d)",
+        service_name.c_str(), attempt, max_retries);
       continue;
     }
 
@@ -251,23 +264,28 @@ bool ManipulatorState::callSetAxisService(
     if (!response->success) {
       // Server may not be initialized yet -- retry instead of aborting
       if (response->message.find("not initialized") != std::string::npos) {
-        RCLCPP_WARN(this->get_logger(), "%s: server not ready yet (attempt %d/%d), retrying...",
-                    service_name.c_str(), attempt, max_retries);
+        RCLCPP_WARN(
+          this->get_logger(),
+          "%s: server not ready yet (attempt %d/%d), retrying...",
+          service_name.c_str(), attempt, max_retries);
         std::this_thread::sleep_for(std::chrono::seconds(2));
         continue;
       }
-      RCLCPP_ERROR(this->get_logger(), "%s failed: %s", service_name.c_str(),
-                   response->message.c_str());
+      RCLCPP_ERROR(
+        this->get_logger(), "%s failed: %s",
+        service_name.c_str(), response->message.c_str());
       return false;
     }
 
-    RCLCPP_INFO(this->get_logger(), "%s succeeded: %s", service_name.c_str(),
-                response->message.c_str());
+    RCLCPP_INFO(
+      this->get_logger(), "%s succeeded: %s",
+      service_name.c_str(), response->message.c_str());
     return true;
   }
 
-  RCLCPP_ERROR(this->get_logger(), "Service call %s failed after %d attempts", service_name.c_str(),
-               max_retries);
+  RCLCPP_ERROR(
+    this->get_logger(), "Service call %s failed after %d attempts",
+    service_name.c_str(), max_retries);
   return false;
 }
 
@@ -277,8 +295,9 @@ void ManipulatorState::setRosParameter()
   this->declare_parameter<int>("joint_feedback_rate", 0);
   this->declare_parameter<float>("gripper_open_value", 0);
   this->declare_parameter<float>("gripper_close_value", 0);
-  this->declare_parameter<std::vector<std::string>>("joint_name",
-                                                    {"j1", "j2", "j3", "j4", "j5", "j6"});
+  this->declare_parameter<std::vector<std::string>>(
+    "joint_name", {"j1", "j2", "j3", "j4", "j5",
+      "j6"});
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
   this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
@@ -302,9 +321,7 @@ void ManipulatorState::setRosParameter()
 
   std::string joint_names_str;
   for (size_t i = 0; i < jointNames_.size(); ++i) {
-    if (i > 0) {
-      joint_names_str += ", ";
-    }
+    if (i > 0) {joint_names_str += ", ";}
     joint_names_str += jointNames_[i];
   }
   RCLCPP_INFO(this->get_logger(), "joint_name: [%s]", joint_names_str.c_str());
@@ -352,7 +369,7 @@ void ManipulatorState::publishJointState()
   gazeboJointPub_->publish(gazeboJointMsg_);
 }
 
-void ManipulatorState::setWmxParam(char *path)
+void ManipulatorState::setWmxParam(char * path)
 {
   err_ = wmx3LibCm_->config->ImportAndSetAll(path);
   if (err_ != ErrorCode::None) {
@@ -371,20 +388,23 @@ void ManipulatorState::getWmxParam()
     RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
   } else {
     for (int axis = 0; axis < jointNumber_; axis++) {
-      RCLCPP_INFO(this->get_logger(), "axis: %d, numerator: %f", axis,
-                  axisParam_.gearRatioNumerator[axis]);
-      RCLCPP_INFO(this->get_logger(), "axis: %d, denominator: %f", axis,
-                  axisParam_.gearRatioDenominator[axis]);
-      RCLCPP_INFO(this->get_logger(), "axis: %d, polarity: %d", axis,
-                  static_cast<int>(axisParam_.axisPolarity[axis]));
-      RCLCPP_INFO(this->get_logger(), "axis: %d, abs encoder: %d", axis,
-                  axisParam_.absoluteEncoderMode[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, denominator: %f", axis,
+        axisParam_.gearRatioDenominator[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, polarity: %d", axis,
+        (int)axisParam_.axisPolarity[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, abs encoder: %d", axis,
+        axisParam_.absoluteEncoderMode[axis]);
       RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, axisParam_.axisCommandMode[axis]);
     }
   }
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<ManipulatorState>();
