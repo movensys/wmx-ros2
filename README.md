@@ -34,19 +34,19 @@ flowchart LR;
 title: Trajectory Control
 ---
 flowchart LR;
-    A["/follow_joint_trajectory"] -->|action| B[follow_joint_trajectory_server];
+    A["/follow_joint_trajectory"] -->|action| B[joint_trajectory_controller];
     B --> C[WMX3 API];
     C --> D[WMX Engine];
     D --> E[Robot];
     E --> D[WMX Engine];
     D --> C[WMX3 API];
-    C --> F[manipulator_state];
+    C --> F[joint_state_broadcaster];
     F --> G["/joint_states"];
 ```
 
-- `/follow_joint_trajectory` (action) -> `follow_joint_trajectory_server` -> WMX3 API -> WMX Engine -> Robot
+- `/follow_joint_trajectory` (action) -> `joint_trajectory_controller` -> WMX3 API -> WMX Engine -> Robot
 
-- Robot -> WMX Engine -> WMX3 API -> `manipulator_state` -> `/joint_states`
+- Robot -> WMX Engine -> WMX3 API -> `joint_state_broadcaster` -> `/joint_states`
 
 ## Packages
 
@@ -56,9 +56,9 @@ flowchart LR;
 
 ## Nodes
 
-**manipulator_state** - Publishes joint feedback from WMX3 encoder to `/joint_states`
+**joint_state_broadcaster** - Publishes joint feedback from WMX3 encoder to `/joint_states`
 
-**follow_joint_trajectory_server** - Receives trajectory action and executes via WMX3 C-Spline
+**joint_trajectory_controller** - Receives trajectory action and executes via WMX3 C-Spline
 
 **wmx_core_motion_node** - Core motion control and trajectory execution
 
@@ -70,13 +70,13 @@ flowchart LR;
 
 ## Launch Files
 
-**[wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)** - For trajectory control (starts `manipulator_state` + `follow_joint_trajectory_server`)
+**[wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)** - For trajectory control (starts `joint_state_broadcaster` + `joint_trajectory_controller`)
 
 **[wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py)** - For low-level axis control (starts `wmx_ros2_general_node`)
 
 ## MoveIt2 Integration
 
-To connect with `movensys_isaac_manipulator`, change action name in `follow_joint_trajectory_server.cpp:80`:
+To connect with `movensys_isaac_manipulator`, change action name in `joint_trajectory_controller.cpp:80`:
 
 ```cpp
 "/movensys_manipulator_arm_controller/follow_joint_trajectory"

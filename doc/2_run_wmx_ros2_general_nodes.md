@@ -1,4 +1,4 @@
-# For trajectory control
+# Run WMX ROS2 Package
 ```
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
@@ -11,5 +11,5 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
      bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && source $HOME/workspaces/wmx_ros2_ws/install/setup.bash && \
-     ros2 launch wmx_ros2_package wmx_ros2_cr3a_manipulator.launch.py use_sim_time:=false"
+     ros2 launch wmx_ros2_package wmx_ros2_general_nodes.launch.py"     
 ```

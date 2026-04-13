@@ -31,20 +31,27 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
-add_executable(manipulator_state src/manipulator_state.cpp)
-ament_target_dependencies(manipulator_state rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
-target_include_directories(manipulator_state PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
-target_link_libraries(manipulator_state coremotionapi ioapi wmx3api imdll)
-target_link_directories(manipulator_state PRIVATE ${WMX3_SDK_PATH}/lib)
-target_compile_definitions(manipulator_state PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+add_executable(joint_state_broadcaster src/joint_state_broadcaster.cpp)
+ament_target_dependencies(joint_state_broadcaster rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
+target_include_directories(joint_state_broadcaster PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(joint_state_broadcaster coremotionapi ioapi wmx3api imdll)
+target_link_directories(joint_state_broadcaster PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(joint_state_broadcaster PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
-add_executable(follow_joint_trajectory_server src/follow_joint_trajectory_server.cpp)
-ament_target_dependencies(follow_joint_trajectory_server
+add_executable(joint_trajectory_controller src/joint_trajectory_controller.cpp)
+ament_target_dependencies(joint_trajectory_controller
   rclcpp rclcpp_action std_msgs std_srvs control_msgs trajectory_msgs wmx_ros2_message)
-target_include_directories(follow_joint_trajectory_server PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
-target_link_libraries(follow_joint_trajectory_server coremotionapi advancedmotionapi ioapi wmx3api imdll)
-target_link_directories(follow_joint_trajectory_server PRIVATE ${WMX3_SDK_PATH}/lib)
-target_compile_definitions(follow_joint_trajectory_server PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+target_include_directories(joint_trajectory_controller PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(joint_trajectory_controller coremotionapi advancedmotionapi ioapi wmx3api imdll)
+target_link_directories(joint_trajectory_controller PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(joint_trajectory_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+
+add_executable(gripper_controller src/gripper_controller.cpp)
+ament_target_dependencies(gripper_controller rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
+target_include_directories(gripper_controller PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(gripper_controller coremotionapi ioapi wmx3api imdll)
+target_link_directories(gripper_controller PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(gripper_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
 ament_target_dependencies(wmx_engine_node rclcpp std_msgs std_srvs wmx_ros2_message)
@@ -75,8 +82,9 @@ target_link_directories(wmx_ethercat_node PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(wmx_ethercat_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 install(TARGETS
-  manipulator_state
-  follow_joint_trajectory_server
+  joint_state_broadcaster
+  joint_trajectory_controller
+  gripper_controller
   wmx_engine_node
   wmx_core_motion_node
   wmx_io_node
