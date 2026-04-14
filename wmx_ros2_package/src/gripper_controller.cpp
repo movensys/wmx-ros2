@@ -18,8 +18,7 @@ public:
   GripperController();
   ~GripperController();
 
-  int gripperBytesAddress_;
-  int gripperBitAddress_;
+  std::vector<int> gripperAddress;
   std::string wmxGripperTopic_;
 
   int err_;
@@ -101,26 +100,22 @@ void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg) {
 
 void GripperController::setRosParameter(){
   this->declare_parameter<std::string>("wmx_gripper_topic", "/wmx_gripper_topic/no_param");
-  this->declare_parameter<int>("gripper_bytes_address", 0);
-  this->declare_parameter<int>("gripper_bit_address", 0);
+  this->declare_parameter<std::vector<int>>("gripper_address", {0, 0});
 
   this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
-  this->get_parameter("gripper_bytes_address", gripperBytesAddress_);
-  this->get_parameter("gripper_bit_address", gripperBitAddress_);
-  
+  this->get_parameter("gripper_address", gripperAddress);
 
   // Print parameter values
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "wmx_gripper_topic: %s", wmxGripperTopic_.c_str());
-  RCLCPP_INFO(this->get_logger(), "gripper_bytes_address: %d", gripperBytesAddress_);
-  RCLCPP_INFO(this->get_logger(), "gripper_bit_address: %d", gripperBitAddress_);
+  RCLCPP_INFO(this->get_logger(), "gripper_address: [%d, %d]", gripperAddress[0], gripperAddress[1]);
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
 void GripperController::setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                                         std::shared_ptr<std_srvs::srv::SetBool::Response> response){
   if (request->data) {
-    err_ = Wmx3Lib_Io_.SetOutBit(gripperBytesAddress_, gripperBitAddress_, 1);
+    err_ = Wmx3Lib_Io_.SetOutBit(gripperAddress[0], gripperAddress[1], 1);
     if (err_ != ErrorCode::None) {
       wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
       RCLCPP_ERROR(this->get_logger(), "Gripper fails to Close: %s", errString_);
@@ -134,7 +129,7 @@ void GripperController::setGripper(const std::shared_ptr<std_srvs::srv::SetBool:
     }
   }
   else {
-    err_ = Wmx3Lib_Io_.SetOutBit(gripperBytesAddress_, gripperBitAddress_, 0);
+    err_ = Wmx3Lib_Io_.SetOutBit(gripperAddress[0], gripperAddress[1], 0);
     if (err_ != ErrorCode::None) {
       wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
       RCLCPP_ERROR(this->get_logger(), "Gripper fails to Open: %s", errString_);

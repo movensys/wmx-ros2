@@ -34,8 +34,7 @@ public:
   float gripperOpenValue_;
   std::vector<std::string> jointNames_;
   std::vector<std::string> gripperJointNames_;
-  int gripperBytesAddress_;
-  int gripperBitAddress_;
+  std::vector<int> gripperAddress_;
   std::string encoderJointTopic_;
   std::string isaacsimJointTopic_;
   std::string gazeboJointTopic_;
@@ -301,8 +300,7 @@ void JointStateBroadcaster::setRosParameter()
   this->declare_parameter<float>("gripper_close_value", 0);
   this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
   this->declare_parameter<std::vector<std::string>>("gripper_joint_name", {"g1", "g2"});
-  this->declare_parameter<int>("gripper_bytes_address", 0);
-  this->declare_parameter<int>("gripper_bit_address", 0);
+  this->declare_parameter<std::vector<int>>("gripper_address", {0, 0});
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
   this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
@@ -315,8 +313,7 @@ void JointStateBroadcaster::setRosParameter()
   this->get_parameter("gripper_close_value", gripperCloseValue_);
   this->get_parameter("joint_name", jointNames_);
   this->get_parameter("gripper_joint_name", gripperJointNames_);
-  this->get_parameter("gripper_bytes_address", gripperBytesAddress_);
-  this->get_parameter("gripper_bit_address", gripperBitAddress_);
+  this->get_parameter("gripper_address", gripperAddress_);
   this->get_parameter("encoder_joint_topic", encoderJointTopic_);
   this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
   this->get_parameter("gazebo_joint_topic", gazeboJointTopic_);
@@ -343,8 +340,7 @@ void JointStateBroadcaster::setRosParameter()
   }
   RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [%s]", gripper_joint_names_str.c_str());
 
-  RCLCPP_INFO(this->get_logger(), "gripper_bytes_address: %d", gripperBytesAddress_);
-  RCLCPP_INFO(this->get_logger(), "gripper_bit_address: %d", gripperBitAddress_);
+  RCLCPP_INFO(this->get_logger(), "gripper_address: [%d, %d]", gripperAddress_[0], gripperAddress_[1]);
   RCLCPP_INFO(this->get_logger(), "encoder_joint_topic: %s", encoderJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "isaacsim_joint_topic: %s", isaacsimJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "gazebo_joint_topic: %s", gazeboJointTopic_.c_str());
@@ -368,7 +364,7 @@ void JointStateBroadcaster::publishJointState()
 
   for (int i = 0; i < gripperJointNumber_; ++i) {
     encoderJointMsg_.name.push_back(gripperJointNames_[i]);
-    wmx3Lib_Io_->GetOutBit(gripperBytesAddress_, gripperBytesAddress_, &gripperData_);
+    wmx3Lib_Io_->GetOutBit(gripperAddress_[0], gripperAddress_[1], &gripperData_);
     if (gripperData_) {
       encoderJointMsg_.position.push_back(gripperCloseValue_);
       encoderJointMsg_.velocity.push_back(0.000);
