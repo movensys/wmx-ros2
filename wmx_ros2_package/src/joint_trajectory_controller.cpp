@@ -27,8 +27,7 @@ public:
 
   JointTrajectoryController();
   ~JointTrajectoryController();
-
-  int jointNumber_;
+  
   std::string jointTrajectoryAction_;
 
   int err_;
