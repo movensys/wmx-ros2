@@ -18,7 +18,7 @@ public:
   GripperController();
   ~GripperController();
 
-  std::vector<int> gripperAddress;
+  std::vector<int64_t> gripperAddress;
   std::string wmxGripperTopic_;
 
   int err_;
@@ -100,7 +100,7 @@ void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg) {
 
 void GripperController::setRosParameter(){
   this->declare_parameter<std::string>("wmx_gripper_topic", "/wmx_gripper_topic/no_param");
-  this->declare_parameter<std::vector<int>>("gripper_address", {0, 0});
+  this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{0, 0});
 
   this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
   this->get_parameter("gripper_address", gripperAddress);
@@ -108,7 +108,7 @@ void GripperController::setRosParameter(){
   // Print parameter values
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "wmx_gripper_topic: %s", wmxGripperTopic_.c_str());
-  RCLCPP_INFO(this->get_logger(), "gripper_address: [%d, %d]", gripperAddress[0], gripperAddress[1]);
+  RCLCPP_INFO(this->get_logger(), "gripper_address: [%ld, %ld]", gripperAddress[0], gripperAddress[1]);
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 

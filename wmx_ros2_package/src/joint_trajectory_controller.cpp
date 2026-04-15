@@ -28,7 +28,7 @@ public:
   JointTrajectoryController();
   ~JointTrajectoryController();
   
-  std::vector<int> jointAxes_;
+  std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
 
   int err_;
@@ -147,7 +147,7 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
 
 void JointTrajectoryController::setRosParameter()
 {
-  this->declare_parameter<std::vector<int>>("joint_axes", {});
+  this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
   this->declare_parameter<std::string>("joint_trajectory_action","/joint_trajectory_action/no_param");
 
   this->get_parameter("joint_axes", jointAxes_);

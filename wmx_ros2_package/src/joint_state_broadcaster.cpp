@@ -30,10 +30,10 @@ public:
   int jointFeedbackRate_;
   float gripperCloseValue_;
   float gripperOpenValue_;
-  std::vector<int> jointAxes_;
+  std::vector<int64_t> jointAxes_;
   std::vector<std::string> jointNames_;
   std::vector<std::string> gripperJointNames_;
-  std::vector<int> gripperAddress_;
+  std::vector<int64_t> gripperAddress_;
   std::string encoderJointTopic_;
   std::string isaacsimJointTopic_;
   std::string gazeboJointTopic_;
@@ -69,8 +69,8 @@ private:
   void runInitSequence();
   bool callSetAxisService(rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
                           const std::string & service_name,
-                          const std::vector<int32_t> & index,
-                          const std::vector<int32_t> & data);
+                          const std::vector<int64_t> & index,
+                          const std::vector<int64_t> & data);
   void publishJointState();
   void setRosParameter();
   void setWmxParam(char * path);
@@ -193,8 +193,8 @@ void JointStateBroadcaster::runInitSequence()
   setWmxParam((char *)wmxParamFilePath_.c_str());
   getWmxParam();
 
-  std::vector<int32_t> zeroData(jointAxes_.size(), 0);
-  std::vector<int32_t> onData(jointAxes_.size(), 1);
+  std::vector<int64_t> zeroData(jointAxes_.size(), 0);
+  std::vector<int64_t> onData(jointAxes_.size(), 1);
 
   // Clear alarms on all axes
   if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", jointAxes_, zeroData)) {
@@ -227,8 +227,8 @@ void JointStateBroadcaster::runInitSequence()
 bool JointStateBroadcaster::callSetAxisService(
               rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
               const std::string & service_name,
-              const std::vector<int32_t> & index,
-              const std::vector<int32_t> & data)
+              const std::vector<int64_t> & index,
+              const std::vector<int64_t> & data)
 {
   const int max_retries = 5;
   const auto service_timeout = std::chrono::seconds(10);
@@ -241,8 +241,8 @@ bool JointStateBroadcaster::callSetAxisService(
 
   for (int attempt = 1; attempt <= max_retries; attempt++) {
     auto request = std::make_shared<wmx_ros2_message::srv::SetAxis::Request>();
-    request->index = index;
-    request->data = data;
+    request->index.assign(index.begin(), index.end());
+    request->data.assign(data.begin(), data.end());
 
     RCLCPP_INFO(
       this->get_logger(), "Calling %s (attempt %d/%d)",
@@ -287,13 +287,13 @@ bool JointStateBroadcaster::callSetAxisService(
 
 void JointStateBroadcaster::setRosParameter()
 {
-  this->declare_parameter<std::vector<int>>("joint_axes", {});
+  this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
   this->declare_parameter<int>("joint_feedback_rate", 0);
   this->declare_parameter<float>("gripper_open_value", 0);
   this->declare_parameter<float>("gripper_close_value", 0);
   this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
   this->declare_parameter<std::vector<std::string>>("gripper_joint_name", {"g1", "g2"});
-  this->declare_parameter<std::vector<int>>("gripper_address", {0, 0});
+  this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{0, 0});
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
   this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
@@ -337,7 +337,7 @@ void JointStateBroadcaster::setRosParameter()
   }
   RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [%s]", gripper_joint_names_str.c_str());
 
-  RCLCPP_INFO(this->get_logger(), "gripper_address: [%d, %d]", gripperAddress_[0], gripperAddress_[1]);
+  RCLCPP_INFO(this->get_logger(), "gripper_address: [%ld, %ld]", gripperAddress_[0], gripperAddress_[1]);
   RCLCPP_INFO(this->get_logger(), "encoder_joint_topic: %s", encoderJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "isaacsim_joint_topic: %s", isaacsimJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "gazebo_joint_topic: %s", gazeboJointTopic_.c_str());
