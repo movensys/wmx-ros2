@@ -292,8 +292,8 @@ void JointStateBroadcaster::setRosParameter()
   this->declare_parameter<float>("gripper_open_value", 0);
   this->declare_parameter<float>("gripper_close_value", 0);
   this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
-  this->declare_parameter<std::vector<std::string>>("gripper_joint_name", {});
-  this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{});
+  this->declare_parameter<std::vector<std::string>>("gripper_joint_name", std::vector<std::string>{});
+  this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{0, 0});
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
   this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
