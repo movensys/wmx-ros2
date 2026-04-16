@@ -363,7 +363,7 @@ void JointStateBroadcaster::publishJointState()
     encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[jointAxes_[i]].actualVelocity);
   }
 
-  for (size_t i = 0; i < gripperJointNames_.size() && gripperAddress_.size() >= 2; ++i) {
+  for (size_t i = 0; i < gripperJointNames_.size() && gripperAddress_.size() >= 1; ++i) {
     encoderJointMsg_.name.push_back(gripperJointNames_[i]);
     wmx3Lib_Io_->GetOutBit(gripperAddress_[0], gripperAddress_[1], &gripperData_);
     if (gripperData_) {
