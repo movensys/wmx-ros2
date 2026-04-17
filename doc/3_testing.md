@@ -21,7 +21,7 @@
 ### Run all tests
 
 ```bash
-cd ~/wmx_ros2_ws
+cd ~/workspaces/movensys_ws
 source /opt/ros/humble/setup.bash && source install/setup.bash
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
