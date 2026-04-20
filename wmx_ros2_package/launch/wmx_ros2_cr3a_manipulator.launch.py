@@ -48,6 +48,7 @@ def generate_launch_description():
         executable='gripper_controller',
         name='gripper_controller',
         parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
+        additional_env={'MANIPULATOR_MODEL': 'dobot_cr3a'},
         output='screen',
     )
 
