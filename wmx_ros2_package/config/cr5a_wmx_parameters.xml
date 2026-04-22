@@ -198,7 +198,7 @@
 			<PositiveTrqLimit>300.000000</PositiveTrqLimit>
 			<AxisUnit>0.000000</AxisUnit>
 			<VelocityFeedforwardGain>0.000000</VelocityFeedforwardGain>
-			<AxisPolarity>-1</AxisPolarity>
+			<AxisPolarity>1</AxisPolarity>
 			<MaxMotorSpeed>3000.000000</MaxMotorSpeed>
 			<AbsoluteEncoderMode>1</AbsoluteEncoderMode>
 			<AbsoluteEncoderHomeOffset>0.000000</AbsoluteEncoderHomeOffset>
@@ -384,7 +384,7 @@
 			<PositiveTrqLimit>300.000000</PositiveTrqLimit>
 			<AxisUnit>0.000000</AxisUnit>
 			<VelocityFeedforwardGain>0.000000</VelocityFeedforwardGain>
-			<AxisPolarity>-1</AxisPolarity>
+			<AxisPolarity>1</AxisPolarity>
 			<MaxMotorSpeed>3000.000000</MaxMotorSpeed>
 			<AbsoluteEncoderMode>1</AbsoluteEncoderMode>
 			<AbsoluteEncoderHomeOffset>0.000000</AbsoluteEncoderHomeOffset>
@@ -558,7 +558,7 @@
 		</EmergencyStopParam>
 		<AxisParam>
 			<AxisCommandMode>0</AxisCommandMode>
-			<AxisGearRatioNumerator>42467328.000000</AxisGearRatioNumerator>
+			<AxisGearRatioNumerator>52953088.000000</AxisGearRatioNumerator>
 			<AxisGearRatioDenominator>6.283185307179586</AxisGearRatioDenominator>
 			<SingleTurnMode>0</SingleTurnMode>
 			<SingleTurnEncoderCount>65536</SingleTurnEncoderCount>
@@ -756,7 +756,7 @@
 			<PositiveTrqLimit>300.000000</PositiveTrqLimit>
 			<AxisUnit>0.000000</AxisUnit>
 			<VelocityFeedforwardGain>0.000000</VelocityFeedforwardGain>
-			<AxisPolarity>-1</AxisPolarity>
+			<AxisPolarity>1</AxisPolarity>
 			<MaxMotorSpeed>3000.000000</MaxMotorSpeed>
 			<AbsoluteEncoderMode>1</AbsoluteEncoderMode>
 			<AbsoluteEncoderHomeOffset>0.000000</AbsoluteEncoderHomeOffset>
@@ -942,7 +942,7 @@
 			<PositiveTrqLimit>300.000000</PositiveTrqLimit>
 			<AxisUnit>0.000000</AxisUnit>
 			<VelocityFeedforwardGain>0.000000</VelocityFeedforwardGain>
-			<AxisPolarity>-1</AxisPolarity>
+			<AxisPolarity>1</AxisPolarity>
 			<MaxMotorSpeed>3000.000000</MaxMotorSpeed>
 			<AbsoluteEncoderMode>1</AbsoluteEncoderMode>
 			<AbsoluteEncoderHomeOffset>0.000000</AbsoluteEncoderHomeOffset>
@@ -1128,7 +1128,7 @@
 			<PositiveTrqLimit>300.000000</PositiveTrqLimit>
 			<AxisUnit>0.000000</AxisUnit>
 			<VelocityFeedforwardGain>0.000000</VelocityFeedforwardGain>
-			<AxisPolarity>-1</AxisPolarity>
+			<AxisPolarity>1</AxisPolarity>
 			<MaxMotorSpeed>3000.000000</MaxMotorSpeed>
 			<AbsoluteEncoderMode>1</AbsoluteEncoderMode>
 			<AbsoluteEncoderHomeOffset>0.000000</AbsoluteEncoderHomeOffset>
