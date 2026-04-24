@@ -11,7 +11,7 @@ export ROS_DISTRO=jazzy                         #support {jazzy, humble}
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 source /opt/ros/$ROS_DISTRO/setup.bash
-source ~/workspaces/wmx_ros2_ws/install/setup.bash
+source ~/workspaces/movensys_ws/install/setup.bash
 ```
 ```
 source ~/.bashrc
@@ -33,14 +33,14 @@ sudo apt install -y ros-${ROS_DISTRO}-graph-msgs \
 
 ## Setup
 ```
-mkdir -p ~/workspaces/wmx_ros2_ws/src
-cd ~/workspaces/wmx_ros2_ws/src && \
+mkdir -p ~/workspaces/movensys_ws/src
+cd ~/workspaces/movensys_ws/src && \
    git clone https://github.com/movensys/wmx-ros2.git
 ```
 
 ## Build
 ```
-cd ~/workspaces/wmx_ros2_ws
+cd ~/workspaces/movensys_ws
 colcon build --packages-select wmx_ros2_message
 source install/setup.bash
 colcon build

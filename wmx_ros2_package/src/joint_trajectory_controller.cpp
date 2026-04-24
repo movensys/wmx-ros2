@@ -27,8 +27,8 @@ public:
 
   JointTrajectoryController();
   ~JointTrajectoryController();
-
-  int jointNumber_;
+  
+  std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
 
   int err_;
@@ -147,14 +147,20 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
 
 void JointTrajectoryController::setRosParameter()
 {
-  this->declare_parameter<int>("joint_number", 0);
+  this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
   this->declare_parameter<std::string>("joint_trajectory_action","/joint_trajectory_action/no_param");
-  
-  this->get_parameter("joint_number", jointNumber_);
+
+  this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
-  
+
+  std::string joint_axes_str;
+  for (size_t i = 0; i < jointAxes_.size(); ++i) {
+    if (i > 0) {joint_axes_str += ", ";}
+    joint_axes_str += std::to_string(jointAxes_[i]);
+  }
+
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
-  RCLCPP_INFO(this->get_logger(), "joint_number: %d", jointNumber_);
+  RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", joint_axes_str.c_str());
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
@@ -207,11 +213,11 @@ void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_hand
   logTrajectory(trajectory);
 
   // Generate spline commands from trajectory.points
-  axisSel.axisCount = jointNumber_;
-  spl.dimensionCount = jointNumber_;
-  for (int j = 0; j < jointNumber_; ++j) {
-    axisSel.axis[j] = j;
-    spl.axis[j] = j;
+  axisSel.axisCount = jointAxes_.size();
+  spl.dimensionCount = jointAxes_.size();
+  for (size_t j = 0; j < jointAxes_.size(); ++j) {
+    axisSel.axis[j] = jointAxes_[j];
+    spl.axis[j] = jointAxes_[j];
   }
 
   for (size_t i = 0; i < trajectory.points.size(); ++i) {
@@ -219,7 +225,7 @@ void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_hand
     timeMilliseconds = rclcpp::Duration(pt.time_from_start).seconds() * 1000;
     time_spl[i] = timeMilliseconds;
 
-    for (int j = 0; j < jointNumber_; ++j) {
+    for (size_t j = 0; j < jointAxes_.size(); ++j) {
       pt_spl[i].pos[j] = pt.positions.at(j);
     }
   }
@@ -263,8 +269,8 @@ void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_hand
       CoreMotionStatus cmStatus;
       wmx3LibCm_.GetStatus(&cmStatus);
       bool all_done = true;
-      for (int j = 0; j < jointNumber_; ++j) {
-        if (!cmStatus.axesStatus[j].inPos) {all_done = false; break;}
+      for (int axis : jointAxes_) {
+        if (!cmStatus.axesStatus[axis].inPos) {all_done = false; break;}
       }
       if (all_done) {break;}
 

@@ -10,7 +10,7 @@ ros2 service call /wmx/engine/get_status std_srvs/srv/Trigger "{}"
 
 # 2. Load axis parameters from file
 ros2 service call /wmx/params/load wmx_ros2_message/srv/LoadWmxParams \
-  "{file_path: '/home/engine/wmx_ros2_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/cr3a_wmx_parameters.xml'}"
+  "{file_path: '/home/engine/movensys_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/cr3a_wmx_parameters.xml'}"
 
 # 3. Clear any amp alarms
 ros2 service call /wmx/axis/clear_alarm wmx_ros2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
@@ -64,11 +64,11 @@ ros2 service call /wmx/engine/scan_network std_srvs/srv/Trigger "{}"
 ```bash
 # CR3A
 ros2 service call /wmx/params/load wmx_ros2_message/srv/LoadWmxParams \
-  "{file_path: '/home/engine/wmx_ros2_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/cr3a_wmx_parameters.xml'}"
+  "{file_path: '/home/engine/movensys_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/cr3a_wmx_parameters.xml'}"
 
 # Baymax
 ros2 service call /wmx/params/load wmx_ros2_message/srv/LoadWmxParams \
-  "{file_path: '/home/engine/wmx_ros2_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/baymax_wmx_parameters.xml'}"
+  "{file_path: '/home/engine/movensys_ws/install/wmx_ros2_package/share/wmx_ros2_package/config/baymax_wmx_parameters.xml'}"
 ```
 
 ### Get Parameters (inspect active axis config)

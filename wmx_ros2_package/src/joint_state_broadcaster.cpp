@@ -27,15 +27,13 @@ public:
   JointStateBroadcaster();
   ~JointStateBroadcaster();
 
-  int jointNumber_;
-  int gripperJointNumber_;
   int jointFeedbackRate_;
   float gripperCloseValue_;
   float gripperOpenValue_;
+  std::vector<int64_t> jointAxes_;
   std::vector<std::string> jointNames_;
   std::vector<std::string> gripperJointNames_;
-  int gripperBytesAddress_;
-  int gripperBitAddress_;
+  std::vector<int64_t> gripperAddress_;
   std::string encoderJointTopic_;
   std::string isaacsimJointTopic_;
   std::string gazeboJointTopic_;
@@ -71,8 +69,8 @@ private:
   void runInitSequence();
   bool callSetAxisService(rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
                           const std::string & service_name,
-                          const std::vector<int32_t> & index,
-                          const std::vector<int32_t> & data);
+                          const std::vector<int64_t> & index,
+                          const std::vector<int64_t> & data);
   void publishJointState();
   void setRosParameter();
   void setWmxParam(char * path);
@@ -112,15 +110,15 @@ JointStateBroadcaster::~JointStateBroadcaster()
       encoderJointTimer_->cancel();
     }
 
-    for (int i = 0; i < jointNumber_; i++) {
-      err_ = wmx3LibCm_->axisControl->SetServoOn(i, 0);
+    for (int axis : jointAxes_) {
+      err_ = wmx3LibCm_->axisControl->SetServoOn(axis, 0);
       if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(
-          this->get_logger(), "Servo %d error to off. Error=%d (%s)", i, err_,
+          this->get_logger(), "Servo %d error to off. Error=%d (%s)", axis, err_,
           errString_);
       } else {
-        RCLCPP_INFO(this->get_logger(), "Servo %d off", i);
+        RCLCPP_INFO(this->get_logger(), "Servo %d off", axis);
       }
     }
 
@@ -195,23 +193,18 @@ void JointStateBroadcaster::runInitSequence()
   setWmxParam((char *)wmxParamFilePath_.c_str());
   getWmxParam();
 
-  // Build axis index/data vectors
-  std::vector<int32_t> allAxes;
-  std::vector<int32_t> zeroData(jointNumber_, 0);
-  std::vector<int32_t> onData(jointNumber_, 1);
-  for (int i = 0; i < jointNumber_; i++) {
-    allAxes.push_back(i);
-  }
+  std::vector<int64_t> zeroData(jointAxes_.size(), 0);
+  std::vector<int64_t> onData(jointAxes_.size(), 1);
 
   // Clear alarms on all axes
-  if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", allAxes, zeroData)) {
+  if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", jointAxes_, zeroData)) {
     RCLCPP_ERROR(this->get_logger(), "Init failed at clear_alarm — node will not retry");
     initializing_ = false;
     return;
   }
 
   // Set servo on for all axes
-  if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", allAxes, onData)) {
+  if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", jointAxes_, onData)) {
     RCLCPP_ERROR(this->get_logger(), "Init failed at set_on — node will not retry");
     initializing_ = false;
     return;
@@ -232,10 +225,10 @@ void JointStateBroadcaster::runInitSequence()
 }
 
 bool JointStateBroadcaster::callSetAxisService(
-  rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
-  const std::string & service_name,
-  const std::vector<int32_t> & index,
-  const std::vector<int32_t> & data)
+              rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+              const std::string & service_name,
+              const std::vector<int64_t> & index,
+              const std::vector<int64_t> & data)
 {
   const int max_retries = 5;
   const auto service_timeout = std::chrono::seconds(10);
@@ -248,8 +241,8 @@ bool JointStateBroadcaster::callSetAxisService(
 
   for (int attempt = 1; attempt <= max_retries; attempt++) {
     auto request = std::make_shared<wmx_ros2_message::srv::SetAxis::Request>();
-    request->index = index;
-    request->data = data;
+    request->index.assign(index.begin(), index.end());
+    request->data.assign(data.begin(), data.end());
 
     RCLCPP_INFO(
       this->get_logger(), "Calling %s (attempt %d/%d)",
@@ -294,40 +287,32 @@ bool JointStateBroadcaster::callSetAxisService(
 
 void JointStateBroadcaster::setRosParameter()
 {
-  this->declare_parameter<int>("joint_number", 0);
-  this->declare_parameter<int>("gripper_joint_number", 0);
+  this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
   this->declare_parameter<int>("joint_feedback_rate", 0);
   this->declare_parameter<float>("gripper_open_value", 0);
   this->declare_parameter<float>("gripper_close_value", 0);
   this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
-  this->declare_parameter<std::vector<std::string>>("gripper_joint_name", {"g1", "g2"});
-  this->declare_parameter<int>("gripper_bytes_address", 0);
-  this->declare_parameter<int>("gripper_bit_address", 0);
+  this->declare_parameter<std::vector<std::string>>("gripper_joint_name", std::vector<std::string>{});
+  this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{0, 0});
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
   this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
   this->declare_parameter<std::string>("wmx_param_file_path", "/wmx_param_file_path/no_param");
 
-  this->get_parameter("joint_number", jointNumber_);
-  this->get_parameter("gripper_joint_number", gripperJointNumber_);
+  this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
   this->get_parameter("gripper_open_value", gripperOpenValue_);
   this->get_parameter("gripper_close_value", gripperCloseValue_);
   this->get_parameter("joint_name", jointNames_);
   this->get_parameter("gripper_joint_name", gripperJointNames_);
-  this->get_parameter("gripper_bytes_address", gripperBytesAddress_);
-  this->get_parameter("gripper_bit_address", gripperBitAddress_);
+  this->get_parameter("gripper_address", gripperAddress_);
   this->get_parameter("encoder_joint_topic", encoderJointTopic_);
   this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
   this->get_parameter("gazebo_joint_topic", gazeboJointTopic_);
   this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
-  RCLCPP_INFO(this->get_logger(), "joint_number: %d", jointNumber_);
-  RCLCPP_INFO(this->get_logger(), "gripper_joint_number: %d", gripperJointNumber_);
   RCLCPP_INFO(this->get_logger(), "joint_feedback_rate: %d", jointFeedbackRate_);
-  RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f", gripperOpenValue_);
-  RCLCPP_INFO(this->get_logger(), "gripper_close_value: %f", gripperCloseValue_);
 
   std::string joint_names_str;
   for (size_t i = 0; i < jointNames_.size(); ++i) {
@@ -336,15 +321,28 @@ void JointStateBroadcaster::setRosParameter()
   }
   RCLCPP_INFO(this->get_logger(), "joint_name: [%s]", joint_names_str.c_str());
 
-  std::string gripper_joint_names_str;
-  for (size_t i = 0; i < gripperJointNames_.size(); ++i) {
-    if (i > 0) {gripper_joint_names_str += ", ";}
-    gripper_joint_names_str += gripperJointNames_[i];
+  std::string joint_axes_str;
+  for (size_t i = 0; i < jointAxes_.size(); ++i) {
+    if (i > 0) {joint_axes_str += ", ";}
+    joint_axes_str += std::to_string(jointAxes_[i]);
   }
-  RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [%s]", gripper_joint_names_str.c_str());
+  RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", joint_axes_str.c_str());
 
-  RCLCPP_INFO(this->get_logger(), "gripper_bytes_address: %d", gripperBytesAddress_);
-  RCLCPP_INFO(this->get_logger(), "gripper_bit_address: %d", gripperBitAddress_);
+  if (!gripperJointNames_.empty()) {
+    std::string gripper_joint_names_str;
+    for (size_t i = 0; i < gripperJointNames_.size(); ++i) {
+      if (i > 0) {gripper_joint_names_str += ", ";}
+      gripper_joint_names_str += gripperJointNames_[i];
+    }
+    RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [%s]", gripper_joint_names_str.c_str());
+    RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f",  gripperOpenValue_);
+    RCLCPP_INFO(this->get_logger(), "gripper_close_value: %f", gripperCloseValue_);
+    if (gripperAddress_.size() >= 2) {
+      RCLCPP_INFO(this->get_logger(), "gripper_address: [%ld, %ld]", gripperAddress_[0], gripperAddress_[1]);
+    }
+  } else {
+    RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [] (no gripper)");
+  }
   RCLCPP_INFO(this->get_logger(), "encoder_joint_topic: %s", encoderJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "isaacsim_joint_topic: %s", isaacsimJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "gazebo_joint_topic: %s", gazeboJointTopic_.c_str());
@@ -358,17 +356,16 @@ void JointStateBroadcaster::publishJointState()
 
   sensor_msgs::msg::JointState encoderJointMsg_;
   std_msgs::msg::Float64MultiArray gazeboJointMsg_;
-  gazeboJointMsg_.data.resize(jointNumber_ + gripperJointNumber_);
 
-  for (int i = 0; i < jointNumber_; ++i) {
+  for (size_t i = 0; i < jointAxes_.size(); ++i) {
     encoderJointMsg_.name.push_back(jointNames_[i]);
-    encoderJointMsg_.position.push_back(cmStatus_.axesStatus[i].actualPos);
-    encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[i].actualVelocity);
+    encoderJointMsg_.position.push_back(cmStatus_.axesStatus[jointAxes_[i]].actualPos);
+    encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[jointAxes_[i]].actualVelocity);
   }
 
-  for (int i = 0; i < gripperJointNumber_; ++i) {
+  for (size_t i = 0; i < gripperJointNames_.size() && gripperAddress_.size() >= 1; ++i) {
     encoderJointMsg_.name.push_back(gripperJointNames_[i]);
-    wmx3Lib_Io_->GetOutBit(gripperBytesAddress_, gripperBytesAddress_, &gripperData_);
+    wmx3Lib_Io_->GetOutBit(gripperAddress_[0], gripperAddress_[1], &gripperData_);
     if (gripperData_) {
       encoderJointMsg_.position.push_back(gripperCloseValue_);
       encoderJointMsg_.velocity.push_back(0.000);
@@ -404,7 +401,7 @@ void JointStateBroadcaster::getWmxParam()
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
   } else {
-    for (int axis = 0; axis < jointNumber_; axis++) {
+    for (int axis : jointAxes_) {
       RCLCPP_INFO(
         this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
       RCLCPP_INFO(
