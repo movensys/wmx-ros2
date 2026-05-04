@@ -22,6 +22,31 @@ ros2 service call /wmx/axis/set_on wmx_ros2_message/srv/SetAxis "{index: [0,1,2,
 ros2 service call /wmx/axis/homing wmx_ros2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
 ```
 
+
+---
+
+
+## Engine Topics (Warning: These command will rotate the axes)
+### Send Axis Absolute Position
+```
+ros2 topic pub --once /wmx/axis/position wmx_ros2_message/msg/AxisPose \
+    "{index: [0,1], target: [8388608, 10000 ], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}" 
+```
+
+### Send Axis Relative Position
+```
+ros2 topic pub --once /wmx/axis/position/relative wmx_ros2_message/msg/AxisPose \
+    "{index: [0, 1], target: [8388608, 10000], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"
+```
+
+
+### Send Axis Velocity
+```
+ros2 topic pub --once /wmx/axis/velocity wmx_ros2_message/msg/AxisVelocity \
+    "{index: [0, 1], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"  
+```
+
+
 ---
 
 ## Engine Services
