@@ -1,3 +1,6 @@
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
 #include <iostream>
 #include <memory>
 #include <string>
@@ -18,8 +21,13 @@
 #include "IOApi.h"
 
 using std::placeholders::_1;
-using namespace wmx3Api;
-using namespace std;
+using wmx3Api::CoreMotion;
+using wmx3Api::CoreMotionStatus;
+using wmx3Api::DeviceType;
+using wmx3Api::ErrorCode;
+using wmx3Api::Io;
+using wmx3Api::WMX3Api;
+namespace Config = wmx3Api::Config;
 
 class JointStateBroadcaster : public rclcpp::Node
 {
@@ -40,7 +48,7 @@ public:
   std::string wmxParamFilePath_;
 
   unsigned char gripperData_;
-  
+
   int err_;
   char errString_[256];
 
@@ -190,7 +198,7 @@ void JointStateBroadcaster::runInitSequence()
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
   wmx3Lib_Io_ = std::make_unique<Io>(&wmx3Lib_);
 
-  setWmxParam((char *)wmxParamFilePath_.c_str());
+  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
   getWmxParam();
 
   std::vector<int64_t> zeroData(jointAxes_.size(), 0);
@@ -291,8 +299,10 @@ void JointStateBroadcaster::setRosParameter()
   this->declare_parameter<int>("joint_feedback_rate", 0);
   this->declare_parameter<float>("gripper_open_value", 0);
   this->declare_parameter<float>("gripper_close_value", 0);
-  this->declare_parameter<std::vector<std::string>>("joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
-  this->declare_parameter<std::vector<std::string>>("gripper_joint_name", std::vector<std::string>{});
+  this->declare_parameter<std::vector<std::string>>(
+    "joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
+  this->declare_parameter<std::vector<std::string>>(
+    "gripper_joint_name", std::vector<std::string>{});
   this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{0, 0});
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
@@ -338,7 +348,9 @@ void JointStateBroadcaster::setRosParameter()
     RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f",  gripperOpenValue_);
     RCLCPP_INFO(this->get_logger(), "gripper_close_value: %f", gripperCloseValue_);
     if (gripperAddress_.size() >= 2) {
-      RCLCPP_INFO(this->get_logger(), "gripper_address: [%ld, %ld]", gripperAddress_[0], gripperAddress_[1]);
+      RCLCPP_INFO(
+        this->get_logger(), "gripper_address: [%ld, %ld]",
+        gripperAddress_[0], gripperAddress_[1]);
     }
   } else {
     RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [] (no gripper)");

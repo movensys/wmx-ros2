@@ -1,9 +1,18 @@
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
 #include "wmx_core_motion_node.hpp"
+
+using wmx3Api::AxisCommandMode;
+using wmx3Api::CoreMotion;
+using wmx3Api::DeviceType;
+using wmx3Api::ErrorCode;
+using wmx3Api::ProfileType;
+namespace Config = wmx3Api::Config;
 
 WmxCoreMotionNode::WmxCoreMotionNode()
 : Node("wmx_core_motion_node")
 {
-
   init_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
   rclcpp::SubscriptionOptions sub_opts;
@@ -235,7 +244,6 @@ void WmxCoreMotionNode::setAxisOn(
   const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";
@@ -275,7 +283,6 @@ void WmxCoreMotionNode::setAxisMode(
   const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";
@@ -329,7 +336,6 @@ void WmxCoreMotionNode::clearAlarm(
   const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";
@@ -364,7 +370,6 @@ void WmxCoreMotionNode::setAxisPolarity(
   const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";
@@ -408,7 +413,6 @@ void WmxCoreMotionNode::setAxisGearRatio(
   const std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetAxisGearRatio::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";
@@ -442,7 +446,6 @@ void WmxCoreMotionNode::setHoming(
   const std::shared_ptr<wmx_ros2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetAxis::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";
@@ -482,7 +485,6 @@ void WmxCoreMotionNode::loadWmxParams(
   const std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::LoadWmxParams::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";
@@ -512,7 +514,6 @@ void WmxCoreMotionNode::getWmxParams(
   const std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "CoreMotion not initialized. Engine not ready.";

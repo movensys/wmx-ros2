@@ -1,5 +1,8 @@
-#ifndef WMX_ENGINE_NODE_HPP
-#define WMX_ENGINE_NODE_HPP
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
+#ifndef WMX_ENGINE_NODE_HPP_
+#define WMX_ENGINE_NODE_HPP_
 
 #include <iostream>
 #include <memory>
@@ -58,4 +61,4 @@ private:
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);
 };
 
-#endif  // WMX_ENGINE_NODE_HPP
+#endif  // WMX_ENGINE_NODE_HPP_

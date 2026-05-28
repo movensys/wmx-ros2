@@ -1,3 +1,6 @@
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
 #include "wmx_engine_node.hpp"
 
 using std::placeholders::_1;
@@ -160,7 +163,6 @@ void WmxEngineNode::getEngineStatus(
   const std::shared_ptr<std_srvs::srv::Trigger::Request>/*request*/,
   std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
-
   if (!startComplete_) {
     response->success = false;
     response->message = "Engine startup in progress";
@@ -188,7 +190,6 @@ void WmxEngineNode::scanNetwork(
   const std::shared_ptr<std_srvs::srv::Trigger::Request>/*request*/,
   std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
-
   if (!startComplete_) {
     response->success = false;
     response->message = "Engine startup in progress";
@@ -220,7 +221,6 @@ void WmxEngineNode::setComm(
   const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
   std::shared_ptr<std_srvs::srv::SetBool::Response> response)
 {
-
   if (!startComplete_) {
     response->success = false;
     response->message = "Engine startup in progress";
@@ -274,7 +274,6 @@ void WmxEngineNode::setEngine(
   const std::shared_ptr<wmx_ros2_message::srv::SetEngine::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetEngine::Response> response)
 {
-
   if (!startComplete_) {
     response->success = false;
     response->message = "Engine startup in progress";

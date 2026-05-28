@@ -1,7 +1,12 @@
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
 #include <memory>
 #include <thread>
 #include <sstream>
 #include <chrono>
+#include <string>
+#include <vector>
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
@@ -17,7 +22,14 @@
 
 #define MAX_TRAJ_POINTS 1000
 
-using namespace wmx3Api;
+using wmx3Api::AdvancedMotion;
+using wmx3Api::AdvMotion;
+using wmx3Api::AxisSelection;
+using wmx3Api::CoreMotion;
+using wmx3Api::CoreMotionStatus;
+using wmx3Api::DeviceType;
+using wmx3Api::ErrorCode;
+using wmx3Api::WMX3Api;
 
 class JointTrajectoryController : public rclcpp::Node
 {
@@ -27,7 +39,7 @@ public:
 
   JointTrajectoryController();
   ~JointTrajectoryController();
-  
+
   std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
 
@@ -68,7 +80,6 @@ private:
 JointTrajectoryController::JointTrajectoryController()
 : Node("joint_trajectory_controller")
 {
-
   setRosParameter();
 
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
@@ -148,7 +159,8 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
 void JointTrajectoryController::setRosParameter()
 {
   this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
-  this->declare_parameter<std::string>("joint_trajectory_action","/joint_trajectory_action/no_param");
+  this->declare_parameter<std::string>(
+    "joint_trajectory_action", "/joint_trajectory_action/no_param");
 
   this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
@@ -195,7 +207,7 @@ void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_hand
   const auto & trajectory = goal->trajectory;
 
   int num_points = trajectory.points.size();
-  
+
   RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal! Point number: [%d]", num_points);
 
   auto result = std::make_shared<FollowJointTrajectory::Result>();
@@ -204,7 +216,8 @@ void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_hand
   if (num_points > MAX_TRAJ_POINTS) {
     RCLCPP_WARN(
       this->get_logger(),
-      "Too many trajectory point size! current points:%d / max traj points:%d \nAborting current goal.",
+      "Too many trajectory point size! "
+      "current points:%d / max traj points:%d \nAborting current goal.",
       num_points, MAX_TRAJ_POINTS);
     goal_handle->abort(result);
     return;
@@ -283,7 +296,8 @@ void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_hand
   RCLCPP_INFO(this->get_logger(), "Trajectory execution completed successfully");
 }
 
-void JointTrajectoryController::logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory){
+void JointTrajectoryController::logTrajectory(
+  const trajectory_msgs::msg::JointTrajectory & trajectory){
   std::ostringstream jn;
   for (size_t i = 0; i < trajectory.joint_names.size(); ++i) {
     if (i) {jn << ", ";}
@@ -308,14 +322,17 @@ void JointTrajectoryController::logTrajectory(const trajectory_msgs::msg::JointT
     }
     RCLCPP_INFO(
       this->get_logger(),
-      "Point %zu: Positions: [%s], Velocities: [%s], Accelerations: [%s], TimeFromStart: %d s %u ns",
+      "Point %zu: Positions: [%s], Velocities: [%s], "
+      "Accelerations: [%s], TimeFromStart: %d s %u ns",
       i, pos.str().c_str(), vel.str().c_str(), acc.str().c_str(),
       pt.time_from_start.sec, pt.time_from_start.nanosec);
 
     if (i != 0) {
       rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
       rclcpp::Duration duration_pre(trajectory.points[i - 1].time_from_start);
-      RCLCPP_INFO(this->get_logger(), "Time interval: %f", (duration_cur - duration_pre).seconds());
+      RCLCPP_INFO(
+        this->get_logger(), "Time interval: %f",
+        (duration_cur - duration_pre).seconds());
     }
   }
 }

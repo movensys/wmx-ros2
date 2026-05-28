@@ -1,9 +1,15 @@
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
 #include "wmx_io_node.hpp"
+
+using wmx3Api::DeviceType;
+using wmx3Api::ErrorCode;
+using wmx3Api::Io;
 
 WmxIoNode::WmxIoNode()
 : Node("wmx_io_node")
 {
-
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/engine/ready", ready_qos,
@@ -90,7 +96,6 @@ void WmxIoNode::getInputBit(
   const std::shared_ptr<wmx_ros2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::GetIoBit::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "IO not initialized. Engine not ready.";
@@ -123,7 +128,6 @@ void WmxIoNode::getOutputBit(
   const std::shared_ptr<wmx_ros2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::GetIoBit::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "IO not initialized. Engine not ready.";
@@ -156,7 +160,6 @@ void WmxIoNode::getInputBytes(
   const std::shared_ptr<wmx_ros2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::GetIoBytes::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "IO not initialized. Engine not ready.";
@@ -195,7 +198,6 @@ void WmxIoNode::getOutputBytes(
   const std::shared_ptr<wmx_ros2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::GetIoBytes::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "IO not initialized. Engine not ready.";
@@ -234,7 +236,6 @@ void WmxIoNode::setOutputBit(
   const std::shared_ptr<wmx_ros2_message::srv::SetIoBit::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetIoBit::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "IO not initialized. Engine not ready.";
@@ -272,7 +273,6 @@ void WmxIoNode::setOutputBytes(
   const std::shared_ptr<wmx_ros2_message::srv::SetIoBytes::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::SetIoBytes::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "IO not initialized. Engine not ready.";
