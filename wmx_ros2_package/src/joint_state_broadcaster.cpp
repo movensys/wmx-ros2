@@ -21,13 +21,13 @@
 #include "IOApi.h"
 
 using std::placeholders::_1;
+using wmx3Api::Config;
 using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::Io;
 using wmx3Api::WMX3Api;
-namespace Config = wmx3Api::Config;
 
 class JointStateBroadcaster : public rclcpp::Node
 {

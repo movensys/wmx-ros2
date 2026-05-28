@@ -4,11 +4,11 @@
 #include "wmx_core_motion_node.hpp"
 
 using wmx3Api::AxisCommandMode;
+using wmx3Api::Config;
 using wmx3Api::CoreMotion;
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::ProfileType;
-namespace Config = wmx3Api::Config;
 
 WmxCoreMotionNode::WmxCoreMotionNode()
 : Node("wmx_core_motion_node")
