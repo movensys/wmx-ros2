@@ -22,6 +22,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(wmx_ros2_message REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 set(WMX3_SDK_PATH "/opt/wmx3" CACHE PATH "Path to WMX3 SDK installation")
 
@@ -45,6 +47,14 @@ target_include_directories(joint_trajectory_controller PRIVATE include ${WMX3_SD
 target_link_libraries(joint_trajectory_controller coremotionapi advancedmotionapi ioapi wmx3api imdll)
 target_link_directories(joint_trajectory_controller PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(joint_trajectory_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+
+add_executable(differential_drive_controller src/differential_drive_controller.cpp)
+ament_target_dependencies(differential_drive_controller
+  rclcpp std_msgs std_srvs geometry_msgs nav_msgs wmx_ros2_message)
+target_include_directories(differential_drive_controller PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(differential_drive_controller coremotionapi wmx3api imdll)
+target_link_directories(differential_drive_controller PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(differential_drive_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(gripper_controller src/gripper_controller.cpp)
 ament_target_dependencies(gripper_controller rclcpp std_msgs sensor_msgs std_srvs wmx_ros2_message)
@@ -84,6 +94,7 @@ target_compile_definitions(wmx_ethercat_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_P
 install(TARGETS
   joint_state_broadcaster
   joint_trajectory_controller
+  differential_drive_controller
   gripper_controller
   wmx_engine_node
   wmx_core_motion_node
