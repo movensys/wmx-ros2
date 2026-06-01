@@ -21,7 +21,6 @@
 #include "IOApi.h"
 
 using std::placeholders::_1;
-using wmx3Api::Config;
 using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
@@ -45,7 +44,6 @@ public:
   std::string encoderJointTopic_;
   std::string isaacsimJointTopic_;
   std::string gazeboJointTopic_;
-  std::string wmxParamFilePath_;
 
   unsigned char gripperData_;
 
@@ -60,7 +58,6 @@ private:
   CoreMotionStatus cmStatus_;
   std::unique_ptr<CoreMotion> wmx3LibCm_;
   std::unique_ptr<Io> wmx3Lib_Io_;
-  Config::AxisParam axisParam_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr coreMotionReadySub_;
   rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmClient_;
@@ -81,8 +78,6 @@ private:
                           const std::vector<int64_t> & data);
   void publishJointState();
   void setRosParameter();
-  void setWmxParam(char * path);
-  void getWmxParam();
 };
 
 JointStateBroadcaster::JointStateBroadcaster() : Node("joint_state_broadcaster")
@@ -198,9 +193,6 @@ void JointStateBroadcaster::runInitSequence()
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
   wmx3Lib_Io_ = std::make_unique<Io>(&wmx3Lib_);
 
-  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
-  getWmxParam();
-
   std::vector<int64_t> zeroData(jointAxes_.size(), 0);
   std::vector<int64_t> onData(jointAxes_.size(), 1);
 
@@ -307,7 +299,6 @@ void JointStateBroadcaster::setRosParameter()
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
   this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
-  this->declare_parameter<std::string>("wmx_param_file_path", "/wmx_param_file_path/no_param");
 
   this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
@@ -319,7 +310,6 @@ void JointStateBroadcaster::setRosParameter()
   this->get_parameter("encoder_joint_topic", encoderJointTopic_);
   this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
   this->get_parameter("gazebo_joint_topic", gazeboJointTopic_);
-  this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "joint_feedback_rate: %d", jointFeedbackRate_);
@@ -358,7 +348,6 @@ void JointStateBroadcaster::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "encoder_joint_topic: %s", encoderJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "isaacsim_joint_topic: %s", isaacsimJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "gazebo_joint_topic: %s", gazeboJointTopic_.c_str());
-  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
@@ -393,41 +382,6 @@ void JointStateBroadcaster::publishJointState()
 
   gazeboJointMsg_.data = encoderJointMsg_.position;
   gazeboJointPub_->publish(gazeboJointMsg_);
-}
-
-void JointStateBroadcaster::setWmxParam(char * path)
-{
-  err_ = wmx3LibCm_->config->ImportAndSetAll(path);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
-  }
-}
-
-void JointStateBroadcaster::getWmxParam()
-{
-  err_ = wmx3LibCm_->config->GetAxisParam(&axisParam_);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
-  } else {
-    for (int axis : jointAxes_) {
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, denominator: %f", axis,
-        axisParam_.gearRatioDenominator[axis]);
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, polarity: %d", axis,
-        (int)axisParam_.axisPolarity[axis]);
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, abs encoder: %d", axis,
-        axisParam_.absoluteEncoderMode[axis]);
-      RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, axisParam_.axisCommandMode[axis]);
-    }
-  }
 }
 
 int main(int argc, char * argv[])

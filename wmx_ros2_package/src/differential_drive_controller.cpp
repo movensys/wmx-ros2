@@ -28,11 +28,11 @@ using wmx3Api::ProfileType;
 using wmx3Api::Velocity;
 using wmx3Api::WMX3Api;
 
-class DiffDriveController : public rclcpp::Node
+class DifferentialDriveController : public rclcpp::Node
 {
 public:
-  DiffDriveController();
-  ~DiffDriveController();
+  DifferentialDriveController();
+  ~DifferentialDriveController();
 
   int leftAxis_;
   int rightAxis_;
@@ -46,6 +46,7 @@ public:
   std::string cmdVelTopic_;
   std::string encoderOmegaTopic_;
   std::string encoderOdometeryTopic_;
+  std::string wmxParamFilePath_;
 
   int err_;
   char errString_[256];
@@ -90,13 +91,11 @@ private:
   std::vector<double> encoderCalculateOdometry(double omegaLeft, double omegaRight);
 
   void setRosParameter();
-  void clearAlarm(int axis);
-  void setServoOn(int axis);
-  void setServoOff(int axis);
+  void setWmxParam(char * path);
   void setVelocity(int axis, double omega);
 };
 
-DiffDriveController::DiffDriveController() : Node("differential_drive_controller")
+DifferentialDriveController::DifferentialDriveController() : Node("differential_drive_controller")
 {
   RCLCPP_INFO(this->get_logger(), "start differential_drive_controller");
 
@@ -105,12 +104,12 @@ DiffDriveController::DiffDriveController() : Node("differential_drive_controller
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/engine/ready", ready_qos,
-    std::bind(&DiffDriveController::onEngineReady, this, _1));
+    std::bind(&DifferentialDriveController::onEngineReady, this, _1));
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller waiting for engine...");
 }
 
-DiffDriveController::~DiffDriveController()
+DifferentialDriveController::~DifferentialDriveController()
 {
   RCLCPP_INFO(this->get_logger(), "Stop differential_drive_controller");
 
@@ -126,9 +125,6 @@ DiffDriveController::~DiffDriveController()
     setVelocity(leftAxis_, 0.0);
     setVelocity(rightAxis_, 0.0);
 
-    setServoOff(leftAxis_);
-    setServoOff(rightAxis_);
-
     err_ = wmx3Lib_.CloseDevice();
     if (err_ != ErrorCode::None) {
       wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -141,7 +137,7 @@ DiffDriveController::~DiffDriveController()
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is stopped");
 }
 
-void DiffDriveController::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
+void DifferentialDriveController::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
 {
   if (!msg->data || initialized_ || initializing_.exchange(true)) {
     return;
@@ -155,10 +151,10 @@ void DiffDriveController::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg
   }
 
   // Spawn dedicated thread so blocking device-attach retries don't block the executor
-  init_thread_ = std::thread(&DiffDriveController::runInitSequence, this);
+  init_thread_ = std::thread(&DifferentialDriveController::runInitSequence, this);
 }
 
-void DiffDriveController::runInitSequence()
+void DifferentialDriveController::runInitSequence()
 {
   unsigned int timeout = 10000;
   static constexpr int kMaxDeviceRetries = 30;
@@ -194,11 +190,10 @@ void DiffDriveController::runInitSequence()
 
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
 
-  clearAlarm(leftAxis_);
-  clearAlarm(rightAxis_);
+  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
 
-  setServoOn(leftAxis_);
-  setServoOn(rightAxis_);
+  // Clearing alarms and servo on/off are handled by joint_state_broadcaster
+  // (via the wmx/axis/* services), same as the manipulator setup.
 
   // Create publishers / subscription on the node (thread-safe in rclcpp)
   encoderOmegaPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -207,27 +202,27 @@ void DiffDriveController::runInitSequence()
     encoderOdometeryTopic_, 1);
 
   cmdVelSub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-    cmdVelTopic_, 1, std::bind(&DiffDriveController::cmdCallback, this, _1));
+    cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdCallback, this, _1));
 
   auto period = std::chrono::milliseconds(1000 / rate_);
   cmdVelTimer_ = this->create_wall_timer(
-    period, std::bind(&DiffDriveController::cmdVelStep, this));
+    period, std::bind(&DifferentialDriveController::cmdVelStep, this));
   encoderOmegaTimer_ = this->create_wall_timer(
-    period, std::bind(&DiffDriveController::encoderOmegaStep, this));
+    period, std::bind(&DifferentialDriveController::encoderOmegaStep, this));
   encoderOdometryTimer_ = this->create_wall_timer(
-    period, std::bind(&DiffDriveController::encoderOdometryStep, this));
+    period, std::bind(&DifferentialDriveController::encoderOdometryStep, this));
 
   initialized_ = true;
   engineReadySub_.reset();
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is ready");
 }
 
-void DiffDriveController::cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+void DifferentialDriveController::cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   cmdVelMsg_ = *msg;
 }
 
-void DiffDriveController::cmdVelStep()
+void DifferentialDriveController::cmdVelStep()
 {
   wmx3LibCm_->GetStatus(&cmStatus_);
 
@@ -260,7 +255,7 @@ void DiffDriveController::cmdVelStep()
   setVelocity(rightAxis_, cmdOmega_[1]);
 }
 
-void DiffDriveController::encoderOmegaStep()
+void DifferentialDriveController::encoderOmegaStep()
 {
   wmx3LibCm_->GetStatus(&cmStatus_);
 
@@ -274,7 +269,7 @@ void DiffDriveController::encoderOmegaStep()
   encoderOmegaPub_->publish(encoderOmegaMsg_);
 }
 
-void DiffDriveController::encoderOdometryStep()
+void DifferentialDriveController::encoderOdometryStep()
 {
   encoderOdometry_ = encoderCalculateOdometry(encoderOmega_[0], encoderOmega_[1]);
 
@@ -285,14 +280,14 @@ void DiffDriveController::encoderOdometryStep()
   encoderOdometeryPub_->publish(encoderOdometryMsg_);
 }
 
-std::vector<double> DiffDriveController::cmdCalculateOmega(double cmdLinearX, double cmdOmegaZ)
+std::vector<double> DifferentialDriveController::cmdCalculateOmega(double cmdLinearX, double cmdOmegaZ)
 {
   return {
     (2 * cmdLinearX - cmdOmegaZ * wheelToWheel_) / (2 * wheelRadius_),
     (2 * cmdLinearX + cmdOmegaZ * wheelToWheel_) / (2 * wheelRadius_)};
 }
 
-std::vector<double> DiffDriveController::encoderCalculateOdometry(
+std::vector<double> DifferentialDriveController::encoderCalculateOdometry(
   double omegaLeft, double omegaRight)
 {
   return {
@@ -300,7 +295,7 @@ std::vector<double> DiffDriveController::encoderCalculateOdometry(
     ((omegaRight * wheelRadius_) - (omegaLeft * wheelRadius_)) / wheelToWheel_};
 }
 
-void DiffDriveController::setVelocity(int axis, double omega)
+void DifferentialDriveController::setVelocity(int axis, double omega)
 {
   velCommand_.axis = axis;
   velCommand_.profile.velocity = omega;
@@ -316,41 +311,18 @@ void DiffDriveController::setVelocity(int axis, double omega)
   }
 }
 
-void DiffDriveController::clearAlarm(int axis)
+void DifferentialDriveController::setWmxParam(char * path)
 {
-  err_ = wmx3LibCm_->axisControl->ClearAmpAlarm(axis);
+  err_ = wmx3LibCm_->config->ImportAndSetAll(path);
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(
-      this->get_logger(), "Failed to clear alarm axis %d. Error=%d (%s)", axis, err_, errString_);
+    RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
   } else {
-    RCLCPP_INFO(this->get_logger(), "Clear alarm axis %d", axis);
+    RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
   }
 }
 
-void DiffDriveController::setServoOn(int axis)
-{
-  err_ = wmx3LibCm_->axisControl->SetServoOn(axis, 1);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Servo %d error to on. Error=%d (%s)", axis, err_, errString_);
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Servo %d on", axis);
-  }
-}
-
-void DiffDriveController::setServoOff(int axis)
-{
-  err_ = wmx3LibCm_->axisControl->SetServoOn(axis, 0);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Servo %d error to off. Error=%d (%s)", axis, err_, errString_);
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Servo %d off", axis);
-  }
-}
-
-void DiffDriveController::setRosParameter()
+void DifferentialDriveController::setRosParameter()
 {
   this->declare_parameter<int>("left_axis", 0);
   this->declare_parameter<int>("right_axis", 1);
@@ -364,6 +336,7 @@ void DiffDriveController::setRosParameter()
   this->declare_parameter<std::string>("cmd_vel_topic", "/diff_drive/no_param");
   this->declare_parameter<std::string>("encoder_omega_topic", "/diff_drive/no_param");
   this->declare_parameter<std::string>("encoder_odometry_topic", "/diff_drive/no_param");
+  this->declare_parameter<std::string>("wmx_param_file_path", "/diff_drive/no_param");
 
   this->get_parameter("left_axis", leftAxis_);
   this->get_parameter("right_axis", rightAxis_);
@@ -377,6 +350,7 @@ void DiffDriveController::setRosParameter()
   this->get_parameter("cmd_vel_topic", cmdVelTopic_);
   this->get_parameter("encoder_omega_topic", encoderOmegaTopic_);
   this->get_parameter("encoder_odometry_topic", encoderOdometeryTopic_);
+  this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "left_axis: %d, right_axis: %d", leftAxis_, rightAxis_);
@@ -387,13 +361,14 @@ void DiffDriveController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "cmd_vel_topic: %s", cmdVelTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_omega_topic: %s", encoderOmegaTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_odometry_topic: %s", encoderOdometeryTopic_.c_str());
+  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<DiffDriveController>());
+  rclcpp::spin(std::make_shared<DifferentialDriveController>());
   rclcpp::shutdown();
   return 0;
 }

@@ -6,10 +6,10 @@ joint_state_broadcaster:
     encoder_joint_topic: /joint_states
     isaacsim_joint_topic: /isaacsim/joint_command
     gazebo_joint_topic: /gazebo_position_controller/commands
-    wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
 joint_trajectory_controller:
   ros__parameters:
     joint_axes: [0, 1, 2, 3, 4, 5]
     joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_trajectory
+    wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 

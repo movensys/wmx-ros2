@@ -182,7 +182,7 @@
 			<EStopDec>100000.000000</EStopDec>
 		</EmergencyStopParam>
 		<AxisParam>
-			<AxisCommandMode>0</AxisCommandMode>
+			<AxisCommandMode>1</AxisCommandMode>
 			<AxisGearRatioNumerator>52953088.000000</AxisGearRatioNumerator>
 			<AxisGearRatioDenominator>6.283185307179586</AxisGearRatioDenominator>
 			<SingleTurnMode>0</SingleTurnMode>
@@ -362,7 +362,7 @@
 			<EStopDec>100000.000000</EStopDec>
 		</EmergencyStopParam>
 		<AxisParam>
-			<AxisCommandMode>0</AxisCommandMode>
+			<AxisCommandMode>1</AxisCommandMode>
 			<AxisGearRatioNumerator>52953088.000000</AxisGearRatioNumerator>
 			<AxisGearRatioDenominator>6.283185307179586</AxisGearRatioDenominator>
 			<SingleTurnMode>0</SingleTurnMode>

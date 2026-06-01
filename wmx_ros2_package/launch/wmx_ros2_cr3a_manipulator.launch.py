@@ -26,13 +26,7 @@ def generate_launch_description():
         package='wmx_ros2_package',
         executable='joint_state_broadcaster',
         name='joint_state_broadcaster',
-        parameters=[
-            manipulator_config,
-            {
-                'use_sim_time': use_sim_time,
-                'wmx_param_file_path': wmx_param_file_path,
-            },
-        ],
+        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
 
@@ -40,7 +34,13 @@ def generate_launch_description():
         package='wmx_ros2_package',
         executable='joint_trajectory_controller',
         name='joint_trajectory_controller',
-        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
+        parameters=[
+            manipulator_config,
+            {
+                'use_sim_time': use_sim_time,
+                'wmx_param_file_path': wmx_param_file_path,
+            },
+        ],
         output='screen',
     )
 
