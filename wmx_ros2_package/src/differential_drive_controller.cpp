@@ -8,14 +8,15 @@
 #include <thread>
 #include <atomic>
 
+#include "WMX3Api.h"
+#include "CoreMotionApi.h"
+
 #include "rclcpp/rclcpp.hpp"
+
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
-
-#include "WMX3Api.h"
-#include "CoreMotionApi.h"
 
 using std::placeholders::_1;
 using wmx3Api::CoreMotion;
@@ -192,10 +193,6 @@ void DifferentialDriveController::runInitSequence()
 
   setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
 
-  // Clearing alarms and servo on/off are handled by joint_state_broadcaster
-  // (via the wmx/axis/* services), same as the manipulator setup.
-
-  // Create publishers / subscription on the node (thread-safe in rclcpp)
   encoderOmegaPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
     encoderOmegaTopic_, 1);
   encoderOdometeryPub_ = this->create_publisher<nav_msgs::msg::Odometry>(
@@ -255,6 +252,22 @@ void DifferentialDriveController::cmdVelStep()
   setVelocity(rightAxis_, cmdOmega_[1]);
 }
 
+void DifferentialDriveController::setVelocity(int axis, double omega)
+{
+  velCommand_.axis = axis;
+  velCommand_.profile.velocity = omega;
+  velCommand_.profile.type = ProfileType::T::TimeAccTrapezoidal;
+  velCommand_.profile.accTimeMilliseconds = accTime_;
+  velCommand_.profile.decTimeMilliseconds = decTime_;
+
+  err_ = wmx3LibCm_->velocity->StartVel(&velCommand_);
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(
+      this->get_logger(), "Failed to move motor %d. Error=%d (%s)", axis, err_, errString_);
+  }
+}
+
 void DifferentialDriveController::encoderOmegaStep()
 {
   wmx3LibCm_->GetStatus(&cmStatus_);
@@ -293,22 +306,6 @@ std::vector<double> DifferentialDriveController::encoderCalculateOdometry(
   return {
     ((omegaRight * wheelRadius_) + (omegaLeft * wheelRadius_)) / 2.0,
     ((omegaRight * wheelRadius_) - (omegaLeft * wheelRadius_)) / wheelToWheel_};
-}
-
-void DifferentialDriveController::setVelocity(int axis, double omega)
-{
-  velCommand_.axis = axis;
-  velCommand_.profile.velocity = omega;
-  velCommand_.profile.type = ProfileType::T::TimeAccTrapezoidal;
-  velCommand_.profile.accTimeMilliseconds = accTime_;
-  velCommand_.profile.decTimeMilliseconds = decTime_;
-
-  err_ = wmx3LibCm_->velocity->StartVel(&velCommand_);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(
-      this->get_logger(), "Failed to move motor %d. Error=%d (%s)", axis, err_, errString_);
-  }
 }
 
 void DifferentialDriveController::setWmxParam(char * path)
