@@ -16,6 +16,7 @@
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 
 using std::placeholders::_1;
@@ -74,7 +75,7 @@ private:
   rclcpp::TimerBase::SharedPtr encoderOdometryTimer_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmdVelSub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr encoderOmegaPub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr encoderOdometeryPub_;
 
@@ -87,7 +88,7 @@ private:
   void encoderOmegaStep();
   void encoderOdometryStep();
 
-  void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void cmdCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
   std::vector<double> cmdCalculateOmega(double cmdLinearX, double cmdOmegaZ);
   std::vector<double> encoderCalculateOdometry(double omegaLeft, double omegaRight);
 
@@ -198,7 +199,7 @@ void DifferentialDriveController::runInitSequence()
   encoderOdometeryPub_ = this->create_publisher<nav_msgs::msg::Odometry>(
     encoderOdometeryTopic_, 1);
 
-  cmdVelSub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+  cmdVelSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdCallback, this, _1));
 
   auto period = std::chrono::milliseconds(1000 / rate_);
@@ -214,9 +215,9 @@ void DifferentialDriveController::runInitSequence()
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is ready");
 }
 
-void DifferentialDriveController::cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+void DifferentialDriveController::cmdCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg)
 {
-  cmdVelMsg_ = *msg;
+  cmdVelMsg_ = msg->twist;
 }
 
 void DifferentialDriveController::cmdVelStep()
