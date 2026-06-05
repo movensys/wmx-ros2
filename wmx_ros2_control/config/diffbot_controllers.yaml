@@ -17,19 +17,17 @@ differential_drive_controller:
     wheel_separation: 0.55
     wheel_radius: 0.095
 
-    # Multipliers in case the mechanical values need trimming against odometry.
     wheel_separation_multiplier: 1.0
     left_wheel_radius_multiplier: 1.0
     right_wheel_radius_multiplier: 1.0
 
-    publish_rate: 50.0
-    odom_frame_id: odom
+    publish_rate: 100.0
+    odom_frame_id: odom_encoder
     base_frame_id: base_footprint
-    enable_odom_tf: true
+    enable_odom_tf: false
     open_loop: false
     position_feedback: true
 
-    # cmd_vel handling (Twist; the launch remaps ~/cmd_vel <- /cmd_vel)
     use_stamped_vel: false
     cmd_vel_timeout: 0.5
 

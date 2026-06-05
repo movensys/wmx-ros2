@@ -1,19 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!--
-    ros2_control description for the Dobot CR3A arm backed by the WMX3 EtherCAT
-    motion controller.
-
-    The arm joints are STATE-ONLY here: their trajectory is executed by the
-    standalone joint_trajectory_controller node (AdvancedMotion C-Spline, from
-    wmx_ros2_package), exactly as in the non-ros2_control launch. ros2_control is
-    used only to publish encoder feedback via joint_state_broadcaster, so each
-    joint exposes position/velocity state interfaces and NO command interface.
-
-    The gripper (picker_1_joint / picker_2_joint) is likewise outside this
-    system — driven over digital IO by the standalone gripper_controller node.
-  -->
   <xacro:macro name="movensys_manipulator_arm_wmx_ros2_control"
                params="name:=WmxManipulatorArmSystem
                        wmx_param_file">

@@ -26,8 +26,6 @@ def generate_launch_description():
         )
     }
 
-    # Low-level WMX nodes (engine / core_motion / io / ethercat) own the engine
-    # and publish wmx/engine/ready. ros2_control attaches to this engine.
     general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(wmx_share, 'launch', 'wmx_ros2_general_nodes.launch.py')

@@ -14,9 +14,6 @@
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 
-// hardware_interface >= 4.x (Jazzy) deprecates on_init(HardwareInfo) in favour
-// of on_init(HardwareComponentInterfaceParams). Detect the new signature so the
-// plugin builds warning-free on Jazzy while staying compatible with Humble.
 #if defined(__has_include)
 #  if __has_include("hardware_interface/types/hardware_component_interface_params.hpp")
 #    include "hardware_interface/types/hardware_component_interface_params.hpp"
@@ -32,41 +29,25 @@
 namespace wmx_ros2_control
 {
 
-/// Per-joint role, derived from the command interface declared in the URDF.
 enum class JointMode
 {
-  Velocity,    ///< command_interface "velocity" -> WMX CoreMotion StartVel
-  StateOnly    ///< no command_interface -> feedback only (motion driven elsewhere,
-               ///< e.g. the custom joint_trajectory_controller node for the arm)
+  Velocity,    
+  StateOnly 
 };
 
-/// A single ros2_control joint backed by one WMX3 axis.
 struct WmxJoint
 {
   std::string name;
   int axis = -1;
   JointMode mode = JointMode::Velocity;
 
-  // State (1:1 with WMX user units; the WMX parameter file is expected to be
-  // configured so that user units are radians, matching the existing nodes).
   double pos_state = 0.0;
   double vel_state = 0.0;
 
-  // Velocity command (only used when mode == Velocity)
   double cmd = 0.0;
   double last_cmd = 0.0;
 };
 
-/// ros2_control SystemInterface that drives WMX3-controlled EtherCAT axes.
-///
-/// This hardware plugin attaches to the WMX3 engine started by wmx_engine_node
-/// (it does NOT start/stop the engine or communication itself). It supports:
-///   * velocity joints (e.g. a differential-drive base) driven with CoreMotion
-///     velocity commands (StartVel);
-///   * state-only joints (e.g. a manipulator whose trajectory is executed by the
-///     standalone joint_trajectory_controller node via AdvancedMotion C-Spline) —
-///     these expose encoder position/velocity for joint_state_broadcaster but
-///     take no command from ros2_control.
 class WmxSystemHardware : public hardware_interface::SystemInterface
 {
 public:

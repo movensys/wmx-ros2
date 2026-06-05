@@ -27,7 +27,6 @@ def generate_launch_description():
         )
     }
 
-    # Low-level WMX nodes own the engine and publish wmx/engine/ready.
     general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(wmx_share, 'launch', 'wmx_ros2_general_nodes.launch.py')
@@ -57,9 +56,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    # Arm trajectory execution: the standalone joint_trajectory_controller node
-    # (AdvancedMotion C-Spline), same as the non-ros2_control launch. It owns the
-    # FollowJointTrajectory action MoveIt connects to.
     joint_trajectory_controller = Node(
         package='wmx_ros2_package',
         executable='joint_trajectory_controller',
@@ -74,7 +70,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    # Gripper stays on the standalone IO-driven node (not part of ros2_control).
     gripper_controller = Node(
         package='wmx_ros2_package',
         executable='gripper_controller',

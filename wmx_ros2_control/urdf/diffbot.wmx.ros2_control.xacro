@@ -1,13 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!--
-    ros2_control description for the Movensys differential-drive base backed by
-    the WMX3 EtherCAT motion controller. The two drive wheels are velocity
-    controlled: diff_drive_controller writes wheel angular velocities to the
-    "velocity" command interface, which WmxSystemHardware forwards to WMX3
-    CoreMotion StartVel. Position + velocity feedback comes from the encoders.
-  -->
   <xacro:macro name="diffbot_wmx_ros2_control"
                params="name:=WmxDiffbotSystem
                        wmx_param_file

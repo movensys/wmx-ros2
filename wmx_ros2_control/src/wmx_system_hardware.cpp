@@ -30,7 +30,7 @@ using wmx3Api::Velocity;
 namespace
 {
 constexpr double kCmdEpsilon = 1e-9;
-}  // namespace
+}  
 
 std::string WmxSystemHardware::getHwParam(
   const std::string & key, const std::string & def) const
@@ -65,8 +65,6 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_init(
 }
 #endif
 
-// info_ is populated by the base on_init above (both signatures), so the
-// initialisation body below is signature-independent.
 hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
 {
   sdk_path_ = getHwParam("wmx_sdk_path", WMX3_SDK_PATH);
@@ -83,7 +81,6 @@ hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
     WmxJoint joint;
     joint.name = j.name;
 
-    // WMX axis index is mandatory per joint.
     auto axis_it = j.parameters.find("axis");
     if (axis_it == j.parameters.end()) {
       RCLCPP_FATAL(
@@ -92,8 +89,6 @@ hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
     }
     joint.axis = std::stoi(axis_it->second);
 
-    // Role is derived from the command interface: a velocity command -> driven
-    // here via StartVel; no command interface -> feedback only.
     if (j.command_interfaces.empty()) {
       joint.mode = JointMode::StateOnly;
     } else if (
@@ -189,8 +184,6 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_configure(
 
   cm_ = std::make_unique<CoreMotion>(&wmx_);
 
-  // Apply the WMX axis parameter set (gear ratios, units, limits, ...).
-  // The engine itself is started/owned by wmx_engine_node; here we only attach.
   if (!wmx_param_file_.empty()) {
     int err = cm_->config->ImportAndSetAll(const_cast<char *>(wmx_param_file_.c_str()));
     if (err != ErrorCode::None) {
@@ -201,7 +194,6 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_configure(
     }
   }
 
-  // Initialise state/command from the current feedback so activation does not jump.
   cm_->GetStatus(&cm_status_);
   for (auto & joint : joints_) {
     joint.pos_state = cm_status_.axesStatus[joint.axis].actualPos;
@@ -318,15 +310,12 @@ void WmxSystemHardware::startVelocity(const WmxJoint & joint, double omega)
 hardware_interface::return_type WmxSystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  // Engine must be communicating to accept motion commands.
   if (cm_status_.engineState != EngineState::T::Communicating) {
     RCLCPP_WARN_THROTTLE(
       logger_, clock_, 1000, "WMX engine not Communicating; skipping write()");
     return hardware_interface::return_type::OK;
   }
 
-  // Velocity joints: (re)issue a profile only when the command actually changes,
-  // to avoid restarting the trapezoidal profile every control cycle.
   for (auto & joint : joints_) {
     if (joint.mode != JointMode::Velocity) {
       continue;
@@ -339,7 +328,7 @@ hardware_interface::return_type WmxSystemHardware::write(
   return hardware_interface::return_type::OK;
 }
 
-}  // namespace wmx_ros2_control
+}  
 
 PLUGINLIB_EXPORT_CLASS(
   wmx_ros2_control::WmxSystemHardware, hardware_interface::SystemInterface)

@@ -1,13 +1,6 @@
 <?xml version="1.0"?>
 <robot name="movensys_manipulator" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!--
-    Top-level Dobot CR3A description for the WMX3 ros2_control path.
-    Reuses the geometry from movensys_manipulator_description and attaches the
-    WMX3 hardware interface (instead of the mock_components GenericSystem used
-    by the MoveIt fake-system config).
-  -->
-
   <xacro:arg name="wmx_param_file"
              default="$(find wmx_ros2_package)/config/cr3a_wmx_parameters.xml"/>
 

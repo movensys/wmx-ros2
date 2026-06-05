@@ -3,8 +3,5 @@ controller_manager:
     update_rate: 100
     use_sim_time: false
 
-    # Arm trajectory execution is handled by the standalone
-    # joint_trajectory_controller node (AdvancedMotion C-Spline). ros2_control
-    # here only publishes encoder feedback, so only the broadcaster is loaded.
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
