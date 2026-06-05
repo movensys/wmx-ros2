@@ -10,15 +10,12 @@
 
   <xacro:arg name="wmx_param_file"
              default="$(find wmx_ros2_package)/config/cr3a_wmx_parameters.xml"/>
-  <!-- interval_cycles = WMX RT cycle rate (Hz) / controller_manager update_rate (Hz). -->
-  <xacro:arg name="interval_cycles" default="10"/>
 
   <xacro:include filename="$(find movensys_manipulator_description)/urdf/dobot_cr3a/movensys_manipulator.xacro"/>
   <xacro:include filename="$(find wmx_ros2_control)/urdf/cr3a.wmx.ros2_control.xacro"/>
 
   <xacro:movensys_manipulator_arm_wmx_ros2_control
       name="WmxManipulatorArmSystem"
-      wmx_param_file="$(arg wmx_param_file)"
-      interval_cycles="$(arg interval_cycles)"/>
+      wmx_param_file="$(arg wmx_param_file)"/>
 
 </robot>

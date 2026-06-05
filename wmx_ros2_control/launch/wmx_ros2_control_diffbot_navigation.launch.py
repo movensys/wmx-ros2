@@ -47,7 +47,7 @@ def generate_launch_description():
         executable='ros2_control_node',
         output='screen',
         parameters=[robot_description, controllers],
-        remappings=[('/diffbot_base_controller/cmd_vel', '/cmd_vel')],
+        remappings=[('/differential_drive_controller/cmd_vel', '/cmd_vel')],
     )
 
     joint_state_broadcaster_spawner = Node(
@@ -58,10 +58,10 @@ def generate_launch_description():
         output='screen',
     )
 
-    diffbot_base_controller_spawner = Node(
+    differential_drive_controller_spawner = Node(
         package='controller_manager',
         executable='spawner',
-        arguments=['diffbot_base_controller',
+        arguments=['differential_drive_controller',
                    '--controller-manager', '/controller_manager'],
         output='screen',
     )
@@ -76,5 +76,5 @@ def generate_launch_description():
         robot_state_publisher,
         controller_manager,
         joint_state_broadcaster_spawner,
-        diffbot_base_controller_spawner,
+        differential_drive_controller_spawner,
     ])

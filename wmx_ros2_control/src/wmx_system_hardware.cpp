@@ -20,11 +20,7 @@
 namespace wmx_ros2_control
 {
 
-using wmx3Api::AxisSelection;
 using wmx3Api::CoreMotion;
-using wmx3Api::CyclicBuffer;
-using wmx3Api::CyclicBufferCommandType;
-using wmx3Api::CyclicBufferMultiAxisCommands;
 using wmx3Api::DeviceType;
 using wmx3Api::EngineState;
 using wmx3Api::ErrorCode;
@@ -43,6 +39,19 @@ std::string WmxSystemHardware::getHwParam(
   return (it != info_.hardware_parameters.end()) ? it->second : def;
 }
 
+#if WMX_HAS_HW_COMPONENT_INTERFACE_PARAMS
+hardware_interface::CallbackReturn WmxSystemHardware::on_init(
+  const hardware_interface::HardwareComponentInterfaceParams & params)
+{
+  if (
+    hardware_interface::SystemInterface::on_init(params) !=
+    hardware_interface::CallbackReturn::SUCCESS)
+  {
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  return initImpl();
+}
+#else
 hardware_interface::CallbackReturn WmxSystemHardware::on_init(
   const hardware_interface::HardwareInfo & info)
 {
@@ -52,11 +61,17 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_init(
   {
     return hardware_interface::CallbackReturn::ERROR;
   }
+  return initImpl();
+}
+#endif
 
+// info_ is populated by the base on_init above (both signatures), so the
+// initialisation body below is signature-independent.
+hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
+{
   sdk_path_ = getHwParam("wmx_sdk_path", WMX3_SDK_PATH);
   device_name_ = getHwParam("device_name", "wmx_ros2_control");
   wmx_param_file_ = getHwParam("wmx_param_file", "");
-  interval_cycles_ = static_cast<unsigned int>(std::stoul(getHwParam("interval_cycles", "1")));
   acc_time_ms_ = std::stod(getHwParam("acc_time_ms", "1.0"));
   dec_time_ms_ = std::stod(getHwParam("dec_time_ms", "1.0"));
   max_device_retries_ = std::stoi(getHwParam("max_device_retries", "30"));
@@ -77,54 +92,36 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_init(
     }
     joint.axis = std::stoi(axis_it->second);
 
-    // Command mode is derived from the single declared command interface.
-    if (j.command_interfaces.size() != 1) {
-      RCLCPP_FATAL(
-        logger_, "Joint '%s' must declare exactly one command_interface (got %zu)",
-        j.name.c_str(), j.command_interfaces.size());
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-    const std::string & cmd_if = j.command_interfaces[0].name;
-    if (cmd_if == hardware_interface::HW_IF_VELOCITY) {
+    // Role is derived from the command interface: a velocity command -> driven
+    // here via StartVel; no command interface -> feedback only.
+    if (j.command_interfaces.empty()) {
+      joint.mode = JointMode::StateOnly;
+    } else if (
+      j.command_interfaces.size() == 1 &&
+      j.command_interfaces[0].name == hardware_interface::HW_IF_VELOCITY)
+    {
       joint.mode = JointMode::Velocity;
-    } else if (cmd_if == hardware_interface::HW_IF_POSITION) {
-      joint.mode = JointMode::Position;
-      has_position_joints_ = true;
     } else {
       RCLCPP_FATAL(
-        logger_, "Joint '%s' has unsupported command_interface '%s' (expected position|velocity)",
-        j.name.c_str(), cmd_if.c_str());
+        logger_,
+        "Joint '%s' must declare either no command_interface (state-only) or a "
+        "single 'velocity' command_interface", j.name.c_str());
       return hardware_interface::CallbackReturn::ERROR;
     }
 
     RCLCPP_INFO(
       logger_, "Joint '%s' -> WMX axis %d, mode=%s",
       joint.name.c_str(), joint.axis,
-      joint.mode == JointMode::Velocity ? "velocity" : "position");
+      joint.mode == JointMode::Velocity ? "velocity" : "state-only");
 
     joints_.push_back(joint);
   }
 
-  // Build the axis selection for the position joints. They are streamed together
-  // in one multi-axis CyclicBuffer call, indexed by selection position j (with
-  // axis[j] = absolute WMX axis) — the same convention used by
-  // wmx_ros2_package's joint_trajectory_controller.
-  pos_joint_idx_.clear();
-  pos_axis_sel_.axisCount = 0;
-  for (size_t i = 0; i < joints_.size(); ++i) {
-    if (joints_[i].mode == JointMode::Position) {
-      pos_axis_sel_.axis[pos_axis_sel_.axisCount] = joints_[i].axis;
-      pos_axis_sel_.axisCount += 1;
-      pos_joint_idx_.push_back(i);
-    }
-  }
-
   RCLCPP_INFO(
     logger_,
-    "WmxSystemHardware initialised: %zu joints (%d position), sdk_path=%s, "
-    "param_file=%s, interval_cycles=%u",
-    joints_.size(), pos_axis_sel_.axisCount, sdk_path_.c_str(),
-    wmx_param_file_.empty() ? "(none)" : wmx_param_file_.c_str(), interval_cycles_);
+    "WmxSystemHardware initialised: %zu joints, sdk_path=%s, param_file=%s",
+    joints_.size(), sdk_path_.c_str(),
+    wmx_param_file_.empty() ? "(none)" : wmx_param_file_.c_str());
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -191,7 +188,6 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_configure(
   }
 
   cm_ = std::make_unique<CoreMotion>(&wmx_);
-  cyclic_ = std::make_unique<CyclicBuffer>(&wmx_);
 
   // Apply the WMX axis parameter set (gear ratios, units, limits, ...).
   // The engine itself is started/owned by wmx_engine_node; here we only attach.
@@ -205,12 +201,12 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_configure(
     }
   }
 
-  // Initialise commands to the current feedback so activation does not jump.
+  // Initialise state/command from the current feedback so activation does not jump.
   cm_->GetStatus(&cm_status_);
   for (auto & joint : joints_) {
     joint.pos_state = cm_status_.axesStatus[joint.axis].actualPos;
     joint.vel_state = cm_status_.axesStatus[joint.axis].actualVelocity;
-    joint.cmd = (joint.mode == JointMode::Position) ? joint.pos_state : 0.0;
+    joint.cmd = 0.0;
     joint.last_cmd = std::numeric_limits<double>::quiet_NaN();
   }
 
@@ -228,31 +224,12 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_activate(
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  // Seed commands from current state so activation does not jump.
   cm_->GetStatus(&cm_status_);
   for (auto & joint : joints_) {
     joint.pos_state = cm_status_.axesStatus[joint.axis].actualPos;
     joint.vel_state = cm_status_.axesStatus[joint.axis].actualVelocity;
-    joint.cmd = (joint.mode == JointMode::Position) ? joint.pos_state : 0.0;
+    joint.cmd = 0.0;
     joint.last_cmd = std::numeric_limits<double>::quiet_NaN();
-  }
-
-  // Open + execute a single multi-axis cyclic buffer covering all position axes.
-  if (has_position_joints_) {
-    // A few cycles of buffer headroom relative to the per-command interval.
-    const unsigned int buffer_cycles = interval_cycles_ * 4u;
-    int err = cyclic_->OpenCyclicBuffer(&pos_axis_sel_, buffer_cycles);
-    if (err != ErrorCode::None) {
-      cyclic_->ErrorToString(err, err_str_, sizeof(err_str_));
-      RCLCPP_ERROR(logger_, "OpenCyclicBuffer failed. Error=%d (%s)", err, err_str_);
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-    err = cyclic_->Execute(&pos_axis_sel_);
-    if (err != ErrorCode::None) {
-      cyclic_->ErrorToString(err, err_str_, sizeof(err_str_));
-      RCLCPP_ERROR(logger_, "CyclicBuffer Execute failed. Error=%d (%s)", err, err_str_);
-      return hardware_interface::CallbackReturn::ERROR;
-    }
   }
 
   RCLCPP_INFO(logger_, "WmxSystemHardware activated");
@@ -266,10 +243,6 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_deactivate(
     if (joint.mode == JointMode::Velocity) {
       startVelocity(joint, 0.0);
     }
-  }
-  if (has_position_joints_) {
-    cyclic_->Abort(&pos_axis_sel_);
-    cyclic_->CloseCyclicBuffer(&pos_axis_sel_);
   }
   RCLCPP_INFO(logger_, "WmxSystemHardware deactivated");
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -298,10 +271,10 @@ std::vector<hardware_interface::CommandInterface> WmxSystemHardware::export_comm
 {
   std::vector<hardware_interface::CommandInterface> command_interfaces;
   for (auto & joint : joints_) {
-    const char * iface = (joint.mode == JointMode::Position)
-      ? hardware_interface::HW_IF_POSITION
-      : hardware_interface::HW_IF_VELOCITY;
-    command_interfaces.emplace_back(joint.name, iface, &joint.cmd);
+    if (joint.mode == JointMode::Velocity) {
+      command_interfaces.emplace_back(
+        joint.name, hardware_interface::HW_IF_VELOCITY, &joint.cmd);
+    }
   }
   return command_interfaces;
 }
@@ -313,8 +286,7 @@ hardware_interface::return_type WmxSystemHardware::read(
   if (err != ErrorCode::None) {
     cm_->ErrorToString(err, err_str_, sizeof(err_str_));
     RCLCPP_ERROR_THROTTLE(
-      logger_, clock_, 1000,
-      "GetStatus failed. Error=%d (%s)", err, err_str_);
+      logger_, clock_, 1000, "GetStatus failed. Error=%d (%s)", err, err_str_);
     return hardware_interface::return_type::ERROR;
   }
 
@@ -349,8 +321,7 @@ hardware_interface::return_type WmxSystemHardware::write(
   // Engine must be communicating to accept motion commands.
   if (cm_status_.engineState != EngineState::T::Communicating) {
     RCLCPP_WARN_THROTTLE(
-      logger_, clock_, 1000,
-      "WMX engine not Communicating; skipping write()");
+      logger_, clock_, 1000, "WMX engine not Communicating; skipping write()");
     return hardware_interface::return_type::OK;
   }
 
@@ -363,27 +334,6 @@ hardware_interface::return_type WmxSystemHardware::write(
     if (std::isnan(joint.last_cmd) || std::fabs(joint.cmd - joint.last_cmd) > kCmdEpsilon) {
       startVelocity(joint, joint.cmd);
       joint.last_cmd = joint.cmd;
-    }
-  }
-
-  // Position joints: stream one absolute-position segment per cycle for ALL
-  // position axes in a single multi-axis CyclicBuffer command. cmd[j] aligns
-  // with pos_axis_sel_.axis[j] (selection-position indexing).
-  if (has_position_joints_) {
-    CyclicBufferMultiAxisCommands cmds;
-    for (size_t j = 0; j < pos_joint_idx_.size(); ++j) {
-      WmxJoint & joint = joints_[pos_joint_idx_[j]];
-      cmds.cmd[j].type = CyclicBufferCommandType::AbsolutePos;
-      cmds.cmd[j].command = joint.cmd;
-      cmds.cmd[j].intervalCycles = interval_cycles_;
-      joint.last_cmd = joint.cmd;
-    }
-    int err = cyclic_->AddCommand(&pos_axis_sel_, &cmds);
-    if (err != ErrorCode::None) {
-      cyclic_->ErrorToString(err, err_str_, sizeof(err_str_));
-      RCLCPP_ERROR_THROTTLE(
-        logger_, clock_, 1000,
-        "CyclicBuffer multi-axis AddCommand failed. Error=%d (%s)", err, err_str_);
     }
   }
   return hardware_interface::return_type::OK;

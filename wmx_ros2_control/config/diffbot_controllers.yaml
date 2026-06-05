@@ -1,18 +1,15 @@
 controller_manager:
   ros__parameters:
-    # NOTE: interval_cycles in the ros2_control xacro must equal
-    #   (WMX RT cycle rate Hz) / update_rate. With a 1 kHz WMX engine and
-    #   update_rate=100, interval_cycles=10.
     update_rate: 100
     use_sim_time: false
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
-    diffbot_base_controller:
+    differential_drive_controller:
       type: diff_drive_controller/DiffDriveController
 
-diffbot_base_controller:
+differential_drive_controller:
   ros__parameters:
     left_wheel_names: ["drivewheel_left_joint"]
     right_wheel_names: ["drivewheel_right_joint"]

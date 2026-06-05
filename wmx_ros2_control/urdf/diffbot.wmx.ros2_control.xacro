@@ -11,7 +11,6 @@
   <xacro:macro name="diffbot_wmx_ros2_control"
                params="name:=WmxDiffbotSystem
                        wmx_param_file
-                       interval_cycles:=10
                        left_axis:=0
                        right_axis:=1">
 
@@ -20,7 +19,6 @@
         <plugin>wmx_ros2_control/WmxSystemHardware</plugin>
         <param name="device_name">wmx_diffbot_control</param>
         <param name="wmx_param_file">${wmx_param_file}</param>
-        <param name="interval_cycles">${interval_cycles}</param>
         <param name="acc_time_ms">1000.0</param>
         <param name="dec_time_ms">1000.0</param>
       </hardware>

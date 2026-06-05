@@ -57,11 +57,20 @@ def generate_launch_description():
         output='screen',
     )
 
-    arm_controller_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['movensys_manipulator_arm_controller',
-                   '--controller-manager', '/controller_manager'],
+    # Arm trajectory execution: the standalone joint_trajectory_controller node
+    # (AdvancedMotion C-Spline), same as the non-ros2_control launch. It owns the
+    # FollowJointTrajectory action MoveIt connects to.
+    joint_trajectory_controller = Node(
+        package='wmx_ros2_package',
+        executable='joint_trajectory_controller',
+        name='joint_trajectory_controller',
+        parameters=[
+            manipulator_config,
+            {
+                'use_sim_time': use_sim_time,
+                'wmx_param_file_path': wmx_param_file,
+            },
+        ],
         output='screen',
     )
 
@@ -85,6 +94,6 @@ def generate_launch_description():
         robot_state_publisher,
         controller_manager,
         joint_state_broadcaster_spawner,
-        arm_controller_spawner,
+        joint_trajectory_controller,
         gripper_controller,
     ])
