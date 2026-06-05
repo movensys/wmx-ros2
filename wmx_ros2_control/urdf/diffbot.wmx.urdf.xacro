@@ -5,6 +5,7 @@
              default="$(find wmx_ros2_package)/config/diffbot_wmx_parameters.xml"/>
 
   <xacro:include filename="$(find movensys_navigation_description)/urdf/diffbot/diffbot.xacro"/>
+  <xacro:include filename="$(find movensys_navigation_description)/urdf/diffbot/perception.xacro"/>
   <xacro:include filename="$(find wmx_ros2_control)/urdf/diffbot.wmx.ros2_control.xacro"/>
 
   <link name="base_footprint"/>
