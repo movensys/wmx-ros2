@@ -73,6 +73,7 @@ hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
   acc_time_ms_ = std::stod(getHwParam("acc_time_ms", "1.0"));
   dec_time_ms_ = std::stod(getHwParam("dec_time_ms", "1.0"));
   max_device_retries_ = std::stoi(getHwParam("max_device_retries", "30"));
+  auto_servo_on_ = (getHwParam("auto_servo_on", "true") == "true");
 
   joints_.clear();
   joints_.reserve(info_.joints.size());
@@ -214,6 +215,25 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_activate(
     return hardware_interface::CallbackReturn::ERROR;
   }
 
+  // Clear amp alarms and enable the servos (StartVel/CyclicBuffer require
+  // servo-on). Disable via the 'auto_servo_on' hardware param if servos are
+  // managed elsewhere.
+  if (auto_servo_on_) {
+    for (auto & joint : joints_) {
+      cm_->axisControl->ClearAmpAlarm(joint.axis);
+    }
+    for (auto & joint : joints_) {
+      int err = cm_->axisControl->SetServoOn(joint.axis, 1, 2000);
+      if (err != ErrorCode::None) {
+        cm_->ErrorToString(err, err_str_, sizeof(err_str_));
+        RCLCPP_ERROR(
+          logger_, "Failed to servo-on axis %d. Error=%d (%s)", joint.axis, err, err_str_);
+        return hardware_interface::CallbackReturn::ERROR;
+      }
+    }
+    RCLCPP_INFO(logger_, "Servos enabled on all axes");
+  }
+
   cm_->GetStatus(&cm_status_);
   for (auto & joint : joints_) {
     joint.pos_state = cm_status_.axesStatus[joint.axis].actualPos;
@@ -232,6 +252,11 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_deactivate(
   for (auto & joint : joints_) {
     if (joint.mode == JointMode::Velocity) {
       startVelocity(joint, 0.0);
+    }
+  }
+  if (auto_servo_on_) {
+    for (auto & joint : joints_) {
+      cm_->axisControl->SetServoOn(joint.axis, 0, 2000);
     }
   }
   RCLCPP_INFO(logger_, "WmxSystemHardware deactivated");
@@ -316,6 +341,16 @@ hardware_interface::return_type WmxSystemHardware::write(
 
   for (auto & joint : joints_) {
     if (joint.mode != JointMode::Velocity) {
+      continue;
+    }
+    // Skip (don't spam StartVel errors) while the servo is off or alarmed.
+    const auto & axis_status = cm_status_.axesStatus[joint.axis];
+    if (!axis_status.servoOn || axis_status.ampAlarm) {
+      RCLCPP_WARN_THROTTLE(
+        logger_, clock_, 2000,
+        "Axis %d not ready (servoOn=%d, ampAlarm=%d); skipping velocity command",
+        joint.axis, axis_status.servoOn, axis_status.ampAlarm);
+      joint.last_cmd = std::numeric_limits<double>::quiet_NaN();
       continue;
     }
     if (std::isnan(joint.last_cmd) || std::fabs(joint.cmd - joint.last_cmd) > kCmdEpsilon) {

@@ -103,6 +103,7 @@ private:
   double acc_time_ms_ = 1.0;
   double dec_time_ms_ = 1.0;
   int max_device_retries_ = 30;
+  bool auto_servo_on_ = true;   ///< clear alarms + servo-on in on_activate, servo-off on deactivate
 
   char err_str_[256] = {0};
 
