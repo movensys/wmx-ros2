@@ -30,7 +30,7 @@ using wmx3Api::Velocity;
 namespace
 {
 constexpr double kCmdEpsilon = 1e-9;
-}  
+}  // namespace
 
 std::string WmxSystemHardware::getHwParam(
   const std::string & key, const std::string & def) const
@@ -89,12 +89,10 @@ hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
     }
     joint.axis = std::stoi(axis_it->second);
 
-    if (j.command_interfaces.empty()) {
+    const auto & cmd_ifs = j.command_interfaces;
+    if (cmd_ifs.empty()) {
       joint.mode = JointMode::StateOnly;
-    } else if (
-      j.command_interfaces.size() == 1 &&
-      j.command_interfaces[0].name == hardware_interface::HW_IF_VELOCITY)
-    {
+    } else if (cmd_ifs.size() == 1 && cmd_ifs[0].name == hardware_interface::HW_IF_VELOCITY) {
       joint.mode = JointMode::Velocity;
     } else {
       RCLCPP_FATAL(
@@ -328,7 +326,7 @@ hardware_interface::return_type WmxSystemHardware::write(
   return hardware_interface::return_type::OK;
 }
 
-}  
+}  // namespace wmx_ros2_control
 
 PLUGINLIB_EXPORT_CLASS(
   wmx_ros2_control::WmxSystemHardware, hardware_interface::SystemInterface)

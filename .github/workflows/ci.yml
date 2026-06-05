@@ -81,7 +81,8 @@ jobs:
           apt-get update
           rosdep update --rosdistro ${{ matrix.ros_distro }}
           rosdep install --from-paths src --ignore-src -y \
-            --rosdistro ${{ matrix.ros_distro }} --skip-keys "wmx_ros2_package"
+            --rosdistro ${{ matrix.ros_distro }} \
+            --skip-keys "wmx_ros2_package movensys_navigation_description movensys_manipulator_description"
 
       - name: colcon build
         run: |

@@ -31,8 +31,8 @@ namespace wmx_ros2_control
 
 enum class JointMode
 {
-  Velocity,    
-  StateOnly 
+  Velocity,    // command_interface "velocity" -> WMX CoreMotion StartVel
+  StateOnly    // no command_interface -> feedback only (motion driven elsewhere)
 };
 
 struct WmxJoint
