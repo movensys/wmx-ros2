@@ -26,6 +26,11 @@ sudo apt install -y ros-${ROS_DISTRO}-graph-msgs \
                     ros-${ROS_DISTRO}-moveit-task-constructor-core \
                     ros-${ROS_DISTRO}-ros2-control \
                     ros-${ROS_DISTRO}-ros2-controllers \
+                    ros-${ROS_DISTRO}-controller-manager \
+                    ros-${ROS_DISTRO}-diff-drive-controller \
+                    ros-${ROS_DISTRO}-joint-trajectory-controller \
+                    ros-${ROS_DISTRO}-joint-state-broadcaster \
+                    ros-${ROS_DISTRO}-xacro \
                     ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
 ```
 

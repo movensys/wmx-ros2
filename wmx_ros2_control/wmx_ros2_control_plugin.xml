@@ -1,0 +1,12 @@
+<library path="wmx_system_hardware">
+  <class name="wmx_ros2_control/WmxSystemHardware"
+         type="wmx_ros2_control::WmxSystemHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ros2_control SystemInterface for WMX3 EtherCAT axes. Reads encoder
+      feedback via CoreMotion GetStatus; drives velocity joints with StartVel
+      and position joints with the CyclicBuffer (AbsolutePos) module. Attaches
+      to the engine owned by wmx_engine_node (does not start/stop it).
+    </description>
+  </class>
+</library>

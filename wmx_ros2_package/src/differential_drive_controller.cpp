@@ -293,7 +293,8 @@ void DifferentialDriveController::encoderOdometryStep()
   encoderOdometeryPub_->publish(encoderOdometryMsg_);
 }
 
-std::vector<double> DifferentialDriveController::cmdCalculateOmega(double cmdLinearX, double cmdOmegaZ)
+std::vector<double> DifferentialDriveController::cmdCalculateOmega(
+  double cmdLinearX, double cmdOmegaZ)
 {
   return {
     (2 * cmdLinearX - cmdOmegaZ * wheelToWheel_) / (2 * wheelRadius_),
