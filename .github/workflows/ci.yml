@@ -38,22 +38,26 @@ jobs:
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           ament_cpplint wmx_ros2_package/src wmx_ros2_package/include
+          ament_cpplint wmx_ros2_control/src wmx_ros2_control/include
 
       - name: ament_flake8 (launch + tests)
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           ament_flake8 wmx_ros2_package/launch wmx_ros2_package/test
+          ament_flake8 wmx_ros2_control/launch
 
       - name: ament_xmllint (package.xml)
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           ament_xmllint wmx_ros2_package/package.xml wmx_ros2_message/package.xml
+          ament_xmllint wmx_ros2_control/package.xml \
+            wmx_ros2_control/wmx_ros2_control_plugin.xml
 
       - name: cppcheck (warnings only, never fails the job)
         run: |
           cppcheck --enable=warning,style --inline-suppr \
             --suppress=missingIncludeSystem --error-exitcode=0 \
-            wmx_ros2_package/src
+            wmx_ros2_package/src wmx_ros2_control/src
 
   build-messages:
     name: Build wmx_ros2_message (${{ matrix.ros_distro }})

@@ -1,0 +1,44 @@
+controller_manager:
+  ros__parameters:
+    # NOTE: interval_cycles in the ros2_control xacro must equal
+    #   (WMX RT cycle rate Hz) / update_rate. With a 1 kHz WMX engine and
+    #   update_rate=100, interval_cycles=10.
+    update_rate: 100
+    use_sim_time: false
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    diffbot_base_controller:
+      type: diff_drive_controller/DiffDriveController
+
+diffbot_base_controller:
+  ros__parameters:
+    left_wheel_names: ["drivewheel_left_joint"]
+    right_wheel_names: ["drivewheel_right_joint"]
+
+    wheel_separation: 0.55
+    wheel_radius: 0.095
+
+    # Multipliers in case the mechanical values need trimming against odometry.
+    wheel_separation_multiplier: 1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    publish_rate: 50.0
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+    enable_odom_tf: true
+    open_loop: false
+    position_feedback: true
+
+    # cmd_vel handling (Twist; the launch remaps ~/cmd_vel <- /cmd_vel)
+    use_stamped_vel: false
+    cmd_vel_timeout: 0.5
+
+    linear.x.max_velocity: 1.0
+    linear.x.min_velocity: -1.0
+    linear.x.max_acceleration: 1.0
+    angular.z.max_velocity: 2.0
+    angular.z.min_velocity: -2.0
+    angular.z.max_acceleration: 2.0
