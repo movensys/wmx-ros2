@@ -1,10 +1,8 @@
-# WMX ROS2 Application
+# WMX ROS2 Packages
 
-**Note that this ROS2 application requires pre-installed WMX Linux.**
+**Note that this ROS2 Packages requires pre-installed WMX Linux.**
 
-
-## 1. Bashrc Configuration
-- Add the following environment variables to your `~/.bashrc`:
+## 1. Bashrc Configuration [~/.bashrc]
 ```
 export ROS_DOMAIN_ID=70                         #use any number
 export ROS_DISTRO=jazzy                         #support {jazzy, humble}

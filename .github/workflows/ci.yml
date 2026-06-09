@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, devel, "release/**"]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Lint (${{ matrix.ros_distro }})
+    runs-on: ${{ matrix.runner }}
+    container: ros:${{ matrix.ros_distro }}-ros-base
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: humble
+            runner: ubuntu-22.04
+          - ros_distro: jazzy
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint tooling
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ros-${{ matrix.ros_distro }}-ament-cpplint \
+            ros-${{ matrix.ros_distro }}-ament-flake8 \
+            ros-${{ matrix.ros_distro }}-ament-pep257 \
+            ros-${{ matrix.ros_distro }}-ament-xmllint \
+            cppcheck
+
+      - name: ament_cpplint
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          ament_cpplint wmx_ros2_package/src wmx_ros2_package/include
+
+      - name: ament_flake8 (launch + tests)
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          ament_flake8 wmx_ros2_package/launch wmx_ros2_package/test
+
+      - name: ament_xmllint (package.xml)
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          ament_xmllint wmx_ros2_package/package.xml wmx_ros2_message/package.xml
+
+      - name: cppcheck (warnings only, never fails the job)
+        run: |
+          cppcheck --enable=warning,style --inline-suppr \
+            --suppress=missingIncludeSystem --error-exitcode=0 \
+            wmx_ros2_package/src
+
+  build-messages:
+    name: Build wmx_ros2_message (${{ matrix.ros_distro }})
+    runs-on: ${{ matrix.runner }}
+    container: ros:${{ matrix.ros_distro }}-ros-base
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: humble
+            runner: ubuntu-22.04
+          - ros_distro: jazzy
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/wmx-ros2
+
+      - name: rosdep install
+        run: |
+          apt-get update
+          rosdep update --rosdistro ${{ matrix.ros_distro }}
+          rosdep install --from-paths src --ignore-src -y \
+            --rosdistro ${{ matrix.ros_distro }} --skip-keys "wmx_ros2_package"
+
+      - name: colcon build
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          colcon build --packages-select wmx_ros2_message \
+            --event-handlers console_cohesion+
+
+      - name: colcon test (message interfaces only)
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          source install/setup.bash
+          colcon test --packages-select wmx_ros2_message \
+            --event-handlers console_cohesion+
+          colcon test-result --verbose

@@ -1,28 +1,28 @@
 ## Testing WMX ROS2 Package
 
 > **WARNING: Do NOT run tests on a machine connected to real EtherCAT hardware.**
-> Integration tests start and stop the WMX3 engine, send service calls, and may trigger axis commands. Running them while connected to real hardware (e.g. the CR3A manipulator) could cause unexpected motor movement, servo faults, or equipment damage.
+> Integration tests start and stop the WMX3 engine, send service calls, and may trigger axis commands. 
+Running them while connected to real hardware (e.g. the CR3A manipulator) could cause unexpected motor movement, servo faults, or equipment damage.
 >
-> Tests are designed to run with the WMX3 SDK in **standalone mode** (no EtherCAT slaves connected). The SDK creates the device successfully but cannot communicate with real drives, so service calls return safely with error responses. No special simulation configuration is needed — just ensure no EtherCAT hardware is connected.
+> Tests are designed to run with the WMX3 SDK in **simulation mode** (no EtherCAT slaves connected). The SDK creates the device successfully but cannot communicate with real drives, so service calls return safely with error responses. No special simulation configuration is needed — just ensure no EtherCAT hardware is connected.
 >
-> For full WMX3 simulation with virtual axes (using `SimuApi` and the simulation platform at `/opt/wmx3/platform/simu/`), refer to the WMX3 SDK documentation.
+> For full WMX3 simulation with virtual axes (using the simulation platform at `/opt/wmx3/Module.ini`), refer to the WMX3 SDK documentation.
 
 ### Prerequisites
 
 - WMX3 SDK installed at `/opt/wmx3/`
-- ROS 2 Humble workspace built:
-  ```bash
-  source /opt/ros/humble/setup.bash
+- ROS 2 workspace built:
+  ```
+  source /opt/ros/$ROS_DISTRO/setup.bash
   colcon build --packages-up-to wmx_ros2_package
   ```
 - Integration tests require `sudo` (WMX3 SDK needs root for license and `/dev/cpu_dma_latency`)
 - When running with `sudo`, ROS 2 environment variables must be preserved
 
 ### Run all tests
-
-```bash
+```
 cd ~/workspaces/movensys_ws
-source /opt/ros/humble/setup.bash && source install/setup.bash
+source /opt/ros/$ROS_DISTRO/setup.bash && source install/setup.bash
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
      --preserve-env=COLCON_PREFIX_PATH \
@@ -37,8 +37,9 @@ sudo --preserve-env=PATH \
 ```
 
 ### Run a specific test
-
-```bash
+```
+cd ~/workspaces/movensys_ws
+source /opt/ros/$ROS_DISTRO/setup.bash && source install/setup.bash
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
      --preserve-env=COLCON_PREFIX_PATH \
@@ -54,18 +55,15 @@ sudo --preserve-env=PATH \
 ```
 
 ### Run unit tests only (no sudo)
-
 Message interface tests do not require hardware or sudo:
-
-```bash
-source /opt/ros/humble/setup.bash && source install/setup.bash
+```
+source /opt/ros/$ROS_DISTRO/setup.bash && source install/setup.bash
 colcon test --packages-select wmx_ros2_package \
   --ctest-args -R test_message_interfaces
 ```
 
 ### View test results
-
-```bash
+```
 colcon test-result --verbose --test-result-base build/wmx_ros2_package
 ```
 
@@ -88,7 +86,7 @@ colcon test-result --verbose --test-result-base build/wmx_ros2_package
 - The WMX3 free license mode limits communication to one hour
 - EtherCAT `get_network_state` may return `success=false` without EtherCAT hardware connected — the test verifies the service responds, not the hardware state
 - If a build cache from a previous branch causes errors, clean and rebuild:
-  ```bash
+  ```
   rm -rf build/wmx_ros2_message install/wmx_ros2_message
   colcon build --packages-up-to wmx_ros2_package
   ```
