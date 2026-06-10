@@ -20,6 +20,9 @@
   <depend>trajectory_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>nova_diff_drive_logic</depend>
   <depend>wmx_ros2_message</depend>
 
   <exec_depend>ros2launch</exec_depend>

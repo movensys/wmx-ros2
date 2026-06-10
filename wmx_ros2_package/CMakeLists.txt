@@ -24,6 +24,9 @@ find_package(control_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(nova_diff_drive_logic REQUIRED)
 
 set(WMX3_SDK_PATH "/opt/wmx3" CACHE PATH "Path to WMX3 SDK installation")
 
@@ -50,7 +53,8 @@ target_compile_definitions(joint_trajectory_controller PRIVATE WMX3_SDK_PATH="${
 
 add_executable(differential_drive_controller src/differential_drive_controller.cpp)
 ament_target_dependencies(differential_drive_controller
-  rclcpp std_msgs std_srvs geometry_msgs nav_msgs wmx_ros2_message)
+  rclcpp std_msgs std_srvs geometry_msgs nav_msgs
+  tf2 tf2_ros nova_diff_drive_logic wmx_ros2_message)
 target_include_directories(differential_drive_controller PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(differential_drive_controller coremotionapi wmx3api imdll)
 target_link_directories(differential_drive_controller PRIVATE ${WMX3_SDK_PATH}/lib)

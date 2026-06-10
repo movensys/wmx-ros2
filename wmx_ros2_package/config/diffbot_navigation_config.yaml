@@ -7,9 +7,23 @@ differential_drive_controller:
     dec_time: 1.0
     wheel_radius: 0.095
     wheel_to_wheel: 0.55
-    cmd_vel_topic: /cmd_vel
-    encoder_odometry_topic: /odom_encoder
+    # Stale-command safety: zero the wheels if no /cmd_vel within this window [s].
+    cmd_vel_timeout: 0.25
+    # /odom_accel is rate-limited to this rate [Hz] relative to the control loop.
+    accel_publish_rate: 10.0
+    accel_alpha: 0.3
+    # Leave TF to the localization EKF when an IMU is present; enable only as a
+    # fallback for IMU-less configs.
+    publish_tf: false
+    odom_frame: odom
+    base_frame: base_link
+    # Nova autonomy contract topics. /odom_enc feeds the localization EKF (its
+    # launch remaps the EKF input odom->odom_enc); /cmd_vel_safe is a plain Twist.
+    cmd_vel_topic: /cmd_vel_safe
+    encoder_odometry_topic: /odom_enc
     encoder_omega_topic: /omega_enc
+    odom_deltas_topic: /odom_deltas
+    odom_accel_topic: /odom_accel
     wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
 joint_state_broadcaster:
