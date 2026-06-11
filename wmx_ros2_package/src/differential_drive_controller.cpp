@@ -427,10 +427,12 @@ void DifferentialDriveController::publishOdometry(
   msg.twist.twist.angular.z = body.angular;
 
   // Covariance. The Jetstream EKF fuses ONLY twist vx, vy, vyaw from this source
-  // (odom0_config indices 6,7,11) and ignores pose, so the twist diagonal below is
-  // what matters to the EKF. Pose x/y/yaw are kept authoritative (small variance) for
-  // the no-EKF fallback where this odom feeds Nav2 directly; unused axes (z/roll/pitch)
-  // are made non-authoritative. Mirrors the proven Nova diff_drive_node values.
+  // (robot_localization odom0_config indices 6, 7, 11 of its 15-state vector). In this
+  // nav_msgs 6x6 twist covariance those same components are the diagonal entries
+  // [0]=vx, [7]=vy, [35]=vyaw — set below. The EKF ignores pose, but x/y/yaw are kept
+  // authoritative (small variance) for the no-EKF fallback where this odom feeds Nav2
+  // directly; unused axes (z/roll/pitch) are non-authoritative. Mirrors the proven Nova
+  // diff_drive_node values.
   constexpr double kSmall = 0.01;
   constexpr double kLarge = 99999.0;
   msg.pose.covariance[0] = kSmall;    // x
@@ -586,6 +588,12 @@ void DifferentialDriveController::setRosParameter()
   if (wheelToWheel_ <= 0.0) {
     RCLCPP_WARN(this->get_logger(), "wheel_to_wheel must be > 0; falling back to 0.55");
     wheelToWheel_ = 0.55;
+  }
+  // accel_publish_rate: 0 means "publish /odom_accel every control cycle"; a negative
+  // value is a misconfiguration, so guard it (otherwise it falls through to every-cycle).
+  if (accelPublishRate_ < 0.0) {
+    RCLCPP_WARN(this->get_logger(), "accel_publish_rate must be >= 0; falling back to 10.0");
+    accelPublishRate_ = 10.0;
   }
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
