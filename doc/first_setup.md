@@ -31,6 +31,7 @@ sudo apt install -y ros-${ROS_DISTRO}-graph-msgs \
                     ros-${ROS_DISTRO}-joint-trajectory-controller \
                     ros-${ROS_DISTRO}-joint-state-broadcaster \
                     ros-${ROS_DISTRO}-xacro \
+                    ros-${ROS_DISTRO}-topic-tools \
                     ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
 ```
 

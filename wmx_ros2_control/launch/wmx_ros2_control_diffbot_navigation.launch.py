@@ -44,8 +44,11 @@ def generate_launch_description():
         package='controller_manager',
         executable='ros2_control_node',
         output='screen',
-        parameters=[robot_description, controllers],
-        remappings=[('/differential_drive_controller/cmd_vel', '/cmd_vel')],
+        parameters=[robot_description, controllers, {'use_sim_time': use_sim_time}],
+        remappings=[
+            ('/differential_drive_controller/cmd_vel', '/cmd_vel_safe'),
+            ('/differential_drive_controller/odom', '/odom_enc'),
+        ],
     )
 
     joint_state_broadcaster_spawner = Node(
@@ -64,6 +67,17 @@ def generate_launch_description():
         output='screen',
     )
 
+    # Mirror the actual wheel joint states to Isaac Sim's joint-command topic so
+    # the digital twin follows the real/WMX hardware.
+    isaacsim_joint_command_relay = Node(
+        package='topic_tools',
+        executable='relay',
+        name='isaacsim_joint_command_relay',
+        arguments=['/joint_states', '/isaacsim/joint_command'],
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen',
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
@@ -75,4 +89,5 @@ def generate_launch_description():
         controller_manager,
         joint_state_broadcaster_spawner,
         differential_drive_controller_spawner,
+        isaacsim_joint_command_relay,
     ])

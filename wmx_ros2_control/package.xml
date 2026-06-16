@@ -28,6 +28,7 @@
   <!-- launch / description -->
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>wmx_ros2_package</exec_depend>
   <exec_depend>movensys_navigation_description</exec_depend>

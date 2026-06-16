@@ -7,8 +7,8 @@ differential_drive_controller:
     dec_time: 1.0
     wheel_radius: 0.095
     wheel_to_wheel: 0.55
-    cmd_vel_topic: /cmd_vel
-    encoder_odometry_topic: /odom_encoder
+    cmd_vel_topic: /cmd_vel_safe
+    encoder_odometry_topic: /odom_enc
     encoder_omega_topic: /omega_enc
     wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
