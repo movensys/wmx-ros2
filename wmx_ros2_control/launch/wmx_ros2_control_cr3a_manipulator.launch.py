@@ -45,7 +45,7 @@ def generate_launch_description():
         package='controller_manager',
         executable='ros2_control_node',
         output='screen',
-        parameters=[robot_description, controllers],
+        parameters=[robot_description, controllers, {'use_sim_time': use_sim_time}],
     )
 
     joint_state_broadcaster_spawner = Node(
@@ -79,6 +79,15 @@ def generate_launch_description():
         output='screen',
     )
 
+    isaacsim_joint_command_relay = Node(
+        package='topic_tools',
+        executable='relay',
+        name='isaacsim_joint_command_relay',
+        arguments=['/joint_states', '/isaacsim/joint_command'],
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen',
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
@@ -91,4 +100,5 @@ def generate_launch_description():
         joint_state_broadcaster_spawner,
         joint_trajectory_controller,
         gripper_controller,
+        isaacsim_joint_command_relay,
     ])
