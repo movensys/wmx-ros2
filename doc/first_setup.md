@@ -8,6 +8,8 @@ export ROS_DOMAIN_ID=70                         #use any number
 export ROS_DISTRO=jazzy                         #support {jazzy, humble}
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
+export ROBOT_OPTION=1                           #support {1: enable, 0:disable}
+
 source /opt/ros/$ROS_DISTRO/setup.bash
 source ~/workspaces/movensys_ws/install/setup.bash
 ```
@@ -44,9 +46,14 @@ cd ~/workspaces/movensys_ws/src && \
 
 ## Build
 ```
+source ~/.bashrc
 cd ~/workspaces/movensys_ws
 colcon build --packages-select wmx_ros2_message
 source install/setup.bash
-colcon build
+if [ "${ROBOT_OPTION:-0}" = "1" ]; then
+   colcon build 
+  else
+    colcon build --packages-skip wmx_ros2_robot_option
+  fi
 source ~/.bashrc
 ```

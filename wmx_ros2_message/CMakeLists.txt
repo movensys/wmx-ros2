@@ -34,9 +34,17 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/LoadWmxParams.srv"
   "srv/GetWmxParams.srv"
 
+  "srv/RobotJogPose.srv"
+  "srv/RobotMovePose.srv"
+  "srv/RobotMoveAngle.srv"
+  "srv/RobotCheckPose.srv"
+  "srv/RobotCheckAngle.srv"
+  "srv/SetRobotScalar.srv"
+
   "msg/AxisVelocity.msg"
   "msg/AxisState.msg"
   "msg/AxisPose.msg"
+  "msg/RobotArmStatus.msg"
   DEPENDENCIES std_msgs
 )
 

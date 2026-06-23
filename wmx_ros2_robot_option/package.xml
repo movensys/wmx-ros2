@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>wmx_ros2_robot_option</name>
+  <version>0.1.0</version>
+  <description>
+    ROS 2 robot arm option for the WMX3 motion control SDK. Reflects the
+    wmx_arm_server of wmx-server-development as a single node exposing the robot
+    control surface (servo, speed, jog/move, collision/fitting, status) over
+    ROS 2 services and topics.
+  </description>
+  <maintainer email="mfikih@movensys.com">Fikih Muhamad</maintainer>
+  <maintainer email="mali@movensys.com">Moshin Ali</maintainer>
+  <maintainer email="daniel@movensys.com">Daniel Hong</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>wmx_ros2_message</depend>
+
+  <exec_depend>ros2launch</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

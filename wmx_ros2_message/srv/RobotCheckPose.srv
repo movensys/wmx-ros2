@@ -1,0 +1,7 @@
+# Check whether a cartesian pose is a valid/reachable target.
+# Mirrors check_target_pose of wmx_arm_server.
+float64[] pose          # candidate pose [x, y, z, qx, qy, qz, qw] (m, quaternion)
+---
+bool success            # true if the check executed
+bool reachable          # true if the pose is a valid target
+string message          # response or error description

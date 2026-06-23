@@ -1,0 +1,9 @@
+# Jog the tool in cartesian space by a 6-DoF offset.
+# Mirrors jog_arm_pose / jog_arm_pose_absolute of wmx_arm_server.
+float64[] offset        # [x, y, z, rx, ry, rz] (xyz in m, rxyz in rad)
+bool is_tool_frame      # true: offset is in the tool frame, false: in the base/work frame
+---
+bool success            # true if the motion command was accepted
+string message          # response or error description
+int32 error_code        # raw WMX3 error code (0 on success)
+float64[] result_pose   # resulting commanded pose [x, y, z, qx, qy, qz, qw] (m, quaternion)

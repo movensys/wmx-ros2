@@ -1,0 +1,10 @@
+# Move the tool to an absolute cartesian pose.
+# Mirrors set_arm_pose_ptp of wmx_arm_server.
+float64[] pose          # target pose [x, y, z, qx, qy, qz, qw] (m, quaternion)
+bool is_tool_frame      # true: pose expressed in the tool frame
+int32 motion_type       # 0 = LINEAR, 1 = CIRCULAR, 2 = JOINT (PTP)
+---
+bool success            # true if the motion command was accepted
+string message          # response or error description
+int32 error_code        # raw WMX3 error code (0 on success)
+float64[] result_pose   # resulting commanded pose [x, y, z, qx, qy, qz, qw] (m, quaternion)

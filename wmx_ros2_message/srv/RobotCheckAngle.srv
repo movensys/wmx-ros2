@@ -1,0 +1,7 @@
+# Check whether a set of joint angles is a valid/reachable target.
+# Mirrors check_target_angle of wmx_arm_server.
+float64[] angle         # candidate joint values [j1..jN] (rad for revolute, m for prismatic)
+---
+bool success            # true if the check executed
+bool reachable          # true if the joint target is valid
+string message          # response or error description

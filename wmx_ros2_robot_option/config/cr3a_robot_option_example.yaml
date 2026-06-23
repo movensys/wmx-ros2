@@ -1,0 +1,10 @@
+wmx_robot_option_node:
+  ros__parameters:
+    status_rate: 50              # status publication rate in Hz
+    status_frame: "base_link"    # frame_id stamped on wmx/robot/status
+    collision_sensitivity: 6.0   # default collision detection threshold
+    # robot_xml_path (robot kinematics model) and wmx_param_file_path (system/axis
+    # parameters) are resolved at launch time via get_package_share_directory.
+    robot_xml_path: ""
+    wmx_param_file_path: ""
+    robot_export_xml_path: ""    # empty -> "<robot_xml_path>_export.xml"

@@ -1,0 +1,6 @@
+# Set a single scalar robot option.
+# Mirrors set_speed (percent) and set_collision_sensitivity of wmx_arm_server.
+float64 value           # speed percent (0-100) or collision sensitivity threshold
+---
+bool success            # indicate successful run
+string message          # response messages
