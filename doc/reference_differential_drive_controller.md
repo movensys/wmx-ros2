@@ -35,6 +35,7 @@ has no effect on behaviour — restart the node to apply new values.
 | `right_axis` | int | `1` | – | WMX3 axis index of the right wheel. Same caveat as `left_axis`. |
 | `wheel_radius` | double | `0.095` | m | Drive-wheel radius `R`. Guarded: values ≤ 0 fall back to the default (warn). |
 | `wheel_to_wheel` | double | `0.55` | m | Wheel separation `L` (distance between the two drive wheels). Guarded: ≤ 0 falls back to the default (warn). |
+| `pos_unit_scale` | double | `1.0` | rad/user-unit | Converts `actualPos` (WMX user-unit) to wheel **radians** for the position-delta odometry. `1.0` when the loaded WMX param XML already scales to rad (same scaling that makes `actualVelocity` read rad/s — our config). Guarded: non-finite or `0` falls back to `1.0` (warn). |
 | `wmx_param_file_path` | string | `/diff_drive/no_param` | – | WMX parameter XML imported at init via `config->ImportAndSetAll()` (axis gear/feedback/limit setup). The default is a deliberate non-path: the import fails with an ERROR log but the node keeps running with whatever parameters the engine already has. The diffbot launch file overrides it with `config/diffbot_wmx_parameters.xml` resolved at launch time. |
 
 ### B. Motion profile / loop
@@ -45,11 +46,12 @@ has no effect on behaviour — restart the node to apply new values.
 | `acc_time` | double | `1.0` | **ms** | `StartVel` trapezoidal profile acceleration time (`profile.accTimeMilliseconds`, `ProfileType::TimeAccTrapezoidal`). Note the unit: milliseconds — the default 1.0 ms is effectively an instant ramp; the WMX-side axis limits do the real shaping. Not guarded: passed to WMX unvalidated. |
 | `dec_time` | double | `1.0` | **ms** | Same as `acc_time` for deceleration. Also applies to the stale-command stop (see `cmd_vel_timeout`). |
 
-The control timer is a **wall timer**: under `use_sim_time:=true` the loop still
-ticks at wall-clock rate while all stamps, integration `dt` and the
-`cmd_vel_timeout` check follow the ROS clock. A paused `/clock` therefore
-freezes odometry integration *and* disables the stale-command stop while the
-last wheel target keeps being held.
+The control timer is a **wall timer**. Pose and `/odom_deltas` are integrated from
+encoder **position deltas** (dt-free), so a paused or stretched `/clock` does **not**
+corrupt them. `use_sim_time` (ROS clock) only affects time-derived quantities:
+message stamps, the `cmd_vel_timeout` stale check, the jump guard's expected step
+(`actualVelocity·dt`), and the `/odom_accel` rate limit. A paused `/clock` still
+disables the stale-command stop (the last wheel target keeps being held).
 
 ### C. Behaviour / safety
 
@@ -61,6 +63,7 @@ last wheel target keeps being held.
 | `publish_tf` | bool | `false` | – | Publish `odom_frame → base_frame` TF from the integrated pose. Keep **false** when a localization EKF owns that TF (Nova: EKF is launched when an IMU is configured). Enable only as the fallback for IMU-less / no-EKF configs where this node is the sole odometry source. |
 | `odom_frame` | string | `odom` | – | `frame_id` for `/odom_enc`, `/odom_deltas` and the optional TF parent. |
 | `base_frame` | string | `base_link` | – | `child_frame_id` for `/odom_enc`/TF and `frame_id` for `/odom_accel`. |
+| `jump_guard_tol` | double | `0.5` | rad | Velocity-consistency guard for the position-delta odometry: if a per-wheel step `|Δφ − actualVelocity·dt|` exceeds this, the cycle is treated as a homing / encoder-rollover / glitch jump — odometry re-baselines (contributes nothing that cycle) and warns, instead of integrating a bogus jump. Generous by default (a real ~10 ms step's `Δφ` and `actualVelocity·dt` agree closely; only gross jumps trip). Guarded: ≤ 0 falls back to 0.5. |
 
 ### D. Topic names (defaults = Nova contract)
 
@@ -83,8 +86,8 @@ in the generated node config like any other value.
 |---|---|---|---|---|---|
 | `wmx/engine/ready` | sub | `std_msgs/Bool` | reliable, transient_local, depth 1 | 1 Hz | Init gate from `wmx_engine_node`, re-published every second (`false` until engine communication starts, `true` afterwards; transient_local so late joiners get the last sample). The controller acts on the first `true` and ignores the rest; the subscription is dropped after successful init. Name is fixed (not a parameter). |
 | `/cmd_vel_safe` | sub | `geometry_msgs/Twist` | default (reliable, volatile), depth 1 | producer | **Plain** `Twist`, not `TwistStamped` (the Nova EKF runs `stamped_control: false`). Uses `linear.x` [m/s] and `angular.z` [rad/s]. |
-| `/odom_enc` | pub | `nav_msgs/Odometry` | default, depth 1 | `rate` | `header.frame_id = odom_frame`, `child_frame_id = base_frame`. Pose = dead-reckoned (exact-arc integration); twist = `vx`, `vy`(=0), `vyaw` from forward kinematics. Covariance: see below. |
-| `/odom_deltas` | pub | `geometry_msgs/TwistStamped` | default, depth 1 | `rate` | Accumulated `Σ|v|·dt` (in `twist.linear.x`, m) and `Σ|ω|·dt` (in `twist.angular.z`, rad) since the previous publish; resets each publish. `frame_id = odom_frame`. |
+| `/odom_enc` | pub | `nav_msgs/Odometry` | default, depth 1 | `rate` | `header.frame_id = odom_frame`, `child_frame_id = base_frame`. **Pose** = dead-reckoned from per-wheel encoder **position deltas** (`actualPos`), exact-arc via the sinc midpoint form (dt-free). **Twist** = `vx`, `vy`(=0), `vyaw` from `actualVelocity` (forward kinematics). Covariance: see below. |
+| `/odom_deltas` | pub | `geometry_msgs/TwistStamped` | default, depth 1 | `rate` | Accumulated `Σ|Δs|` (in `twist.linear.x`, m) and `Σ|Δθ|` (in `twist.angular.z`, rad) from encoder **position deltas** since the previous publish (more exact than `Σ|v|·dt`); resets each publish. `frame_id = odom_frame`. |
 | `/odom_accel` | pub | `geometry_msgs/AccelStamped` | default, depth 1 | `accel_publish_rate` | EMA-filtered derivative of body velocity over the actual inter-publish interval. `frame_id = base_frame`. |
 | `/omega_enc` | pub | `std_msgs/Float64MultiArray` | default, depth 1 | `rate` | `data = [left, right]` wheel angular velocity [rad/s] (`actualVelocity` from `GetStatus`). |
 | `/tf` (`odom_frame → base_frame`) | pub | TF | tf2 default | `rate` | Only when `publish_tf: true`. |
@@ -108,6 +111,24 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 | pose | x, y, yaw | z, roll, pitch |
 | twist | vx, vy, vyaw | vz, v_roll, v_pitch |
 
+### Known limitations (position-delta odometry)
+
+- **Long-uptime precision:** pose uses `actualPos` (a `double` user-unit); over very
+  long uptime `actualPos` grows large and `actualPos − prev` loses low-order bits
+  (catastrophic cancellation of two large near-equal doubles). The exact-integer
+  alternative is `CoreMotionAxisStatus.accumulatedEncoderFeedback` (`long long`)
+  differenced as integers then scaled — switch to it if this ever surfaces.
+- **`/odom_deltas` during engine downtime:** motion that happens while
+  `engineState != Communicating` is not accumulated (the baseline re-anchors on
+  recovery). Correct — it was unobservable — but a change from the old `|v|·dt`
+  accumulation that ran whenever the engine was communicating.
+- **Per-axis unit scaling:** the rad assumption (`pos_unit_scale`) requires both
+  axes to share identical WMX user-unit scaling; verify in the WMX param XML / sim.
+- **Jump-guard trip:** when the guard trips it drops that cycle's contribution to
+  **both** the `/odom` pose and `/odom_deltas` (re-baselines instead of integrating
+  the jump). Intended for homing/rollover; the EKF is unaffected (twist only), but
+  the DistanceTraveled monitor very slightly under-counts across such an event.
+
 ---
 
 ## Units and conventions
@@ -121,8 +142,15 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 - Kinematics (`nova_diff_drive_logic::DiffDriveModel`):
   - inverse: `ωl = (2v − ωL)/(2R)`, `ωr = (2v + ωL)/(2R)`
   - forward: `v = R(ωr + ωl)/2`, `ω = R(ωr − ωl)/L`
-- Odometry pose integration uses exact-arc integration for `|ω| ≥ 1e-3` rad/s and
-  straight-line otherwise; non-positive/non-finite `dt` steps are ignored.
+- **Odometry** (pose + `/odom_deltas`) is dead-reckoned from per-wheel encoder
+  **position deltas** `Δφ = (actualPos − prev)·pos_unit_scale` (dt-free; exact-arc
+  via the sinc midpoint form). This is more precise than `velocity·dt` — no
+  constant-velocity-over-`dt` assumption and no `dt`-jitter sensitivity.
+- **Twist** (`/odom_enc.twist`, `/odom_accel`, `/omega_enc`) comes from the servo's
+  `actualVelocity`, not `Δpos/dt`: the EKF fuses only twist, and the servo velocity
+  is a cleaner signal than a numerical position derivative. (The velocity-based
+  `integrate(vel,dt)` path remains in `nova_diff_drive_logic`, unit-tested, but the
+  node now uses the position-delta path.)
 
 ---
 
@@ -154,11 +182,14 @@ that is owned by the engine/general nodes (see
 **Control loop** (every `1/rate`, single `GetStatus` per cycle):
 
 1. *Engine gate* — if `engineState != Communicating`: warn (1 s throttle), publish
-   nothing, command nothing, and drop the loop clock + resend cache so `dt` and the
-   `StartVel` state re-baseline cleanly on recovery.
+   nothing, command nothing, and drop the position baseline (`havePrev_`) + resend
+   cache so odometry and the `StartVel` state re-baseline cleanly on recovery
+   (re-anchoring to the current absolute encoder position).
 2. *Odometry path* — runs even with servo off (encoder feedback stays valid):
-   integrate pose, accumulate deltas, publish `/omega_enc`, `/odom_enc`,
-   `/odom_deltas`, `/odom_accel` (rate-limited), optional TF.
+   integrate the pose and `/odom_deltas` from per-wheel encoder **position deltas**
+   (twist/accel from `actualVelocity`); the jump guard re-baselines on a
+   homing/rollover jump; publish `/omega_enc`, `/odom_enc`, `/odom_deltas`,
+   `/odom_accel` (rate-limited), optional TF.
 3. *Command path* — skipped (with 1 s-throttled warn, resend cache invalidated)
    while an amp alarm is active or either servo is off; recovery therefore always
    re-sends the current target.

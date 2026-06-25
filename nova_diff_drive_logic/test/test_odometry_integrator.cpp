@@ -73,3 +73,65 @@ TEST(OdometryIntegrator, IgnoresInvalidDt)
   EXPECT_NEAR(odom.pose().y, 0.0, kEps);
   EXPECT_NEAR(odom.pose().theta, 0.0, kEps);
 }
+
+// ---- integrateDelta: encoder-position-delta (dt-free) dead reckoning ----
+
+TEST(OdometryIntegrator, IntegrateDeltaStraight)
+{
+  OdometryIntegrator odom;
+  odom.integrateDelta(2.0, 0.0);  // 2 m forward, no turn
+  EXPECT_NEAR(odom.pose().x, 2.0, kEps);
+  EXPECT_NEAR(odom.pose().y, 0.0, kEps);
+  EXPECT_NEAR(odom.pose().theta, 0.0, kEps);
+}
+
+TEST(OdometryIntegrator, IntegrateDeltaRotateInPlace)
+{
+  OdometryIntegrator odom;
+  odom.integrateDelta(0.0, 1.5);  // turn only
+  EXPECT_NEAR(odom.pose().x, 0.0, kEps);
+  EXPECT_NEAR(odom.pose().y, 0.0, kEps);
+  EXPECT_NEAR(odom.pose().theta, 1.5, kEps);
+}
+
+TEST(OdometryIntegrator, ExactQuarterArcDelta)
+{
+  // Same quarter circle as ExactQuarterArc, expressed as one body-displacement
+  // step: ds = v*dt = 1, dtheta = w*dt = pi/2. The dt-free sinc form must land on
+  // the same pose (radius r = 2/pi) as the velocity-based integrate().
+  OdometryIntegrator odom;
+  const double w = M_PI / 2.0;
+  odom.integrateDelta(1.0, w);
+  const double r = 1.0 / w;  // 2/pi
+  EXPECT_NEAR(odom.pose().x, r, kEps);
+  EXPECT_NEAR(odom.pose().y, r, kEps);
+  EXPECT_NEAR(odom.pose().theta, M_PI / 2.0, kEps);
+
+  // Cross-check: identical pose to the velocity path over the same motion.
+  OdometryIntegrator vel;
+  vel.integrate({1.0, w}, 1.0);
+  EXPECT_NEAR(odom.pose().x, vel.pose().x, kEps);
+  EXPECT_NEAR(odom.pose().y, vel.pose().y, kEps);
+  EXPECT_NEAR(odom.pose().theta, vel.pose().theta, kEps);
+}
+
+TEST(OdometryIntegrator, IntegrateDeltaContinuousNearZeroTheta)
+{
+  // sinc must stay finite/accurate as dtheta -> 0 (never sin(0)/0). A tiny turn
+  // with forward motion is ~ a straight line of length ds.
+  OdometryIntegrator odom;
+  odom.integrateDelta(1.0, 1e-12);
+  EXPECT_NEAR(odom.pose().x, 1.0, 1e-9);
+  EXPECT_NEAR(odom.pose().y, 0.0, 1e-9);
+  EXPECT_NEAR(odom.pose().theta, 1e-12, kEps);
+}
+
+TEST(OdometryIntegrator, IntegrateDeltaIgnoresNonFinite)
+{
+  OdometryIntegrator odom;
+  odom.integrateDelta(std::numeric_limits<double>::quiet_NaN(), 0.1);
+  odom.integrateDelta(1.0, std::numeric_limits<double>::infinity());
+  EXPECT_NEAR(odom.pose().x, 0.0, kEps);
+  EXPECT_NEAR(odom.pose().y, 0.0, kEps);
+  EXPECT_NEAR(odom.pose().theta, 0.0, kEps);
+}

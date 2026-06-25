@@ -67,3 +67,36 @@ TEST(DiffDriveKinematics, RoundTripBodyToWheelToBody)
     EXPECT_NEAR(out.angular, in.angular, kEps);
   }
 }
+
+// ---- forwardDelta: per-step wheel angle deltas [rad] -> body deltas {ds, dtheta} ----
+
+TEST(DiffDriveKinematics, ForwardDeltaStraight)
+{
+  // Equal wheel angle deltas -> pure forward displacement, no heading change.
+  const auto m = model();
+  const auto d = m.forwardDelta(2.0, 2.0);
+  EXPECT_NEAR(d.linear, 2.0 * m.wheel_radius, kEps);
+  EXPECT_NEAR(d.angular, 0.0, kEps);
+}
+
+TEST(DiffDriveKinematics, ForwardDeltaPureRotation)
+{
+  const auto m = model();
+  const auto d = m.forwardDelta(-3.0, 3.0);
+  EXPECT_NEAR(d.linear, 0.0, kEps);
+  EXPECT_NEAR(d.angular, 6.0 * m.wheel_radius / m.wheel_separation, kEps);
+}
+
+TEST(DiffDriveKinematics, ForwardDeltaMatchesForward)
+{
+  // forwardDelta is forward() reinterpreted over a step; they must agree numerically.
+  const auto m = model();
+  const double dl[] = {0.0, 2.0, -3.0, 1.5, 0.2};
+  const double dr[] = {0.0, 2.0, 3.0, -0.7, 0.9};
+  for (int i = 0; i < 5; ++i) {
+    const auto d = m.forwardDelta(dl[i], dr[i]);
+    const auto f = m.forward({dl[i], dr[i]});
+    EXPECT_NEAR(d.linear, f.linear, kEps);
+    EXPECT_NEAR(d.angular, f.angular, kEps);
+  }
+}
