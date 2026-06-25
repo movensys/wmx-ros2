@@ -85,6 +85,7 @@ public:
   std::string baseFrame_;
   double posUnitScale_;   // wheel-rad per WMX user-unit of actualPos (1.0 if already rad)
   double jumpGuardTol_;   // [rad] max |dPhi - actualVelocity*dt| before re-baselining
+  bool cmdVelStamped_;    // subscribe /cmd_vel_safe as TwistStamped (true) or plain Twist (false)
 
   // Topics
   std::string cmdVelTopic_;
@@ -138,6 +139,7 @@ private:
   rclcpp::TimerBase::SharedPtr controlTimer_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmdVelStampedSub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr encoderOmegaPub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr encoderOdometryPub_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr odomDeltasPub_;
@@ -154,6 +156,7 @@ private:
 
   // Control loop
   void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void cmdStampedCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
   void controlStep();
   void commandWheels(double omegaLeft, double omegaRight);
   bool setVelocity(int axis, double omega);
@@ -282,8 +285,17 @@ void DifferentialDriveController::runInitSequence()
     tfBroadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
   }
 
-  cmdVelSub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-    cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdCallback, this, _1));
+  // Command input: TwistStamped by default so the staleness timeout can key off the
+  // publisher's stamp (stops the robot on crash/disconnect; the AxLab nav stack
+  // publishes stamped). cmd_vel_stamped:=false falls back to plain Twist for the
+  // Nova/Jetstream stack, whose /cmd_vel_safe is unstamped.
+  if (cmdVelStamped_) {
+    cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+      cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
+  } else {
+    cmdVelSub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdCallback, this, _1));
+  }
 
   // Single control loop: one GetStatus per cycle drives both odometry and command.
   auto period = std::chrono::milliseconds(1000 / rate_);
@@ -298,7 +310,21 @@ void DifferentialDriveController::runInitSequence()
 void DifferentialDriveController::cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   cmdVelMsg_ = *msg;
-  lastCmdTime_ = this->get_clock()->now();
+  lastCmdTime_ = this->get_clock()->now();  // plain Twist: no stamp, use arrival time
+  haveCmd_ = true;
+}
+
+void DifferentialDriveController::cmdStampedCallback(
+  const geometry_msgs::msg::TwistStamped::SharedPtr msg)
+{
+  cmdVelMsg_ = msg->twist;
+  // Key the staleness timeout off the publisher's stamp when present: this rejects
+  // stale or buffered commands (not just gaps in receipt), the safety property the
+  // stamped contract is for. A zero/unset stamp falls back to arrival time so a
+  // stampless publisher does not look infinitely stale and brick the robot. The stamp
+  // shares the control loop's clock domain (RCL_ROS_TIME / sim time when use_sim_time).
+  const rclcpp::Time stamp(msg->header.stamp, RCL_ROS_TIME);
+  lastCmdTime_ = (stamp.nanoseconds() > 0) ? stamp : this->get_clock()->now();
   haveCmd_ = true;
 }
 
@@ -580,6 +606,7 @@ void DifferentialDriveController::setRosParameter()
   this->declare_parameter<double>("accel_publish_rate", 10.0);
   this->declare_parameter<double>("accel_alpha", 0.3);
   this->declare_parameter<bool>("publish_tf", false);
+  this->declare_parameter<bool>("cmd_vel_stamped", true);
   this->declare_parameter<std::string>("odom_frame", "odom");
   this->declare_parameter<std::string>("base_frame", "base_link");
   this->declare_parameter<double>("pos_unit_scale", 1.0);
@@ -605,6 +632,7 @@ void DifferentialDriveController::setRosParameter()
   this->get_parameter("accel_publish_rate", accelPublishRate_);
   this->get_parameter("accel_alpha", accelAlpha_);
   this->get_parameter("publish_tf", publishTf_);
+  this->get_parameter("cmd_vel_stamped", cmdVelStamped_);
   this->get_parameter("odom_frame", odomFrame_);
   this->get_parameter("base_frame", baseFrame_);
   this->get_parameter("pos_unit_scale", posUnitScale_);
@@ -660,6 +688,7 @@ void DifferentialDriveController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "accel_publish_rate: %f, accel_alpha: %f",
     accelPublishRate_, accelAlpha_);
   RCLCPP_INFO(this->get_logger(), "publish_tf: %s", publishTf_ ? "true" : "false");
+  RCLCPP_INFO(this->get_logger(), "cmd_vel_stamped: %s", cmdVelStamped_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "odom_frame: %s, base_frame: %s",
     odomFrame_.c_str(), baseFrame_.c_str());
   RCLCPP_INFO(this->get_logger(), "pos_unit_scale: %f, jump_guard_tol: %f",

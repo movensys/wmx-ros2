@@ -24,8 +24,12 @@ differential_drive_controller:
     publish_tf: false
     odom_frame: odom
     base_frame: base_link
+    # /cmd_vel_safe message type: TwistStamped (true; AxLab nav stack — the stamp
+    # drives a staleness timeout that stops the robot on crash/disconnect) or plain
+    # Twist (false; Nova/Jetstream stack publishes /cmd_vel_safe unstamped).
+    cmd_vel_stamped: true
     # Nova autonomy contract topics. /odom_enc feeds the localization EKF (its
-    # launch remaps the EKF input odom->odom_enc); /cmd_vel_safe is a plain Twist.
+    # launch remaps the EKF input odom->odom_enc).
     cmd_vel_topic: /cmd_vel_safe
     encoder_odometry_topic: /odom_enc
     encoder_omega_topic: /omega_enc

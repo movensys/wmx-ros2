@@ -7,7 +7,7 @@ math (kinematics, dead-reckoning, deltas, accel EMA) lives in the unit-tested
 `nova_diff_drive_logic` package; the node is the ROS/WMX wiring around it.
 
 ```
-/cmd_vel_safe (Twist) ──▶ ┌──────────────────────────────┐ ──▶ /odom_enc    (Odometry)
+/cmd_vel_safe ──────────▶ ┌──────────────────────────────┐ ──▶ /odom_enc    (Odometry)
                           │ differential_drive_controller │ ──▶ /odom_deltas (TwistStamped)
 wmx/engine/ready (Bool) ─▶│  single loop @ rate (100 Hz)  │ ──▶ /odom_accel  (AccelStamped)
                           │  WMX3 CoreMotion StartVel /   │ ──▶ /omega_enc   (Float64MultiArray)
@@ -57,7 +57,8 @@ disables the stale-command stop (the last wheel target keeps being held).
 
 | Parameter | Type | Default | Unit | Description |
 |---|---|---|---|---|
-| `cmd_vel_timeout` | double | `0.25` | s | Stale-command safety: if no command arrives on `cmd_vel_topic` within this window (or none has ever arrived), the wheel target is forced to zero. The stop decelerates over `dec_time` through the normal trapezoid — it is **not** an emergency stop; a true e-stop must go through the WMX hardware-level stop path. Not guarded: a negative value makes every cycle stale (permanent zero target, no warning). |
+| `cmd_vel_timeout` | double | `0.25` | s | Stale-command safety: if no command is fresh within this window, the wheel target is forced to zero. Freshness is measured against the **header stamp** when `cmd_vel_stamped` (rejects stale/buffered commands, not just gaps in receipt; a zero/unset stamp falls back to arrival time) and against **arrival time** for plain `Twist`. The stop decelerates over `dec_time` — **not** an emergency stop; a true e-stop must go through the WMX hardware-level stop path. Not guarded: a negative value makes every cycle stale (permanent zero target, no warning). |
+| `cmd_vel_stamped` | bool | `true` | – | Subscribe `/cmd_vel_safe` as `TwistStamped` (true) or plain `Twist` (false). True (default) suits the AxLab nav stack and enables the stamp-based timeout; false suits the Nova/Jetstream stack whose `/cmd_vel_safe` is unstamped. Read once at startup (selects the subscription type). |
 | `accel_publish_rate` | double | `10.0` | Hz | Rate limit for `/odom_accel` relative to the control loop. `0` = publish every control cycle. Guarded: negative values fall back to 10.0. |
 | `accel_alpha` | double | `0.3` | – | EMA weight of the newest raw acceleration sample, valid range (0, 1]; higher = more responsive, lower = smoother. The estimator snaps to zero when both the current and previous velocity samples are ~0 (kills the EMA tail at standstill). Not guarded: the range is not enforced (0 pins `/odom_accel` to zero; >1 destabilizes the EMA — validate in the config layer). |
 | `publish_tf` | bool | `false` | – | Publish `odom_frame → base_frame` TF from the integrated pose. Keep **false** when a localization EKF owns that TF (Nova: EKF is launched when an IMU is configured). Enable only as the fallback for IMU-less / no-EKF configs where this node is the sole odometry source. |
@@ -85,7 +86,7 @@ in the generated node config like any other value.
 | Topic (default) | Dir | Type | QoS | Rate | Notes |
 |---|---|---|---|---|---|
 | `wmx/engine/ready` | sub | `std_msgs/Bool` | reliable, transient_local, depth 1 | 1 Hz | Init gate from `wmx_engine_node`, re-published every second (`false` until engine communication starts, `true` afterwards; transient_local so late joiners get the last sample). The controller acts on the first `true` and ignores the rest; the subscription is dropped after successful init. Name is fixed (not a parameter). |
-| `/cmd_vel_safe` | sub | `geometry_msgs/Twist` | default (reliable, volatile), depth 1 | producer | **Plain** `Twist`, not `TwistStamped` (the Nova EKF runs `stamped_control: false`). Uses `linear.x` [m/s] and `angular.z` [rad/s]. |
+| `/cmd_vel_safe` | sub | `geometry_msgs/TwistStamped` *(or `Twist`)* | default (reliable, volatile), depth 1 | producer | Type chosen by `cmd_vel_stamped`: default **`TwistStamped`** (AxLab nav stack — the header stamp drives the staleness timeout). Set false for plain **`Twist`** (Nova/Jetstream, unstamped). Uses `twist.linear.x` [m/s], `twist.angular.z` [rad/s]. |
 | `/odom_enc` | pub | `nav_msgs/Odometry` | default, depth 1 | `rate` | `header.frame_id = odom_frame`, `child_frame_id = base_frame`. **Pose** = dead-reckoned from per-wheel encoder **position deltas** (`actualPos`), exact-arc via the sinc midpoint form (dt-free). **Twist** = `vx`, `vy`(=0), `vyaw` from `actualVelocity` (forward kinematics). Covariance: see below. |
 | `/odom_deltas` | pub | `geometry_msgs/TwistStamped` | default, depth 1 | `rate` | Accumulated `Σ|Δs|` (in `twist.linear.x`, m) and `Σ|Δθ|` (in `twist.angular.z`, rad) from encoder **position deltas** since the previous publish (more exact than `Σ|v|·dt`); resets each publish. `frame_id = odom_frame`. |
 | `/odom_accel` | pub | `geometry_msgs/AccelStamped` | default, depth 1 | `accel_publish_rate` | EMA-filtered derivative of body velocity over the actual inter-publish interval. `frame_id = base_frame`. |
