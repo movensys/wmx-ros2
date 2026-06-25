@@ -56,6 +56,17 @@ struct DiffDriveModel
       (omega.right * wheel_radius + omega.left * wheel_radius) / 2.0,
       (omega.right * wheel_radius - omega.left * wheel_radius) / wheel_separation};
   }
+
+  /// Forward kinematics over a single time *step* rather than instantaneously.
+  /// Because forward() is a linear map with no dt term, feeding per-wheel angle
+  /// deltas [rad] yields body deltas directly: the returned BodyVel carries
+  ///   .linear = Δs [m]   (chassis displacement over the step)
+  ///   .angular = Δθ [rad] (heading change over the step)
+  /// Same math as forward(); separate name so call sites read in the right units.
+  BodyVel forwardDelta(double d_phi_left, double d_phi_right) const
+  {
+    return forward({d_phi_left, d_phi_right});
+  }
 };
 
 }  // namespace nova_diff_drive_logic

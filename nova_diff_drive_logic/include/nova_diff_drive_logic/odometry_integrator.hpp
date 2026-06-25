@@ -52,10 +52,40 @@ public:
     pose_.theta = next_theta;
   }
 
+  /// Advance the pose by an exact arc over a single step given body displacement
+  /// (ds [m], dtheta [rad]). dt-free — for encoder-position-delta dead reckoning,
+  /// which is more precise than velocity*dt (no constant-velocity-over-dt
+  /// assumption, no dt-jitter sensitivity). Branchless midpoint exact-arc using
+  /// sinc, numerically stable and continuous through dtheta = 0:
+  ///   x += ds*cos(theta + dtheta/2)*sinc(dtheta/2)
+  ///   y += ds*sin(theta + dtheta/2)*sinc(dtheta/2)
+  ///   theta += dtheta
+  void integrateDelta(double ds, double dtheta)
+  {
+    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}  // ignore invalid steps
+    const double half = 0.5 * dtheta;
+    const double mid = pose_.theta + half;
+    const double k = ds * sinc(half);
+    pose_.x += k * std::cos(mid);
+    pose_.y += k * std::sin(mid);
+    pose_.theta += dtheta;
+  }
+
   const Pose2D & pose() const {return pose_;}
   void reset(const Pose2D & p = {}) {pose_ = p;}
 
 private:
+  /// sin(a)/a with the removable singularity guarded (-> 1 as a -> 0), so the
+  /// midpoint exact-arc in integrateDelta() is branchless and well-defined at
+  /// dtheta = 0. Never evaluates a literal sin(0)/0.
+  static double sinc(double a)
+  {
+    // 2-term Taylor for small |a| (error ~ a^4/120, far below double eps here);
+    // direct sin(a)/a is accurate for all larger a.
+    if (std::abs(a) < 1e-8) {return 1.0 - a * a / 6.0;}
+    return std::sin(a) / a;
+  }
+
   Pose2D pose_;
   double straight_eps_;
 };

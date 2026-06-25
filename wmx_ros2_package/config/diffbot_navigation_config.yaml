@@ -7,6 +7,13 @@ differential_drive_controller:
     dec_time: 1.0
     wheel_radius: 0.095
     wheel_to_wheel: 0.55
+    # Odometry (pose + /odom_deltas) is dead-reckoned from encoder position deltas.
+    # pos_unit_scale converts actualPos (WMX user-unit) to wheel rad; 1.0 when the
+    # WMX param file already scales to rad (same scaling that makes actualVelocity rad/s).
+    pos_unit_scale: 1.0
+    # Jump guard: re-baseline (skip the cycle) when |dPhi - actualVelocity*dt| exceeds
+    # this [rad] -- rejects homing / encoder-rollover jumps; generous so real motion passes.
+    jump_guard_tol: 0.5
     # Stale-command safety: zero the wheels if no /cmd_vel within this window [s].
     cmd_vel_timeout: 0.25
     # /odom_accel is rate-limited to this rate [Hz] relative to the control loop.

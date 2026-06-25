@@ -49,3 +49,24 @@ TEST(OdomDeltaAccumulator, IgnoresInvalidDt)
   EXPECT_NEAR(acc.peek().linear, 0.0, kEps);
   EXPECT_NEAR(acc.peek().angular, 0.0, kEps);
 }
+
+// ---- accumulateDelta: direct body-displacement (dt-free) accumulation ----
+
+TEST(OdomDeltaAccumulator, AccumulateDeltaAbsolute)
+{
+  OdomDeltaAccumulator acc;
+  acc.accumulateDelta(1.0, 0.5);
+  acc.accumulateDelta(-2.0, -0.5);  // magnitudes accumulate, not signed
+  const auto d = acc.take();
+  EXPECT_NEAR(d.linear, 3.0, kEps);
+  EXPECT_NEAR(d.angular, 1.0, kEps);
+}
+
+TEST(OdomDeltaAccumulator, AccumulateDeltaIgnoresNonFinite)
+{
+  OdomDeltaAccumulator acc;
+  acc.accumulateDelta(std::numeric_limits<double>::quiet_NaN(), 0.1);
+  acc.accumulateDelta(1.0, std::numeric_limits<double>::infinity());
+  EXPECT_NEAR(acc.peek().linear, 0.0, kEps);
+  EXPECT_NEAR(acc.peek().angular, 0.0, kEps);
+}

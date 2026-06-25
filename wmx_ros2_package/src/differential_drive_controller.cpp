@@ -83,6 +83,8 @@ public:
   bool publishTf_;
   std::string odomFrame_;
   std::string baseFrame_;
+  double posUnitScale_;   // wheel-rad per WMX user-unit of actualPos (1.0 if already rad)
+  double jumpGuardTol_;   // [rad] max |dPhi - actualVelocity*dt| before re-baselining
 
   // Topics
   std::string cmdVelTopic_;
@@ -112,8 +114,14 @@ private:
   std::unique_ptr<ndl::AccelEstimator> accel_;
 
   // --- Loop / command state ---
+  // Pose & /odom_deltas are dead-reckoned from per-wheel encoder POSITION deltas
+  // (actualPos) — more precise than velocity*dt. prevLoopTime_ now only feeds the
+  // jump-guard's expected step (actualVelocity*dt); havePrev_ gates the first valid
+  // cycle (no previous position/time sample yet) and re-baselining on recovery.
   rclcpp::Time prevLoopTime_;
-  bool haveLoopClock_ = false;
+  double prevPosLeft_ = 0.0;
+  double prevPosRight_ = 0.0;
+  bool havePrev_ = false;
   rclcpp::Time prevAccelTime_;
   bool haveAccelClock_ = false;
 
@@ -304,28 +312,59 @@ void DifferentialDriveController::controlStep()
   const CoreMotionAxisStatus * right = &cmStatus_.axesStatus[rightAxis_];
 
   // If the engine isn't communicating the status is not trustworthy: don't
-  // publish odometry or command. Drop our clock/command caches so dt and the
-  // StartVel resend re-baseline cleanly on recovery.
+  // publish odometry or command. Drop our caches so the position baseline, the
+  // jump-guard clock, and the StartVel resend re-baseline cleanly on recovery
+  // (re-anchoring to the current absolute encoder position, which may have moved
+  // or homed while we were not reading it).
   if (cmStatus_.engineState != EngineState::T::Communicating) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
       "Communication or engine off. Please start the engine or communication");
-    haveLoopClock_ = false;
+    havePrev_ = false;
     lastSentValid_ = false;
     return;
   }
 
   // ---- Odometry path (encoder feedback is valid even with servo off) ----
+  // Twist (-> /odom_enc, /omega_enc, /odom_accel) comes from the servo's own
+  // actualVelocity: it is the cleaner velocity signal and the localization EKF
+  // fuses only the twist (vx/vy/vyaw) from /odom_enc.
   const ndl::WheelOmega enc{left->actualVelocity, right->actualVelocity};
   const ndl::BodyVel body = model_.forward(enc);  // {vx, vyaw}, vy is 0 for diff-drive
 
-  if (haveLoopClock_) {
+  // Pose & /odom_deltas are dead-reckoned from per-wheel encoder POSITION deltas:
+  // more precise than velocity*dt (dt-free, no constant-velocity assumption, no
+  // dt-jitter sensitivity). actualPos is a WMX user-unit; posUnitScale_ converts it
+  // to wheel radians (1.0 when the loaded WMX param file already scales to rad, as
+  // our config does -- verified: actualVelocity reads rad/s under the same scaling).
+  if (havePrev_) {
     const double dt = (now - prevLoopTime_).seconds();
-    integrator_.integrate(body, dt);  // ignores non-positive/non-finite dt internally
-    deltas_.accumulate(body, dt);
+    const double dPhiLeft = (left->actualPos - prevPosLeft_) * posUnitScale_;
+    const double dPhiRight = (right->actualPos - prevPosRight_) * posUnitScale_;
+    // Jump guard: a homing, encoder rollover, or position glitch shows up as a
+    // per-step angle delta wildly inconsistent with actualVelocity*dt. On a trip,
+    // re-baseline (contribute nothing this cycle) instead of integrating a bogus
+    // jump; legitimate high-speed motion stays consistent and passes. (The guard
+    // needs a valid dt; if dt is non-positive/non-finite the position delta is
+    // still valid on its own, so we integrate it unguarded rather than drop it.)
+    const bool finiteDt = std::isfinite(dt) && dt > 0.0;
+    const bool jumped = finiteDt &&
+      (std::abs(dPhiLeft - left->actualVelocity * dt) > jumpGuardTol_ ||
+       std::abs(dPhiRight - right->actualVelocity * dt) > jumpGuardTol_);
+    if (jumped) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "Encoder position jump (homing/rollover?) -- re-baselining odometry this cycle");
+    } else {
+      const ndl::BodyVel d = model_.forwardDelta(dPhiLeft, dPhiRight);  // {ds, dtheta}
+      integrator_.integrateDelta(d.linear, d.angular);
+      deltas_.accumulateDelta(d.linear, d.angular);
+    }
   }
+  prevPosLeft_ = left->actualPos;
+  prevPosRight_ = right->actualPos;
   prevLoopTime_ = now;
-  haveLoopClock_ = true;
+  havePrev_ = true;
 
   publishOmega(enc);
   publishOdometry(now, body);
@@ -453,7 +492,7 @@ void DifferentialDriveController::publishOdometry(
 
 void DifferentialDriveController::publishDeltas(const rclcpp::Time & stamp)
 {
-  const ndl::OdomDelta delta = deltas_.take();  // accumulated |v|*dt, |w|*dt; resets
+  const ndl::OdomDelta delta = deltas_.take();  // accumulated |ds|, |dtheta| from position deltas; resets
   geometry_msgs::msg::TwistStamped msg;
   msg.header.stamp = stamp;
   msg.header.frame_id = odomFrame_;
@@ -543,6 +582,8 @@ void DifferentialDriveController::setRosParameter()
   this->declare_parameter<bool>("publish_tf", false);
   this->declare_parameter<std::string>("odom_frame", "odom");
   this->declare_parameter<std::string>("base_frame", "base_link");
+  this->declare_parameter<double>("pos_unit_scale", 1.0);
+  this->declare_parameter<double>("jump_guard_tol", 0.5);
 
   this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel_safe");
   this->declare_parameter<std::string>("encoder_omega_topic", "/omega_enc");
@@ -566,6 +607,8 @@ void DifferentialDriveController::setRosParameter()
   this->get_parameter("publish_tf", publishTf_);
   this->get_parameter("odom_frame", odomFrame_);
   this->get_parameter("base_frame", baseFrame_);
+  this->get_parameter("pos_unit_scale", posUnitScale_);
+  this->get_parameter("jump_guard_tol", jumpGuardTol_);
 
   this->get_parameter("cmd_vel_topic", cmdVelTopic_);
   this->get_parameter("encoder_omega_topic", encoderOmegaTopic_);
@@ -595,6 +638,17 @@ void DifferentialDriveController::setRosParameter()
     RCLCPP_WARN(this->get_logger(), "accel_publish_rate must be >= 0; falling back to 10.0");
     accelPublishRate_ = 10.0;
   }
+  // pos_unit_scale converts actualPos user-units -> wheel rad; 0 or non-finite would
+  // zero/poison all position-based odometry, so guard it to the rad-native default.
+  if (!std::isfinite(posUnitScale_) || posUnitScale_ == 0.0) {
+    RCLCPP_WARN(this->get_logger(), "pos_unit_scale must be finite and non-zero; falling back to 1.0");
+    posUnitScale_ = 1.0;
+  }
+  // jump_guard_tol must be > 0 (it bounds |dPhi - actualVelocity*dt| before re-baselining).
+  if (!(jumpGuardTol_ > 0.0)) {
+    RCLCPP_WARN(this->get_logger(), "jump_guard_tol must be > 0; falling back to 0.5");
+    jumpGuardTol_ = 0.5;
+  }
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "left_axis: %d, right_axis: %d", leftAxis_, rightAxis_);
@@ -608,6 +662,8 @@ void DifferentialDriveController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "publish_tf: %s", publishTf_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "odom_frame: %s, base_frame: %s",
     odomFrame_.c_str(), baseFrame_.c_str());
+  RCLCPP_INFO(this->get_logger(), "pos_unit_scale: %f, jump_guard_tol: %f",
+    posUnitScale_, jumpGuardTol_);
   RCLCPP_INFO(this->get_logger(), "cmd_vel_topic: %s", cmdVelTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_omega_topic: %s", encoderOmegaTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_odometry_topic: %s", encoderOdometryTopic_.c_str());
