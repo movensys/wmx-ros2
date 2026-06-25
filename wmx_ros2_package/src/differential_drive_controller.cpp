@@ -518,7 +518,8 @@ void DifferentialDriveController::publishOdometry(
 
 void DifferentialDriveController::publishDeltas(const rclcpp::Time & stamp)
 {
-  const ndl::OdomDelta delta = deltas_.take();  // accumulated |ds|, |dtheta| from position deltas; resets
+  // accumulated |ds|, |dtheta| from per-wheel position deltas; resets on take()
+  const ndl::OdomDelta delta = deltas_.take();
   geometry_msgs::msg::TwistStamped msg;
   msg.header.stamp = stamp;
   msg.header.frame_id = odomFrame_;
