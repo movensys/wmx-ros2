@@ -12,7 +12,7 @@
 	</link>
 	<Joint ID="0">
 		<JointType>RotateZAxis</JointType>
-		<Axis>2</Axis>
+		<Axis>0</Axis>
 		<JointOrigin x="0.000000" y="0.000000" z="235.000000" u="0.000000000000000" v="0.000000000000000" w="0.000000000000000"/>
 		<MaxAngle>6.283185307179586200000000</MaxAngle>
 		<MinAngle>-6.283185307179586200000000</MinAngle>
@@ -28,7 +28,7 @@
 	</link>
 	<Joint ID="1">
 		<JointType>RotateYAxis</JointType>
-		<Axis>3</Axis>
+		<Axis>1</Axis>
 		<JointOrigin x="0.000000" y="217.800000" z="0.000000" u="0.000000000000000" v="0.000000000000000" w="0.000000000000000"/>
 		<MaxAngle>6.283185307179586200000000</MaxAngle>
 		<MinAngle>-6.283185307179586200000000</MinAngle>
@@ -44,7 +44,7 @@
 	</link>
 	<Joint ID="2">
 		<JointType>RotateYAxis</JointType>
-		<Axis>4</Axis>
+		<Axis>2</Axis>
 		<JointOrigin x="0.000000" y="0.000000" z="496.000000" u="0.000000000000000" v="0.000000000000000" w="0.000000000000000"/>
 		<MaxAngle>6.283185307179586200000000</MaxAngle>
 		<MinAngle>-6.283185307179586200000000</MinAngle>
@@ -60,7 +60,7 @@
 	</link>
 	<Joint ID="3">
 		<JointType>RotateYAxis</JointType>
-		<Axis>5</Axis>
+		<Axis>3</Axis>
 		<JointOrigin x="0.000000" y="-183.000000" z="459.500000" u="0.000000000000000" v="0.000000000000000" w="0.000000000000000"/>
 		<MaxAngle>6.283185307179586200000000</MaxAngle>
 		<MinAngle>-6.283185307179586200000000</MinAngle>
@@ -76,7 +76,7 @@
 	</link>
 	<Joint ID="4">
 		<JointType>RotateZAxis</JointType>
-		<Axis>6</Axis>
+		<Axis>4</Axis>
 		<JointOrigin x="0.000000" y="144.500000" z="0.000000" u="0.000000000000000" v="0.000000000000000" w="0.000000000000000"/>
 		<MaxAngle>6.283185307179586200000000</MaxAngle>
 		<MinAngle>-6.283185307179586200000000</MinAngle>
@@ -92,7 +92,7 @@
 	</link>
 	<Joint ID="5">
 		<JointType>RotateYAxis</JointType>
-		<Axis>7</Axis>
+		<Axis>5</Axis>
 		<JointOrigin x="0.000000" y="121.000000" z="144.500000" u="0.000000000000000" v="0.000000000000000" w="0.000000000000000"/>
 		<MaxAngle>6.283185307179586200000000</MaxAngle>
 		<MinAngle>-6.283185307179586200000000</MinAngle>

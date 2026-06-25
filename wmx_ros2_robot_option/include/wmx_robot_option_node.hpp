@@ -64,6 +64,7 @@ private:
   bool isReady();
   bool getServo();
   bool isArmMotion();
+  bool areArmAxesBusy();    // any arm axis still moving (motion from ANY engine client)
   bool isAxesNormalState();
   bool isRevoluteJoint(int joint_index);
   void stopMotionIfAlarm();

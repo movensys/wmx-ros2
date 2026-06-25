@@ -243,6 +243,26 @@ void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_hand
 
   logTrajectory(trajectory);
 
+  // Interlock: refuse to start while any of our axes is still executing a motion.
+  // The engine is shared, so axesStatus[axis].inPos also reflects motions started
+  // by other clients (e.g. wmx_robot_option_node in wmx_ros2_robot_option). This
+  // keeps the two from commanding the arm at the same time.
+  {
+    CoreMotionStatus preStatus;
+    wmx3LibCm_.GetStatus(&preStatus);
+    for (int axis : jointAxes_) {
+      if (!preStatus.axesStatus[axis].inPos) {
+        RCLCPP_WARN(
+          this->get_logger(),
+          "Arm axes are busy (motion in progress, possibly from wmx_robot_option_node); "
+          "aborting goal");
+        result->error_code = -1;
+        goal_handle->abort(result);
+        return;
+      }
+    }
+  }
+
   // Generate spline commands from trajectory.points
   axisSel.axisCount = jointAxes_.size();
   spl.dimensionCount = jointAxes_.size();

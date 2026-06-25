@@ -220,6 +220,18 @@ int WmxRobotOptionNode::uploadParams()
 // Apply WMX3 system/axis parameters (port of configure_device).
 int WmxRobotOptionNode::configureDevice()
 {
+  // When no parameter file is given, the WMX3 system/axis parameters are owned by
+  // another node sharing the engine (e.g. joint_trajectory_controller, which calls
+  // ImportAndSetAll itself). This option then just attaches to the already-configured
+  // engine instead of re-importing — see wmx_ros2_robot_option.launch.py.
+  if (wmx_param_file_path_.empty()) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "wmx_param_file_path empty; using WMX parameters configured by another node");
+    device_configured_ = true;
+    return ErrorCode::None;
+  }
+
   err_ = robot_->mCoreMotion.config->ImportAndSetAll(
     const_cast<char *>(wmx_param_file_path_.c_str()));
   if (err_ != ErrorCode::None) {
@@ -252,11 +264,17 @@ void WmxRobotOptionNode::statusStep()
   statusMsg_.cartesian_pose_fb = wmx_robot_option::pose_to_vector(robotStatus_.stateFeedback.toolPose);
   statusMsg_.cartesian_pose_cmd = wmx_robot_option::pose_to_vector(robotStatus_.stateCommand.toolPose);
 
+  // Joint feedback/command are reported in radians (revolute) / metres (prismatic)
+  // to match the srv convention, mirroring ArmThread::get_arm_angle_fb/cmd in
+  // wmx_arm_server (the engine stores revolute joint positions in degrees).
   int n = robotParam_.robotParam.numJoints;
-  statusMsg_.joint_angles_fb.assign(
-    robotStatus_.stateFeedback.jointPosition, robotStatus_.stateFeedback.jointPosition + n);
-  statusMsg_.joint_angles_cmd.assign(
-    robotStatus_.stateCommand.jointPosition, robotStatus_.stateCommand.jointPosition + n);
+  statusMsg_.joint_angles_fb.resize(n);
+  statusMsg_.joint_angles_cmd.resize(n);
+  for (int i = 0; i < n; ++i) {
+    double scale = isRevoluteJoint(i) ? wmx_robot_option::DEG2RAD : 1.0;
+    statusMsg_.joint_angles_fb[i] = robotStatus_.stateFeedback.jointPosition[i] * scale;
+    statusMsg_.joint_angles_cmd[i] = robotStatus_.stateCommand.jointPosition[i] * scale;
+  }
 
   statusMsg_.light = false;
   statusMsg_.gripper = 0.0;
@@ -293,6 +311,23 @@ bool WmxRobotOptionNode::isArmMotion()
 {
   return robotStatus_.motionState == MotionState::RobotMotionInMotion ||
          robotStatus_.motionState == MotionState::RobotMotionInPTPMotion;
+}
+
+// True if any arm axis is still executing a motion. Unlike isArmMotion() (which
+// only reflects this node's kinematics motionState), this reads the shared
+// CoreMotion axis state, so it also sees motions started by other clients of the
+// same engine (e.g. joint_trajectory_controller in wmx_ros2_package). It is the
+// cross-node interlock that keeps the two from commanding the arm at once.
+bool WmxRobotOptionNode::areArmAxesBusy()
+{
+  wmx3Api::CoreMotionStatus status;
+  robot_->mCoreMotion.GetStatus(&status);
+  for (int i = 0; i < robotParam_.robotParam.numJoints; ++i) {
+    if (!status.axesStatus[robotParam_.robotParam.jointParams[i].axis].inPos) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool WmxRobotOptionNode::isAxesNormalState()
@@ -447,6 +482,13 @@ int WmxRobotOptionNode::cartesianMove(
     RCLCPP_ERROR(this->get_logger(), "Axis state is not normal, refusing motion");
     return -1;
   }
+  if (areArmAxesBusy()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Arm axes are busy (motion in progress, possibly from joint_trajectory_controller); "
+      "refusing motion");
+    return -1;
+  }
   return setMotion(pose, is_tool_frame, motion_type, true);
 }
 
@@ -457,6 +499,13 @@ int WmxRobotOptionNode::jointMove(const std::vector<double> & angles)
   }
   if (!isAxesNormalState()) {
     RCLCPP_ERROR(this->get_logger(), "Axis state is not normal, refusing motion");
+    return -1;
+  }
+  if (areArmAxesBusy()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Arm axes are busy (motion in progress, possibly from joint_trajectory_controller); "
+      "refusing motion");
     return -1;
   }
 
@@ -473,8 +522,18 @@ int WmxRobotOptionNode::jointMove(const std::vector<double> & angles)
 
 int WmxRobotOptionNode::jointRelMove(const std::vector<double> & angles)
 {
+  if (checkTargetAngle(angles)) {
+    return ErrorCode::None;
+  }
   if (!isAxesNormalState()) {
     RCLCPP_ERROR(this->get_logger(), "Axis state is not normal, refusing motion");
+    return -1;
+  }
+  if (areArmAxesBusy()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Arm axes are busy (motion in progress, possibly from joint_trajectory_controller); "
+      "refusing motion");
     return -1;
   }
 
