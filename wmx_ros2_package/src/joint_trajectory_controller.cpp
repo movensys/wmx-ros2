@@ -25,6 +25,7 @@
 using wmx3Api::AdvancedMotion;
 using wmx3Api::AdvMotion;
 using wmx3Api::AxisSelection;
+using wmx3Api::Config;
 using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
@@ -57,6 +58,7 @@ private:
   AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
   double time_spl[MAX_TRAJ_POINTS];
   AxisSelection axisSel;
+  Config::AxisParam axisParam_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
@@ -75,6 +77,7 @@ private:
 
   void setRosParameter();
   void setWmxParam(char * path);
+  void getWmxParam();
   void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
   void logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory);
 };
@@ -143,6 +146,7 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
   setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
+  getWmxParam();
 
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
     this,
@@ -168,6 +172,30 @@ void JointTrajectoryController::setWmxParam(char * path)
     RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
   } else {
     RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
+  }
+}
+
+void JointTrajectoryController::getWmxParam()
+{
+  err_ = wmx3LibCm_.config->GetAxisParam(&axisParam_);
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
+  } else {
+    for (int axis : jointAxes_) {
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, denominator: %f", axis,
+        axisParam_.gearRatioDenominator[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, polarity: %d", axis,
+        (int)axisParam_.axisPolarity[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, abs encoder: %d", axis,
+        axisParam_.absoluteEncoderMode[axis]);
+      RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, axisParam_.axisCommandMode[axis]);
+    }
   }
 }
 
