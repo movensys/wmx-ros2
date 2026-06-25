@@ -145,8 +145,7 @@ private:
   char buffer_[512];
 
   // ROS parameters
-  std::string robot_xml_path_;
-  std::string wmx_param_file_path_;
+  std::string robot_option_parameters_path_;
   std::string status_frame_;
   double collision_sensitivity_ = 6.0;
   int status_rate_ = 50;

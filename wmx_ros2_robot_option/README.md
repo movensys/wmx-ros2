@@ -13,17 +13,16 @@ through the WMX3 `RobotMotion` option.
 ## Node: `wmx_robot_option_node`
 
 On startup it waits for `wmx/engine/ready` (published by `wmx_engine_node`),
-attaches to the WMX3 device, loads the robot kinematics model
-(`robot_xml_path`) and the system/axis parameters (`wmx_param_file_path`), then
-begins publishing status and serving requests.
+attaches to the WMX3 device and loads the robot kinematics model
+(`robot_option_parameters_path`), then begins publishing status and serving
+requests. The WMX3 system/axis parameters are loaded into the shared engine by
+`joint_trajectory_controller`, not by this node.
 
 ### Parameters
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `robot_xml_path` | string | `""` | Robot kinematics XML model (RobotConfig::ImportParamXML) |
-| `wmx_param_file_path` | string | `""` | WMX3 system/axis parameter XML |
-| `robot_export_xml_path` | string | `""` | Export target; empty → `<robot_xml_path>_export.xml` |
+| `robot_option_parameters_path` | string | `""` | Robot option parameters XML / kinematics model (RobotConfig::ImportParamXML) |
 | `status_frame` | string | `base_link` | `frame_id` stamped on the status topic |
 | `collision_sensitivity` | double | `6.0` | Default collision threshold |
 | `status_rate` | int | `50` | Status publication rate (Hz) |
@@ -74,10 +73,12 @@ The WMX3 SDK at `WMX3_SDK_PATH` (default `/opt/wmx3`) must provide the
 
 ```bash
 # Bring up the engine first (from wmx_ros2_package), then:
-ros2 launch wmx_ros2_robot_option wmx_ros2_robot_option.launch.py \
-  robot_xml_path:=/abs/path/to/robot.xml
+ros2 launch wmx_ros2_robot_option wmx_ros2_cr3a_robot_option.launch.py \
+  robot_option_parameters_path:=/abs/path/to/robot.xml
 ```
 
-`config/cr3a_robot_option_example.xml` is a sample robot kinematics model; replace
-it or pass `robot_xml_path` for your robot. The `wmx_param_file_path` defaults to
-`cr3a_wmx_parameters.xml` from `wmx_ros2_package`.
+`config/cr3a_robot_option_parameters.xml` is a sample robot kinematics model;
+replace it or pass `robot_option_parameters_path` for your robot. The WMX3
+system/axis parameters are loaded by `joint_trajectory_controller` (brought up by
+the same launch file), so this node does not import them — it attaches to the
+already-configured engine.

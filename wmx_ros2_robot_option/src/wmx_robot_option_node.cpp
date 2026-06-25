@@ -96,15 +96,12 @@ WmxRobotOptionNode::~WmxRobotOptionNode()
 
 void WmxRobotOptionNode::declareParameters()
 {
-  this->declare_parameter<std::string>("robot_xml_path", "");
-  this->declare_parameter<std::string>("wmx_param_file_path", "");
-  this->declare_parameter<std::string>("robot_export_xml_path", "");
+  this->declare_parameter<std::string>("robot_option_parameters_path", "");
   this->declare_parameter<std::string>("status_frame", "base_link");
   this->declare_parameter<double>("collision_sensitivity", 6.0);
   this->declare_parameter<int>("status_rate", 50);
 
-  this->get_parameter("robot_xml_path", robot_xml_path_);
-  this->get_parameter("wmx_param_file_path", wmx_param_file_path_);
+  this->get_parameter("robot_option_parameters_path", robot_option_parameters_path_);
   this->get_parameter("status_frame", status_frame_);
   this->get_parameter("collision_sensitivity", collision_sensitivity_);
   this->get_parameter("status_rate", status_rate_);
@@ -113,8 +110,9 @@ void WmxRobotOptionNode::declareParameters()
   }
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
-  RCLCPP_INFO(this->get_logger(), "robot_xml_path: %s", robot_xml_path_.c_str());
-  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmx_param_file_path_.c_str());
+  RCLCPP_INFO(
+    this->get_logger(), "robot_option_parameters_path: %s",
+    robot_option_parameters_path_.c_str());
   RCLCPP_INFO(this->get_logger(), "status_rate: %d Hz", status_rate_);
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
@@ -180,10 +178,12 @@ void WmxRobotOptionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
 // Load robot.xml and push the robot model to the engine (port of upload_params).
 int WmxRobotOptionNode::uploadParams()
 {
-  RCLCPP_INFO(this->get_logger(), "Uploading robot parameters from %s", robot_xml_path_.c_str());
+  RCLCPP_INFO(
+    this->get_logger(), "Uploading robot parameters from %s",
+    robot_option_parameters_path_.c_str());
 
   err_ = robot_->mRobotConfig.ImportParamXML(
-    const_cast<char *>(robot_xml_path_.c_str()), robotParam_);
+    const_cast<char *>(robot_option_parameters_path_.c_str()), robotParam_);
   if (err_ != ErrorCode::None) {logErr(err_, "Failed to load robot xml"); return err_;}
 
   err_ = robot_->mKinematics.SetRobotParam(robotParam_.robotParam);
@@ -217,30 +217,16 @@ int WmxRobotOptionNode::uploadParams()
   return ErrorCode::None;
 }
 
-// Apply WMX3 system/axis parameters (port of configure_device).
+// The WMX3 system/axis parameters are owned by joint_trajectory_controller, which
+// loads them into the shared engine (ImportAndSetAll). This option does not import
+// them itself — it only attaches to the already-configured engine. See
+// wmx_ros2_cr3a_robot_option.launch.py.
 int WmxRobotOptionNode::configureDevice()
 {
-  // When no parameter file is given, the WMX3 system/axis parameters are owned by
-  // another node sharing the engine (e.g. joint_trajectory_controller, which calls
-  // ImportAndSetAll itself). This option then just attaches to the already-configured
-  // engine instead of re-importing — see wmx_ros2_robot_option.launch.py.
-  if (wmx_param_file_path_.empty()) {
-    RCLCPP_INFO(
-      this->get_logger(),
-      "wmx_param_file_path empty; using WMX parameters configured by another node");
-    device_configured_ = true;
-    return ErrorCode::None;
-  }
-
-  err_ = robot_->mCoreMotion.config->ImportAndSetAll(
-    const_cast<char *>(wmx_param_file_path_.c_str()));
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to import WMX parameters. Error=%d (%s)", err_, errString_);
-    return err_;
-  }
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Using WMX system/axis parameters configured by joint_trajectory_controller");
   device_configured_ = true;
-  RCLCPP_INFO(this->get_logger(), "Device configured successfully");
   return ErrorCode::None;
 }
 
@@ -696,11 +682,7 @@ void WmxRobotOptionNode::exportParams(
     return;
   }
 
-  std::string export_path;
-  this->get_parameter("robot_export_xml_path", export_path);
-  if (export_path.empty()) {
-    export_path = robot_xml_path_ + "_export.xml";
-  }
+  std::string export_path = robot_option_parameters_path_ + "_export.xml";
 
   wmx3Api::RobotMotionParam temp = robotParam_;
   err_ = robot_->mKinematics.GetRobotParam(temp.robotParam.robotId, temp.robotParam);
