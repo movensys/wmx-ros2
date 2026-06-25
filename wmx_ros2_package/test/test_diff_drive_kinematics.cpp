@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 #include <gtest/gtest.h>
 
-#include "nova_diff_drive_logic/diff_drive_kinematics.hpp"
+#include "differential_drive_controller.hpp"
 
-using nova_diff_drive_logic::BodyVel;
-using nova_diff_drive_logic::DiffDriveModel;
-using nova_diff_drive_logic::WheelOmega;
+using diff_drive::BodyVel;
+using diff_drive::DiffDriveModel;
+using diff_drive::WheelOmega;
 
 namespace
 {

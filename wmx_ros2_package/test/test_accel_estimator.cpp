@@ -4,9 +4,9 @@
 
 #include <limits>
 
-#include "nova_diff_drive_logic/accel_estimator.hpp"
+#include "differential_drive_controller.hpp"
 
-using nova_diff_drive_logic::AccelEstimator;
+using diff_drive::AccelEstimator;
 
 namespace
 {

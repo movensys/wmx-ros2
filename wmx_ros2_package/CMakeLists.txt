@@ -131,8 +131,8 @@ if(BUILD_TESTING)
     TIMEOUT 60
   )
 
-  # C++ unit tests for the diff-drive logic headers (header-only, WMX/ROS-free),
-  # relocated here from the former nova_diff_drive_logic package.
+  # C++ unit tests for the diff-drive logic (header-only, WMX/ROS-free) declared
+  # in include/differential_drive_controller.hpp.
   find_package(ament_cmake_gtest REQUIRED)
   foreach(_t
       test_diff_drive_kinematics

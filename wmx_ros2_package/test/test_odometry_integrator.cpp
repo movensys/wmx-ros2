@@ -5,10 +5,10 @@
 #include <cmath>
 #include <limits>
 
-#include "nova_diff_drive_logic/odometry_integrator.hpp"
+#include "differential_drive_controller.hpp"
 
-using nova_diff_drive_logic::BodyVel;
-using nova_diff_drive_logic::OdometryIntegrator;
+using diff_drive::BodyVel;
+using diff_drive::OdometryIntegrator;
 
 namespace
 {

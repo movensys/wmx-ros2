@@ -1,10 +1,10 @@
 // Copyright 2026 Movensys Corporation.
 // Licensed under the MIT License. See LICENSE.txt for details.
 //
-// Nova differential-drive controller (standalone rclcpp node).
+// Standalone differential-drive controller (rclcpp node).
 //
 // Drives the WMX3 wheel axes directly via CoreMotion StartVel and exposes the
-// Nova autonomy contract consumed by the Jetstream server:
+// autonomy contract consumed by the upstream autonomy stack:
 //   in : /cmd_vel_safe          geometry_msgs/Twist   (plain — robot_localization
 //                                                       runs with stamped_control=false)
 //   out: /odom_enc              nav_msgs/Odometry      (EKF odom0 input; fuses
@@ -16,7 +16,7 @@
 //                                an IMU is present)
 //
 // The WMX-free math (kinematics, dead-reckoning, deltas, accel EMA) lives in the
-// unit-tested nova_diff_drive_logic package; this node is the ROS/WMX wiring around it.
+// unit-tested differential_drive_controller.hpp; this node is the ROS/WMX wiring around it.
 
 #include <algorithm>
 #include <atomic>
@@ -43,10 +43,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 
-#include "nova_diff_drive_logic/accel_estimator.hpp"
-#include "nova_diff_drive_logic/diff_drive_kinematics.hpp"
-#include "nova_diff_drive_logic/odom_delta_accumulator.hpp"
-#include "nova_diff_drive_logic/odometry_integrator.hpp"
+#include "differential_drive_controller.hpp"
 
 using std::placeholders::_1;
 using wmx3Api::CoreMotion;
@@ -59,7 +56,7 @@ using wmx3Api::ProfileType;
 using wmx3Api::Velocity;
 using wmx3Api::WMX3Api;
 
-namespace ndl = nova_diff_drive_logic;
+namespace ddl = diff_drive;
 
 class DifferentialDriveController : public rclcpp::Node
 {
@@ -108,11 +105,11 @@ private:
   std::unique_ptr<CoreMotion> wmx3LibCm_;
   Velocity::VelCommand velCommand_;
 
-  // --- Nova logic (WMX/ROS-free, unit-tested) ---
-  ndl::DiffDriveModel model_;
-  ndl::OdometryIntegrator integrator_;
-  ndl::OdomDeltaAccumulator deltas_;
-  std::unique_ptr<ndl::AccelEstimator> accel_;
+  // --- diff-drive logic (WMX/ROS-free, unit-tested) ---
+  ddl::DiffDriveModel model_;
+  ddl::OdometryIntegrator integrator_;
+  ddl::OdomDeltaAccumulator deltas_;
+  std::unique_ptr<ddl::AccelEstimator> accel_;
 
   // --- Loop / command state ---
   // Pose & /odom_deltas are dead-reckoned from per-wheel encoder POSITION deltas
@@ -162,10 +159,10 @@ private:
   bool setVelocity(int axis, double omega);
 
   // Publishers
-  void publishOmega(const ndl::WheelOmega & enc);
-  void publishOdometry(const rclcpp::Time & stamp, const ndl::BodyVel & body);
+  void publishOmega(const ddl::WheelOmega & enc);
+  void publishOdometry(const rclcpp::Time & stamp, const ddl::BodyVel & body);
   void publishDeltas(const rclcpp::Time & stamp);
-  void publishAccel(const rclcpp::Time & stamp, const ndl::BodyVel & body);
+  void publishAccel(const rclcpp::Time & stamp, const ddl::BodyVel & body);
   void publishTf(const rclcpp::Time & stamp);
 
   static geometry_msgs::msg::Quaternion yawToQuaternion(double yaw);
@@ -181,8 +178,8 @@ DifferentialDriveController::DifferentialDriveController()
 
   setRosParameter();
 
-  model_ = ndl::DiffDriveModel{wheelRadius_, wheelToWheel_};
-  accel_ = std::make_unique<ndl::AccelEstimator>(accelAlpha_);
+  model_ = ddl::DiffDriveModel{wheelRadius_, wheelToWheel_};
+  accel_ = std::make_unique<ddl::AccelEstimator>(accelAlpha_);
 
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
@@ -286,9 +283,9 @@ void DifferentialDriveController::runInitSequence()
   }
 
   // Command input: TwistStamped by default so the staleness timeout can key off the
-  // publisher's stamp (stops the robot on crash/disconnect; the AxLab nav stack
-  // publishes stamped). cmd_vel_stamped:=false falls back to plain Twist for the
-  // Nova/Jetstream stack, whose /cmd_vel_safe is unstamped.
+  // publisher's stamp (stops the robot on crash/disconnect; Nav2-style stacks
+  // publish stamped). cmd_vel_stamped:=false falls back to plain Twist for
+  // upstreams that publish /cmd_vel_safe unstamped.
   if (cmdVelStamped_) {
     cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
       cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
@@ -355,8 +352,8 @@ void DifferentialDriveController::controlStep()
   // Twist (-> /odom_enc, /omega_enc, /odom_accel) comes from the servo's own
   // actualVelocity: it is the cleaner velocity signal and the localization EKF
   // fuses only the twist (vx/vy/vyaw) from /odom_enc.
-  const ndl::WheelOmega enc{left->actualVelocity, right->actualVelocity};
-  const ndl::BodyVel body = model_.forward(enc);  // {vx, vyaw}, vy is 0 for diff-drive
+  const ddl::WheelOmega enc{left->actualVelocity, right->actualVelocity};
+  const ddl::BodyVel body = model_.forward(enc);  // {vx, vyaw}, vy is 0 for diff-drive
 
   // Pose & /odom_deltas are dead-reckoned from per-wheel encoder POSITION deltas:
   // more precise than velocity*dt (dt-free, no constant-velocity assumption, no
@@ -382,7 +379,7 @@ void DifferentialDriveController::controlStep()
         this->get_logger(), *this->get_clock(), 1000,
         "Encoder position jump (homing/rollover?) -- re-baselining odometry this cycle");
     } else {
-      const ndl::BodyVel d = model_.forwardDelta(dPhiLeft, dPhiRight);  // {ds, dtheta}
+      const ddl::BodyVel d = model_.forwardDelta(dPhiLeft, dPhiRight);  // {ds, dtheta}
       integrator_.integrateDelta(d.linear, d.angular);
       deltas_.accumulateDelta(d.linear, d.angular);
     }
@@ -418,10 +415,10 @@ void DifferentialDriveController::controlStep()
   // NOTE: this decelerates over dec_time (TimeAccTrapezoidal); a true emergency stop
   // must go through the WMX hardware-level stop path, not this software timeout.
   const bool stale = !haveCmd_ || (now - lastCmdTime_).seconds() > cmdVelTimeout_;
-  const ndl::BodyVel cmd =
-    stale ? ndl::BodyVel{0.0, 0.0} : ndl::BodyVel{cmdVelMsg_.linear.x, cmdVelMsg_.angular.z};
+  const ddl::BodyVel cmd =
+    stale ? ddl::BodyVel{0.0, 0.0} : ddl::BodyVel{cmdVelMsg_.linear.x, cmdVelMsg_.angular.z};
 
-  const ndl::WheelOmega target = model_.inverse(cmd);
+  const ddl::WheelOmega target = model_.inverse(cmd);
   commandWheels(target.left, target.right);
 }
 
@@ -466,7 +463,7 @@ bool DifferentialDriveController::setVelocity(int axis, double omega)
   return true;
 }
 
-void DifferentialDriveController::publishOmega(const ndl::WheelOmega & enc)
+void DifferentialDriveController::publishOmega(const ddl::WheelOmega & enc)
 {
   std_msgs::msg::Float64MultiArray msg;
   msg.data = {enc.left, enc.right};
@@ -474,9 +471,9 @@ void DifferentialDriveController::publishOmega(const ndl::WheelOmega & enc)
 }
 
 void DifferentialDriveController::publishOdometry(
-  const rclcpp::Time & stamp, const ndl::BodyVel & body)
+  const rclcpp::Time & stamp, const ddl::BodyVel & body)
 {
-  const ndl::Pose2D & pose = integrator_.pose();
+  const ddl::Pose2D & pose = integrator_.pose();
 
   nav_msgs::msg::Odometry msg;
   msg.header.stamp = stamp;
@@ -491,12 +488,12 @@ void DifferentialDriveController::publishOdometry(
   msg.twist.twist.linear.y = 0.0;     // diff-drive: no lateral motion
   msg.twist.twist.angular.z = body.angular;
 
-  // Covariance. The Jetstream EKF fuses ONLY twist vx, vy, vyaw from this source
+  // Covariance. The localization EKF fuses ONLY twist vx, vy, vyaw from this source
   // (robot_localization odom0_config indices 6, 7, 11 of its 15-state vector). In this
   // nav_msgs 6x6 twist covariance those same components are the diagonal entries
   // [0]=vx, [7]=vy, [35]=vyaw — set below. The EKF ignores pose, but x/y/yaw are kept
   // authoritative (small variance) for the no-EKF fallback where this odom feeds Nav2
-  // directly; unused axes (z/roll/pitch) are non-authoritative. Mirrors the proven Nova
+  // directly; unused axes (z/roll/pitch) are non-authoritative. Mirrors the proven upstream
   // diff_drive_node values.
   constexpr double kSmall = 0.01;
   constexpr double kLarge = 99999.0;
@@ -519,7 +516,7 @@ void DifferentialDriveController::publishOdometry(
 void DifferentialDriveController::publishDeltas(const rclcpp::Time & stamp)
 {
   // accumulated |ds|, |dtheta| from per-wheel position deltas; resets on take()
-  const ndl::OdomDelta delta = deltas_.take();
+  const ddl::OdomDelta delta = deltas_.take();
   geometry_msgs::msg::TwistStamped msg;
   msg.header.stamp = stamp;
   msg.header.frame_id = odomFrame_;
@@ -529,7 +526,7 @@ void DifferentialDriveController::publishDeltas(const rclcpp::Time & stamp)
 }
 
 void DifferentialDriveController::publishAccel(
-  const rclcpp::Time & stamp, const ndl::BodyVel & body)
+  const rclcpp::Time & stamp, const ddl::BodyVel & body)
 {
   // Rate-limit accel publishing relative to the (fast) control loop. The estimator
   // differentiates body velocity over the actual elapsed accel interval, so we feed
@@ -545,7 +542,7 @@ void DifferentialDriveController::publishAccel(
     return;
   }
 
-  const ndl::BodyAccel accel = accel_->update(body, dtAccel);
+  const ddl::BodyAccel accel = accel_->update(body, dtAccel);
   geometry_msgs::msg::AccelStamped msg;
   msg.header.stamp = stamp;
   msg.header.frame_id = baseFrame_;
@@ -558,7 +555,7 @@ void DifferentialDriveController::publishAccel(
 
 void DifferentialDriveController::publishTf(const rclcpp::Time & stamp)
 {
-  const ndl::Pose2D & pose = integrator_.pose();
+  const ddl::Pose2D & pose = integrator_.pose();
   geometry_msgs::msg::TransformStamped tf;
   tf.header.stamp = stamp;
   tf.header.frame_id = odomFrame_;

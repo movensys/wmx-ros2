@@ -4,9 +4,9 @@
 
 #include <limits>
 
-#include "nova_diff_drive_logic/odom_delta_accumulator.hpp"
+#include "differential_drive_controller.hpp"
 
-using nova_diff_drive_logic::OdomDeltaAccumulator;
+using diff_drive::OdomDeltaAccumulator;
 
 namespace
 {
