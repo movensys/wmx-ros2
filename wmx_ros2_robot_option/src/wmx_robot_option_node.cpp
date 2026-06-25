@@ -253,7 +253,7 @@ void WmxRobotOptionNode::statusStep()
   statusMsg_.header.frame_id = status_frame_;
   statusMsg_.device = isReady();
   statusMsg_.servo = getServo();
-  statusMsg_.in_motion = isArmMotion();
+  statusMsg_.in_motion = areArmAxesBusy();
   statusMsg_.is_pass_motion = false;
   statusMsg_.motion_state = motionStateString(robotStatus_.motionState);
 
@@ -307,17 +307,12 @@ bool WmxRobotOptionNode::getServo()
   return true;
 }
 
-bool WmxRobotOptionNode::isArmMotion()
-{
-  return robotStatus_.motionState == MotionState::RobotMotionInMotion ||
-         robotStatus_.motionState == MotionState::RobotMotionInPTPMotion;
-}
-
-// True if any arm axis is still executing a motion. Unlike isArmMotion() (which
-// only reflects this node's kinematics motionState), this reads the shared
-// CoreMotion axis state, so it also sees motions started by other clients of the
-// same engine (e.g. joint_trajectory_controller in wmx_ros2_package). It is the
-// cross-node interlock that keeps the two from commanding the arm at once.
+// True if any arm axis is still executing a motion. Reads the shared CoreMotion
+// axis state (rather than this node's kinematics motionState), so it also sees
+// motions started by other clients of the same engine (e.g.
+// joint_trajectory_controller in wmx_ros2_package). It doubles as the cross-node
+// interlock that keeps the two from commanding the arm at once and as the
+// in_motion flag published on the status topic.
 bool WmxRobotOptionNode::areArmAxesBusy()
 {
   wmx3Api::CoreMotionStatus status;
@@ -351,7 +346,7 @@ bool WmxRobotOptionNode::isRevoluteJoint(int joint_index)
 
 void WmxRobotOptionNode::stopMotionIfAlarm()
 {
-  if (!isAxesNormalState() && isArmMotion()) {
+  if (!isAxesNormalState() && areArmAxesBusy()) {
     RCLCPP_ERROR(this->get_logger(), "Axis state is not normal, stopping motion");
     robot_->mKinematics.StopMotion(robotParam_.robotParam.robotId);
   }

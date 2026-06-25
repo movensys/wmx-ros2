@@ -174,10 +174,28 @@ void WmxCoreMotionNode::axisStateStep()
   axisStatePub_->publish(axisStateMsg_);
 }
 
+// Interlock: an axis already executing a motion (from this node or any other
+// client of the shared engine, e.g. joint_trajectory_controller /
+// wmx_robot_option_node) must not be commanded again. A local status is used so
+// this is safe to call concurrently with the axisStateStep timer.
+bool WmxCoreMotionNode::isAxisBusy(int axis)
+{
+  wmx3Api::CoreMotionStatus status;
+  wmx3LibCm_->GetStatus(&status);
+  return !status.axesStatus[axis].inPos;
+}
+
 void WmxCoreMotionNode::axisPoseCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg)
 {
   size_t axis_count = msg->index.size();
   for (size_t i = 0; i < axis_count; i++) {
+    if (isAxisBusy(msg->index[i])) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Axis %d is busy (motion in progress from another client); skipping position command",
+        msg->index[i]);
+      continue;
+    }
     position_.axis = msg->index[i];
     position_.target = msg->target[i];
     position_.profile.velocity = msg->velocity[i];
@@ -201,6 +219,13 @@ void WmxCoreMotionNode::axisPoseRelativeCallback(
 {
   size_t axis_count = msg->index.size();
   for (size_t i = 0; i < axis_count; i++) {
+    if (isAxisBusy(msg->index[i])) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Axis %d is busy (motion in progress from another client); skipping relative command",
+        msg->index[i]);
+      continue;
+    }
     position_.axis = msg->index[i];
     position_.target = msg->target[i];
     position_.profile.velocity = msg->velocity[i];
@@ -223,6 +248,13 @@ void WmxCoreMotionNode::axisVelCallback(const wmx_ros2_message::msg::AxisVelocit
 {
   size_t axis_count = msg->index.size();
   for (size_t i = 0; i < axis_count; i++) {
+    if (isAxisBusy(msg->index[i])) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Axis %d is busy (motion in progress from another client); skipping velocity command",
+        msg->index[i]);
+      continue;
+    }
     velocity_.axis = msg->index[i];
     velocity_.profile.velocity = msg->velocity[i];
     velocity_.profile.type = ProfileType::T::Trapezoidal;
@@ -456,6 +488,16 @@ void WmxCoreMotionNode::setHoming(
   std::stringstream msg_stream;
 
   for (size_t i = 0; i < request->index.size(); ++i) {
+    if (isAxisBusy(request->index[i])) {
+      snprintf(
+        buffer_, sizeof(buffer_),
+        "Axis %d is busy (motion in progress from another client); skipping homing",
+        request->index[i]);
+      RCLCPP_WARN(this->get_logger(), "%s", buffer_);
+      msg_stream << buffer_ << "; ";
+      all_success = false;
+      continue;
+    }
     wmx3LibCm_->config->GetHomeParam(request->index[i], &homeParam_);
     homeParam_.homeType = Config::HomeType::CurrentPos;
     wmx3LibCm_->config->SetHomeParam(request->index[i], &homeParam_);

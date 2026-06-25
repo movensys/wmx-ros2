@@ -76,6 +76,12 @@ private:
   void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
   void axisStateStep();
 
+  // True if the axis is still executing a motion. Reads the shared CoreMotion
+  // state, so it also sees motions started by other clients of the same engine
+  // (e.g. joint_trajectory_controller / wmx_robot_option_node). Used to refuse
+  // a new command on an axis that is already moving.
+  bool isAxisBusy(int axis);
+
   void axisPoseCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg);
   void axisPoseRelativeCallback(const wmx_ros2_message::msg::AxisPose::SharedPtr msg);
   void axisVelCallback(const wmx_ros2_message::msg::AxisVelocity::SharedPtr msg);

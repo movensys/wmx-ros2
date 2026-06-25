@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <Robot ID="0">
-	<RobotName>GCR30_1100</RobotName>
+	<RobotName>DOBOT_CR3A</RobotName>
 	<RobotType>0</RobotType>
 	<BaseCoordinate x="0.000000" y="0.000000" z="0.000000" u="0.000000000000000" v="0.000000000000000" w="0.000000000000000"/>
 	<link name="base">
