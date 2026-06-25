@@ -376,7 +376,7 @@ void DifferentialDriveController::controlStep()
     const bool finiteDt = std::isfinite(dt) && dt > 0.0;
     const bool jumped = finiteDt &&
       (std::abs(dPhiLeft - left->actualVelocity * dt) > jumpGuardTol_ ||
-       std::abs(dPhiRight - right->actualVelocity * dt) > jumpGuardTol_);
+      std::abs(dPhiRight - right->actualVelocity * dt) > jumpGuardTol_);
     if (jumped) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 1000,
@@ -669,7 +669,8 @@ void DifferentialDriveController::setRosParameter()
   // pos_unit_scale converts actualPos user-units -> wheel rad; 0 or non-finite would
   // zero/poison all position-based odometry, so guard it to the rad-native default.
   if (!std::isfinite(posUnitScale_) || posUnitScale_ == 0.0) {
-    RCLCPP_WARN(this->get_logger(), "pos_unit_scale must be finite and non-zero; falling back to 1.0");
+    RCLCPP_WARN(this->get_logger(),
+      "pos_unit_scale must be finite and non-zero; falling back to 1.0");
     posUnitScale_ = 1.0;
   }
   // jump_guard_tol must be > 0 (it bounds |dPhi - actualVelocity*dt| before re-baselining).
