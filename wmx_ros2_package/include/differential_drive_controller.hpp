@@ -99,7 +99,7 @@ public:
   : straight_eps_(straight_eps) {}
 
   /// Advance the pose by integrating `vel` over `dt` seconds.
-  void integrate(const BodyVel & vel, double dt)
+  void odometryPoseCalculation(const BodyVel & vel, double dt)
   {
     if (!std::isfinite(dt) || dt <= 0.0) {return;}  // ignore invalid/zero timesteps
     const double next_theta = pose_.theta + vel.angular * dt;
@@ -127,7 +127,7 @@ public:
   ///   x += ds*cos(theta + dtheta/2)*sinc(dtheta/2)
   ///   y += ds*sin(theta + dtheta/2)*sinc(dtheta/2)
   ///   theta += dtheta
-  void integrateDelta(double ds, double dtheta)
+  void odometryPoseCalculation(double ds, double dtheta)
   {
     if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}  // ignore invalid steps
     const double half = 0.5 * dtheta;
@@ -143,7 +143,7 @@ public:
 
 private:
   /// sin(a)/a with the removable singularity guarded (-> 1 as a -> 0), so the
-  /// midpoint exact-arc in integrateDelta() is branchless and well-defined at
+  /// midpoint exact-arc in odometryPoseCalculation() is branchless and well-defined at
   /// dtheta = 0. Never evaluates a literal sin(0)/0.
   static double sinc(double a)
   {
@@ -168,15 +168,14 @@ struct OdomDelta
   double angular = 0.0;
 };
 
-/// Accumulates absolute travel between reads. Two modes (reset on publish via
-/// take()):
-///   accumulate(vel, dt)         -- |v|*dt, |w|*dt   (velocity path; unit-tested)
-///   accumulateDelta(ds, dtheta) -- |ds|, |dtheta|   (encoder position-delta path)
+/// Accumulates absolute travel between reads, reset on publish via take(). Two
+/// overloads: odometryDeltaAccumulation(vel, dt) [velocity path, |v|*dt / |w|*dt]
+/// and odometryDeltaAccumulation(ds, dtheta) [position-delta path, |ds| / |dtheta|].
 /// The controller drives the position-delta path; both share the same semantics.
 class OdomDeltaAccumulator
 {
 public:
-  void accumulate(const BodyVel & vel, double dt)
+  void odometryDeltaAccumulation(const BodyVel & vel, double dt)
   {
     if (!std::isfinite(dt) || dt <= 0.0) {return;}  // ignore invalid/negative dt
     delta_.linear += std::abs(vel.linear * dt);
@@ -185,7 +184,7 @@ public:
 
   /// Accumulate absolute body displacement (ds [m], dtheta [rad]) directly — for
   /// encoder-position-delta dead reckoning (dt-free; more exact than |v|*dt).
-  void accumulateDelta(double ds, double dtheta)
+  void odometryDeltaAccumulation(double ds, double dtheta)
   {
     if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}  // ignore invalid steps
     delta_.linear += std::abs(ds);

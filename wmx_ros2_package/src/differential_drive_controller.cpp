@@ -364,8 +364,8 @@ void DifferentialDriveController::controlStep()
         "Encoder position jump (homing/rollover?) -- re-baselining odometry this cycle");
     } else {
       const ddl::BodyVel d = model_.forwardDelta(dPhiLeft, dPhiRight);  // {ds, dtheta}
-      integrator_.integrateDelta(d.linear, d.angular);
-      deltas_.accumulateDelta(d.linear, d.angular);
+      integrator_.odometryPoseCalculation(d.linear, d.angular);
+      deltas_.odometryDeltaAccumulation(d.linear, d.angular);
     }
   }
   prevPosLeft_ = left->actualPos;

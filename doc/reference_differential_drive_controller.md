@@ -149,7 +149,7 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 - **Twist** (`/odom_enc.twist`, `/odom_accel`, `/omega_enc`) comes from the servo's
   `actualVelocity`, not `Δpos/dt`: the EKF fuses only twist, and the servo velocity
   is a cleaner signal than a numerical position derivative. (The velocity-based
-  `integrate(vel,dt)` path remains in the header, unit-tested, but the
+  `odometryPoseCalculation(vel,dt)` path remains in the header, unit-tested, but the
   node now uses the position-delta path.)
 
 ---
