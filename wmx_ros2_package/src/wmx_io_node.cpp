@@ -5,7 +5,7 @@
 
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
-using wmx3Api::Io;
+using wmx3Api::IO;
 
 WmxIoNode::WmxIoNode()
 : Node("wmx_io_node")
@@ -84,7 +84,7 @@ void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
   wmx3Lib_.SetDeviceName("wmx_io_node");
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
-  wmxIo_ = std::make_unique<Io>(&wmx3Lib_);
+  wmxIo_ = std::make_unique<IO>(&wmx3Lib_);
   initialized_ = true;
 
   engineReadySub_.reset();
@@ -105,7 +105,7 @@ void WmxIoNode::getInputBit(
   unsigned char data = 0;
   err_ = wmxIo_->GetInBitEx(request->byte, request->bit, &data);
   if (err_ != ErrorCode::None) {
-    Io::ErrorToString(err_, errString_, sizeof(errString_));
+    IO::ErrorToString(err_, errString_, sizeof(errString_));
     snprintf(
       buffer_, sizeof(buffer_),
       "GetInBitEx failed byte=%d bit=%d. Error=%d (%s)",
@@ -137,7 +137,7 @@ void WmxIoNode::getOutputBit(
   unsigned char data = 0;
   err_ = wmxIo_->GetOutBitEx(request->byte, request->bit, &data);
   if (err_ != ErrorCode::None) {
-    Io::ErrorToString(err_, errString_, sizeof(errString_));
+    IO::ErrorToString(err_, errString_, sizeof(errString_));
     snprintf(
       buffer_, sizeof(buffer_),
       "GetOutBitEx failed byte=%d bit=%d. Error=%d (%s)",
@@ -175,7 +175,7 @@ void WmxIoNode::getInputBytes(
   std::vector<unsigned char> data(request->length, 0);
   err_ = wmxIo_->GetInBytesEx(request->byte, request->length, data.data());
   if (err_ != ErrorCode::None) {
-    Io::ErrorToString(err_, errString_, sizeof(errString_));
+    IO::ErrorToString(err_, errString_, sizeof(errString_));
     snprintf(
       buffer_, sizeof(buffer_),
       "GetInBytesEx failed byte=%d length=%d. Error=%d (%s)",
@@ -213,7 +213,7 @@ void WmxIoNode::getOutputBytes(
   std::vector<unsigned char> data(request->length, 0);
   err_ = wmxIo_->GetOutBytesEx(request->byte, request->length, data.data());
   if (err_ != ErrorCode::None) {
-    Io::ErrorToString(err_, errString_, sizeof(errString_));
+    IO::ErrorToString(err_, errString_, sizeof(errString_));
     snprintf(
       buffer_, sizeof(buffer_),
       "GetOutBytesEx failed byte=%d length=%d. Error=%d (%s)",
@@ -250,7 +250,7 @@ void WmxIoNode::setOutputBit(
 
   err_ = wmxIo_->SetOutBitEx(request->byte, request->bit, (request->value ? 1 : 0));
   if (err_ != ErrorCode::None) {
-    Io::ErrorToString(err_, errString_, sizeof(errString_));
+    IO::ErrorToString(err_, errString_, sizeof(errString_));
     snprintf(
       buffer_, sizeof(buffer_),
       "SetOutBitEx failed byte=%d bit=%d value=%d. Error=%d (%s)",
@@ -290,7 +290,7 @@ void WmxIoNode::setOutputBytes(
 
   err_ = wmxIo_->SetOutBytesEx(request->byte, dataLen, rawData.data());
   if (err_ != ErrorCode::None) {
-    Io::ErrorToString(err_, errString_, sizeof(errString_));
+    IO::ErrorToString(err_, errString_, sizeof(errString_));
     snprintf(
       buffer_, sizeof(buffer_),
       "SetOutBytesEx failed byte=%d length=%d. Error=%d (%s)",

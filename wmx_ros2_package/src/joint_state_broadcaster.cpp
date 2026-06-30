@@ -25,7 +25,7 @@ using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
-using wmx3Api::Io;
+using wmx3Api::IO;
 using wmx3Api::WMX3Api;
 
 class JointStateBroadcaster : public rclcpp::Node
@@ -57,7 +57,7 @@ private:
   WMX3Api wmx3Lib_;
   CoreMotionStatus cmStatus_;
   std::unique_ptr<CoreMotion> wmx3LibCm_;
-  std::unique_ptr<Io> wmx3Lib_Io_;
+  std::unique_ptr<IO> wmx3Lib_Io_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr coreMotionReadySub_;
   rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr clearAlarmClient_;
@@ -191,7 +191,7 @@ void JointStateBroadcaster::runInitSequence()
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
-  wmx3Lib_Io_ = std::make_unique<Io>(&wmx3Lib_);
+  wmx3Lib_Io_ = std::make_unique<IO>(&wmx3Lib_);
 
   std::vector<int64_t> zeroData(jointAxes_.size(), 0);
   std::vector<int64_t> onData(jointAxes_.size(), 1);
