@@ -1,3 +1,6 @@
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
 #include <iostream>
 #include <memory>
 #include <string>
@@ -18,26 +21,34 @@
 #include "IOApi.h"
 
 using std::placeholders::_1;
-using namespace wmx3Api;
-using namespace std;
+using wmx3Api::Config;
+using wmx3Api::CoreMotion;
+using wmx3Api::CoreMotionStatus;
+using wmx3Api::DeviceType;
+using wmx3Api::ErrorCode;
+using wmx3Api::Io;
+using wmx3Api::WMX3Api;
 
-class ManipulatorState : public rclcpp::Node
+class JointStateBroadcaster : public rclcpp::Node
 {
 public:
-  ManipulatorState();
-  ~ManipulatorState();
+  JointStateBroadcaster();
+  ~JointStateBroadcaster();
 
-  int jointNumber_;
   int jointFeedbackRate_;
   float gripperCloseValue_;
   float gripperOpenValue_;
+  std::vector<int64_t> jointAxes_;
   std::vector<std::string> jointNames_;
+  std::vector<std::string> gripperJointNames_;
+  std::vector<int64_t> gripperAddress_;
   std::string encoderJointTopic_;
   std::string isaacsimJointTopic_;
   std::string gazeboJointTopic_;
   std::string wmxParamFilePath_;
 
   unsigned char gripperData_;
+
   int err_;
   char errString_[256];
 
@@ -64,28 +75,26 @@ private:
 
   void onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg);
   void runInitSequence();
-  bool callSetAxisService(
-    rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
-    const std::string & service_name,
-    const std::vector<int32_t> & index,
-    const std::vector<int32_t> & data);
+  bool callSetAxisService(rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+                          const std::string & service_name,
+                          const std::vector<int64_t> & index,
+                          const std::vector<int64_t> & data);
   void publishJointState();
   void setRosParameter();
   void setWmxParam(char * path);
   void getWmxParam();
 };
 
-ManipulatorState::ManipulatorState()
-: Node("manipulator_state")
+JointStateBroadcaster::JointStateBroadcaster() : Node("joint_state_broadcaster")
 {
-  RCLCPP_INFO(this->get_logger(), "start manipulator_state");
+  RCLCPP_INFO(this->get_logger(), "start joint_state_broadcaster");
 
   setRosParameter();
 
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   coreMotionReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/core_motion/ready", ready_qos,
-    std::bind(&ManipulatorState::onCoreMotionReady, this, _1));
+    std::bind(&JointStateBroadcaster::onCoreMotionReady, this, _1));
 
   clearAlarmClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
     "wmx/axis/clear_alarm");
@@ -93,12 +102,12 @@ ManipulatorState::ManipulatorState()
   setAxisOnClient_ = this->create_client<wmx_ros2_message::srv::SetAxis>(
     "wmx/axis/set_on");
 
-  RCLCPP_INFO(this->get_logger(), "manipulator_state waiting for core_motion...");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster waiting for core_motion...");
 }
 
-ManipulatorState::~ManipulatorState()
+JointStateBroadcaster::~JointStateBroadcaster()
 {
-  RCLCPP_INFO(this->get_logger(), "Stop manipulator_state");
+  RCLCPP_INFO(this->get_logger(), "Stop joint_state_broadcaster");
 
   if (init_thread_.joinable()) {
     init_thread_.join();
@@ -109,15 +118,15 @@ ManipulatorState::~ManipulatorState()
       encoderJointTimer_->cancel();
     }
 
-    for (int i = 0; i < jointNumber_; i++) {
-      err_ = wmx3LibCm_->axisControl->SetServoOn(i, 0);
+    for (int axis : jointAxes_) {
+      err_ = wmx3LibCm_->axisControl->SetServoOn(axis, 0);
       if (err_ != ErrorCode::None) {
         wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
         RCLCPP_ERROR(
-          this->get_logger(), "Servo %d error to off. Error=%d (%s)", i, err_,
+          this->get_logger(), "Servo %d error to off. Error=%d (%s)", axis, err_,
           errString_);
       } else {
-        RCLCPP_INFO(this->get_logger(), "Servo %d off", i);
+        RCLCPP_INFO(this->get_logger(), "Servo %d off", axis);
       }
     }
 
@@ -130,10 +139,10 @@ ManipulatorState::~ManipulatorState()
     }
   }
 
-  RCLCPP_INFO(this->get_logger(), "manipulator_state is stopped");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is stopped");
 }
 
-void ManipulatorState::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg)
+void JointStateBroadcaster::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg)
 {
   if (!msg->data || initialized_ || initializing_.exchange(true)) {
     return;
@@ -147,10 +156,10 @@ void ManipulatorState::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr ms
   }
 
   // Spawn dedicated thread so blocking wait_for() doesn't block executor
-  init_thread_ = std::thread(&ManipulatorState::runInitSequence, this);
+  init_thread_ = std::thread(&JointStateBroadcaster::runInitSequence, this);
 }
 
-void ManipulatorState::runInitSequence()
+void JointStateBroadcaster::runInitSequence()
 {
   unsigned int timeout = 10000;
   static constexpr int kMaxDeviceRetries = 30;
@@ -182,33 +191,28 @@ void ManipulatorState::runInitSequence()
     return;
   }
 
-  wmx3Lib_.SetDeviceName("ManipulatorState");
+  wmx3Lib_.SetDeviceName("joint_state_broadcaster");
 
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
   wmx3Lib_Io_ = std::make_unique<Io>(&wmx3Lib_);
 
-  setWmxParam((char *)wmxParamFilePath_.c_str());
+  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
   getWmxParam();
 
-  // Build axis index/data vectors
-  std::vector<int32_t> allAxes;
-  std::vector<int32_t> zeroData(jointNumber_, 0);
-  std::vector<int32_t> onData(jointNumber_, 1);
-  for (int i = 0; i < jointNumber_; i++) {
-    allAxes.push_back(i);
-  }
+  std::vector<int64_t> zeroData(jointAxes_.size(), 0);
+  std::vector<int64_t> onData(jointAxes_.size(), 1);
 
   // Clear alarms on all axes
-  if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", allAxes, zeroData)) {
+  if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", jointAxes_, zeroData)) {
     RCLCPP_ERROR(this->get_logger(), "Init failed at clear_alarm — node will not retry");
     initializing_ = false;
     return;
   }
 
   // Set servo on for all axes
-  if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", allAxes, onData)) {
+  if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", jointAxes_, onData)) {
     RCLCPP_ERROR(this->get_logger(), "Init failed at set_on — node will not retry");
     initializing_ = false;
     return;
@@ -221,18 +225,18 @@ void ManipulatorState::runInitSequence()
 
   encoderJointTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / jointFeedbackRate_),
-    std::bind(&ManipulatorState::publishJointState, this));
+    std::bind(&JointStateBroadcaster::publishJointState, this));
 
   initialized_ = true;
   coreMotionReadySub_.reset();
-  RCLCPP_INFO(this->get_logger(), "manipulator_state is ready");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is ready");
 }
 
-bool ManipulatorState::callSetAxisService(
-  rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
-  const std::string & service_name,
-  const std::vector<int32_t> & index,
-  const std::vector<int32_t> & data)
+bool JointStateBroadcaster::callSetAxisService(
+              rclcpp::Client<wmx_ros2_message::srv::SetAxis>::SharedPtr client,
+              const std::string & service_name,
+              const std::vector<int64_t> & index,
+              const std::vector<int64_t> & data)
 {
   const int max_retries = 5;
   const auto service_timeout = std::chrono::seconds(10);
@@ -245,8 +249,8 @@ bool ManipulatorState::callSetAxisService(
 
   for (int attempt = 1; attempt <= max_retries; attempt++) {
     auto request = std::make_shared<wmx_ros2_message::srv::SetAxis::Request>();
-    request->index = index;
-    request->data = data;
+    request->index.assign(index.begin(), index.end());
+    request->data.assign(data.begin(), data.end());
 
     RCLCPP_INFO(
       this->get_logger(), "Calling %s (attempt %d/%d)",
@@ -289,35 +293,36 @@ bool ManipulatorState::callSetAxisService(
   return false;
 }
 
-void ManipulatorState::setRosParameter()
+void JointStateBroadcaster::setRosParameter()
 {
-  this->declare_parameter<int>("joint_number", 0);
+  this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
   this->declare_parameter<int>("joint_feedback_rate", 0);
   this->declare_parameter<float>("gripper_open_value", 0);
   this->declare_parameter<float>("gripper_close_value", 0);
   this->declare_parameter<std::vector<std::string>>(
-    "joint_name", {"j1", "j2", "j3", "j4", "j5",
-      "j6"});
+    "joint_name", {"j1", "j2", "j3", "j4", "j5", "j6"});
+  this->declare_parameter<std::vector<std::string>>(
+    "gripper_joint_name", std::vector<std::string>{});
+  this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{0, 0});
   this->declare_parameter<std::string>("encoder_joint_topic", "/encoder_joint_topic/no_param");
   this->declare_parameter<std::string>("isaacsim_joint_topic", "/isaacsim_joint_topic/no_param");
   this->declare_parameter<std::string>("gazebo_joint_topic", "/gazebo_joint_topic/no_param");
   this->declare_parameter<std::string>("wmx_param_file_path", "/wmx_param_file_path/no_param");
 
-  this->get_parameter("joint_number", jointNumber_);
+  this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_feedback_rate", jointFeedbackRate_);
   this->get_parameter("gripper_open_value", gripperOpenValue_);
   this->get_parameter("gripper_close_value", gripperCloseValue_);
   this->get_parameter("joint_name", jointNames_);
+  this->get_parameter("gripper_joint_name", gripperJointNames_);
+  this->get_parameter("gripper_address", gripperAddress_);
   this->get_parameter("encoder_joint_topic", encoderJointTopic_);
   this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
   this->get_parameter("gazebo_joint_topic", gazeboJointTopic_);
   this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
-  RCLCPP_INFO(this->get_logger(), "joint_number: %d", jointNumber_);
   RCLCPP_INFO(this->get_logger(), "joint_feedback_rate: %d", jointFeedbackRate_);
-  RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f", gripperOpenValue_);
-  RCLCPP_INFO(this->get_logger(), "gripper_close_value: %f", gripperCloseValue_);
 
   std::string joint_names_str;
   for (size_t i = 0; i < jointNames_.size(); ++i) {
@@ -326,6 +331,30 @@ void ManipulatorState::setRosParameter()
   }
   RCLCPP_INFO(this->get_logger(), "joint_name: [%s]", joint_names_str.c_str());
 
+  std::string joint_axes_str;
+  for (size_t i = 0; i < jointAxes_.size(); ++i) {
+    if (i > 0) {joint_axes_str += ", ";}
+    joint_axes_str += std::to_string(jointAxes_[i]);
+  }
+  RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", joint_axes_str.c_str());
+
+  if (!gripperJointNames_.empty()) {
+    std::string gripper_joint_names_str;
+    for (size_t i = 0; i < gripperJointNames_.size(); ++i) {
+      if (i > 0) {gripper_joint_names_str += ", ";}
+      gripper_joint_names_str += gripperJointNames_[i];
+    }
+    RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [%s]", gripper_joint_names_str.c_str());
+    RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f",  gripperOpenValue_);
+    RCLCPP_INFO(this->get_logger(), "gripper_close_value: %f", gripperCloseValue_);
+    if (gripperAddress_.size() >= 2) {
+      RCLCPP_INFO(
+        this->get_logger(), "gripper_address: [%ld, %ld]",
+        gripperAddress_[0], gripperAddress_[1]);
+    }
+  } else {
+    RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [] (no gripper)");
+  }
   RCLCPP_INFO(this->get_logger(), "encoder_joint_topic: %s", encoderJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "isaacsim_joint_topic: %s", isaacsimJointTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "gazebo_joint_topic: %s", gazeboJointTopic_.c_str());
@@ -333,32 +362,28 @@ void ManipulatorState::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
-void ManipulatorState::publishJointState()
+void JointStateBroadcaster::publishJointState()
 {
   wmx3LibCm_->GetStatus(&cmStatus_);
 
   sensor_msgs::msg::JointState encoderJointMsg_;
   std_msgs::msg::Float64MultiArray gazeboJointMsg_;
-  gazeboJointMsg_.data.resize(8);
 
-  for (int i = 0; i < jointNumber_; ++i) {
+  for (size_t i = 0; i < jointAxes_.size(); ++i) {
     encoderJointMsg_.name.push_back(jointNames_[i]);
-    encoderJointMsg_.position.push_back(cmStatus_.axesStatus[i].actualPos);
-    encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[i].actualVelocity);
-    gazeboJointMsg_.data[i] = cmStatus_.axesStatus[i].actualPos;
+    encoderJointMsg_.position.push_back(cmStatus_.axesStatus[jointAxes_[i]].actualPos);
+    encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[jointAxes_[i]].actualVelocity);
   }
 
-  for (int i = 0; i < 2; ++i) {
-    encoderJointMsg_.name.push_back(jointNames_[jointNumber_ + i]);
-    wmx3Lib_Io_->GetOutBit(0, 0, &gripperData_);
+  for (size_t i = 0; i < gripperJointNames_.size() && gripperAddress_.size() >= 1; ++i) {
+    encoderJointMsg_.name.push_back(gripperJointNames_[i]);
+    wmx3Lib_Io_->GetOutBit(gripperAddress_[0], gripperAddress_[1], &gripperData_);
     if (gripperData_) {
       encoderJointMsg_.position.push_back(gripperCloseValue_);
       encoderJointMsg_.velocity.push_back(0.000);
-      gazeboJointMsg_.data[jointNumber_ + i] = gripperCloseValue_;
     } else {
       encoderJointMsg_.position.push_back(gripperOpenValue_);
       encoderJointMsg_.velocity.push_back(0.000);
-      gazeboJointMsg_.data[jointNumber_ + i] = gripperOpenValue_;
     }
   }
 
@@ -366,10 +391,11 @@ void ManipulatorState::publishJointState()
   encoderJointMsg_.header.stamp = this->get_clock()->now();
   encoderJointPub_->publish(encoderJointMsg_);
 
+  gazeboJointMsg_.data = encoderJointMsg_.position;
   gazeboJointPub_->publish(gazeboJointMsg_);
 }
 
-void ManipulatorState::setWmxParam(char * path)
+void JointStateBroadcaster::setWmxParam(char * path)
 {
   err_ = wmx3LibCm_->config->ImportAndSetAll(path);
   if (err_ != ErrorCode::None) {
@@ -380,14 +406,14 @@ void ManipulatorState::setWmxParam(char * path)
   }
 }
 
-void ManipulatorState::getWmxParam()
+void JointStateBroadcaster::getWmxParam()
 {
   err_ = wmx3LibCm_->config->GetAxisParam(&axisParam_);
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
   } else {
-    for (int axis = 0; axis < jointNumber_; axis++) {
+    for (int axis : jointAxes_) {
       RCLCPP_INFO(
         this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
       RCLCPP_INFO(
@@ -407,7 +433,7 @@ void ManipulatorState::getWmxParam()
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<ManipulatorState>();
+  auto node = std::make_shared<JointStateBroadcaster>();
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;

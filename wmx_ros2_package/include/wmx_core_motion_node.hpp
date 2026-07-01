@@ -1,5 +1,8 @@
-#ifndef WMX_CORE_MOTION_NODE_HPP
-#define WMX_CORE_MOTION_NODE_HPP
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
+#ifndef WMX_CORE_MOTION_NODE_HPP_
+#define WMX_CORE_MOTION_NODE_HPP_
 
 #include <atomic>
 #include <iostream>
@@ -27,7 +30,6 @@
 
 using std::placeholders::_1;
 using std::placeholders::_2;
-using namespace wmx3Api;
 
 class WmxCoreMotionNode : public rclcpp::Node
 {
@@ -43,13 +45,13 @@ private:
   char buffer_[512];
   const int rate_ = 100;
 
-  WMX3Api wmx3Lib_;
-  std::unique_ptr<CoreMotion> wmx3LibCm_;
-  CoreMotionStatus cmStatus_;
+  wmx3Api::WMX3Api wmx3Lib_;
+  std::unique_ptr<wmx3Api::CoreMotion> wmx3LibCm_;
+  wmx3Api::CoreMotionStatus cmStatus_;
 
   wmx3Api::Velocity::VelCommand velocity_;
   wmx3Api::Motion::PosCommand position_;
-  Config::HomeParam homeParam_;
+  wmx3Api::Config::HomeParam homeParam_;
 
   rclcpp::TimerBase::SharedPtr axisStateTimer_;
   wmx_ros2_message::msg::AxisState axisStateMsg_;
@@ -104,4 +106,4 @@ private:
     std::shared_ptr<wmx_ros2_message::srv::GetWmxParams::Response> response);
 };
 
-#endif  // WMX_CORE_MOTION_NODE_HPP
+#endif  // WMX_CORE_MOTION_NODE_HPP_

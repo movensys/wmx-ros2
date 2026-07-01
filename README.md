@@ -1,8 +1,8 @@
 # WMX ROS2 Application
 
-ROS2 interface for [WMX3](https://www.movensys.com/), a real-time EtherCAT motion control SDK by Movensys, enabling control of industrial robots and multi-axis systems from the ROS2 ecosystem.
+ROS2 interface for [WMX3](https://www.movensys.com/en/products/software_motion_control/wmx_en), a real-time EtherCAT motion control SDK by Movensys, enabling control of industrial robots and multi-axis systems from the ROS2 ecosystem.
 
-This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, and actions — so you can drive WMX3-controlled hardware (e.g. the CR3A manipulator) using MoveIt2, Nav2, or any ROS2-compatible planner without writing vendor-specific motion code.
+This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, and actions — so you can drive WMX3-controlled hardware (e.g. the Dobot CR3A manipulator) using MoveIt2, Nav2, or any ROS2-compatible planner without writing vendor-specific motion code.
 
 ## Architecture
 
@@ -24,8 +24,6 @@ flowchart LR;
     F --> G[WMX Engine];
 ```
 
-- services/topics -> [wmx_engine_node](wmx_ros2_package/src/wmx_engine_node.cpp) (CreateDevice, StartCommunication) / [wmx_core_motion_node](wmx_ros2_package/src/wmx_core_motion_node.cpp) (CoreMotion) / [wmx_io_node](wmx_ros2_package/src/wmx_io_node.cpp) (IO) / [wmx_ethercat_node](wmx_ros2_package/src/wmx_ethercat_node.cpp) (EtherCAT) -> WMX3 API -> WMX Engine
-
 
 ### Trajectory Control ([wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py))
 
@@ -34,19 +32,19 @@ flowchart LR;
 title: Trajectory Control
 ---
 flowchart LR;
-    A["/follow_joint_trajectory"] -->|action| B[follow_joint_trajectory_server];
+    A["MoveIt2"] -->|action| B[joint_trajectory_controller];
     B --> C[WMX3 API];
     C --> D[WMX Engine];
     D --> E[Robot];
     E --> D[WMX Engine];
     D --> C[WMX3 API];
-    C --> F[manipulator_state];
+    C --> F[joint_state_broadcaster];
     F --> G["/joint_states"];
 ```
 
-- `/follow_joint_trajectory` (action) -> `follow_joint_trajectory_server` -> WMX3 API -> WMX Engine -> Robot
+- `MoveIt2` -> `joint_trajectory_controller` -> WMX3 API -> WMX Engine -> Robot
 
-- Robot -> WMX Engine -> WMX3 API -> `manipulator_state` -> `/joint_states`
+- Robot -> WMX Engine -> WMX3 API -> `joint_state_broadcaster` -> `/joint_states`
 
 ## Packages
 
@@ -56,9 +54,9 @@ flowchart LR;
 
 ## Nodes
 
-**manipulator_state** - Publishes joint feedback from WMX3 encoder to `/joint_states`
+**joint_state_broadcaster** - Publishes joint feedback from WMX3 encoder to `/joint_states`
 
-**follow_joint_trajectory_server** - Receives trajectory action and executes via WMX3 C-Spline
+**joint_trajectory_controller** - Receives trajectory action and executes via WMX3 C-Spline
 
 **wmx_core_motion_node** - Core motion control and trajectory execution
 
@@ -70,16 +68,16 @@ flowchart LR;
 
 ## Launch Files
 
-**[wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)** - For trajectory control (starts `manipulator_state` + `follow_joint_trajectory_server`)
+**[wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)** - For trajectory control (starts `joint_state_broadcaster` + `joint_trajectory_controller`)
 
 **[wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py)** - For low-level axis control (starts `wmx_ros2_general_node`)
 
 ## MoveIt2 Integration
 
-To connect with `movensys_isaac_manipulator`, change action name in `follow_joint_trajectory_server.cpp:80`:
+To connect with `movensys-manipulator`, change action name in `config/cr3a_manipulator_config.yaml`:
 
-```cpp
-"/movensys_manipulator_arm_controller/follow_joint_trajectory"
+```
+joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_trajectory
 ```
 
 ## Documentation
@@ -87,10 +85,10 @@ To connect with `movensys_isaac_manipulator`, change action name in `follow_join
 To quickly set up the WMX ROS2 package and explore its key features, follow these steps:
 | Doc | Description |
 |-----|-------------|
-| [doc/1_setup.md](doc/1_setup.md) | Environment setup, dependencies, build |
-| [doc/2_run_wmx_ros2_package.md](doc/2_run_wmx_ros2_package.md) | Run the general package |
-| [doc/3_launch_cr3a_manipulator.md](doc/3_launch_cr3a_manipulator.md) | Launch the CR3A manipulator |
-| [doc/4_service_reference.md](doc/4_service_reference.md) | ROS2 service reference with startup sequence |
+| [doc/first_setup.md](doc/first_setup.md) | Environment setup, dependencies, build |
+| [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) | Launch the Dobot CR3A manipulator |
+| [doc/launch_wmx_ros2_general_nodes.md](doc/launch_wmx_ros2_general_nodes.md) | Launch the wmx general nodes  |
+| [doc/reference_wmx_ros2_general_nodes.md](doc/reference_wmx_ros2_general_nodes.md) | ROS2 service/topic reference with startup sequence |
 
 For the complete and up-to-date documentation, please visit the official site:
 **[WMX ROS2 Documentation](https://movensys.github.io/wmx-ros2-doc/)**

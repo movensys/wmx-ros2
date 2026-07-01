@@ -12,8 +12,8 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
 
     pkg_share = get_package_share_directory('wmx_ros2_package')
-    manipulator_config = os.path.join(pkg_share, 'config', 'cr3a_manipulator_config.yaml')
-    wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr3a_wmx_parameters.xml')
+    manipulator_config = os.path.join(pkg_share, 'config', 'cr5a_manipulator_config.yaml')
+    wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr5a_wmx_parameters.xml')
 
     start_wmx_ros2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -44,15 +44,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    start_gripper_controller = Node(
-        package='wmx_ros2_package',
-        executable='gripper_controller',
-        name='gripper_controller',
-        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
-        additional_env={'MANIPULATOR_MODEL': 'dobot_cr3a'},
-        output='screen',
-    )
-
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
@@ -62,5 +53,4 @@ def generate_launch_description():
         start_wmx_ros2_general_nodes,
         start_joint_state_broadcaster,
         start_joint_trajectory_controller,
-        start_gripper_controller
     ])

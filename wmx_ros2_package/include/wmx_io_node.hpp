@@ -1,5 +1,8 @@
-#ifndef WMX_IO_NODE_HPP
-#define WMX_IO_NODE_HPP
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
+#ifndef WMX_IO_NODE_HPP_
+#define WMX_IO_NODE_HPP_
 
 #include <iostream>
 #include <memory>
@@ -19,7 +22,6 @@
 
 using std::placeholders::_1;
 using std::placeholders::_2;
-using namespace wmx3Api;
 
 class WmxIoNode : public rclcpp::Node
 {
@@ -33,8 +35,8 @@ private:
   char errString_[256];
   char buffer_[512];
 
-  WMX3Api wmx3Lib_;
-  std::unique_ptr<Io> wmxIo_;
+  wmx3Api::WMX3Api wmx3Lib_;
+  std::unique_ptr<wmx3Api::Io> wmxIo_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
@@ -67,4 +69,4 @@ private:
     std::shared_ptr<wmx_ros2_message::srv::SetIoBytes::Response> response);
 };
 
-#endif  // WMX_IO_NODE_HPP
+#endif  // WMX_IO_NODE_HPP_

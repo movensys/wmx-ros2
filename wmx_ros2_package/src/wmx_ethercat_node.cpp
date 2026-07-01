@@ -1,9 +1,14 @@
+// Copyright 2026 Movensys Corporation.
+// Licensed under the MIT License. See LICENSE.txt for details.
+
 #include "wmx_ethercat_node.hpp"
+
+using wmx3Api::DeviceType;
+using wmx3Api::ErrorCode;
 
 WmxEtherCatNode::WmxEtherCatNode()
 : Node("wmx_ethercat_node"), wmxEcat_(&wmx3Lib_)
 {
-
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/engine/ready", ready_qos,
@@ -78,7 +83,6 @@ void WmxEtherCatNode::getNetworkState(
   const std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::EcatGetNetworkState::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "EtherCAT node not initialized. Engine not ready.";
@@ -156,7 +160,6 @@ void WmxEtherCatNode::registerRead(
   const std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::EcatRegisterRead::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "EtherCAT node not initialized. Engine not ready.";
@@ -217,7 +220,6 @@ void WmxEtherCatNode::resetStatistics(
   const std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::EcatResetStatistics::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "EtherCAT node not initialized. Engine not ready.";
@@ -266,7 +268,6 @@ void WmxEtherCatNode::startHotconnect(
   const std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Request> request,
   std::shared_ptr<wmx_ros2_message::srv::EcatStartHotconnect::Response> response)
 {
-
   if (!initialized_) {
     response->success = false;
     response->message = "EtherCAT node not initialized. Engine not ready.";
