@@ -12,8 +12,8 @@
         <plugin>wmx_ros2_control/WmxSystemHardware</plugin>
         <param name="device_name">wmx_diffbot_control</param>
         <param name="wmx_param_file">${wmx_param_file}</param>
-        <param name="acc_time_ms">1000.0</param>
-        <param name="dec_time_ms">1000.0</param>
+        <param name="acc_time_ms">1.0</param>
+        <param name="dec_time_ms">1.0</param>
       </hardware>
 
       <joint name="drivewheel_left_joint">

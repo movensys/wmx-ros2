@@ -12,6 +12,7 @@
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "pluginlib/class_list_macros.hpp"
+#include "rclcpp/logging.hpp"
 
 #ifndef WMX3_SDK_PATH
 #define WMX3_SDK_PATH "/opt/wmx3/"
@@ -208,10 +209,25 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_configure(
 hardware_interface::CallbackReturn WmxSystemHardware::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  if (!engineCommunicating()) {
+  // wmx_engine_node is launched alongside the controller_manager and takes ~1s
+  // to bring EtherCAT to Communicating. Wait for it (bounded) rather than
+  // failing activation outright, which aborts ros2_control_node.
+  bool communicating = false;
+  for (int attempt = 1; attempt <= max_device_retries_; ++attempt) {
+    if (engineCommunicating()) {
+      communicating = true;
+      break;
+    }
+    RCLCPP_WARN(
+      logger_, "WMX engine not Communicating yet, waiting... (%d/%d)",
+      attempt, max_device_retries_);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+  if (!communicating) {
     RCLCPP_ERROR(
       logger_,
-      "WMX engine is not Communicating. Start wmx_engine_node and EtherCAT communication first.");
+      "WMX engine is not Communicating after %d s. Start wmx_engine_node and "
+      "EtherCAT communication first.", max_device_retries_);
     return hardware_interface::CallbackReturn::ERROR;
   }
 
