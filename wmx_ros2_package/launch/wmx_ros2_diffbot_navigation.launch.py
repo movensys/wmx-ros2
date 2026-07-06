@@ -12,8 +12,8 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
 
     pkg_share = get_package_share_directory('wmx_ros2_package')
-    manipulator_config = os.path.join(pkg_share, 'config', 'cr3a_manipulator_config.yaml')
-    wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr3a_wmx_parameters.xml')
+    diffbot_config = os.path.join(pkg_share, 'config', 'diffbot_navigation_config.yaml')
+    wmx_param_file_path = os.path.join(pkg_share, 'config', 'diffbot_wmx_parameters.xml')
 
     start_wmx_ros2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -26,30 +26,21 @@ def generate_launch_description():
         package='wmx_ros2_package',
         executable='joint_state_broadcaster',
         name='joint_state_broadcaster',
-        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
+        parameters=[diffbot_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
 
-    start_joint_trajectory_controller = Node(
+    start_differential_drive_controller = Node(
         package='wmx_ros2_package',
-        executable='joint_trajectory_controller',
-        name='joint_trajectory_controller',
+        executable='differential_drive_controller',
+        name='differential_drive_controller',
         parameters=[
-            manipulator_config,
+            diffbot_config,
             {
                 'use_sim_time': use_sim_time,
                 'wmx_param_file_path': wmx_param_file_path,
             },
         ],
-        output='screen',
-    )
-
-    start_gripper_controller = Node(
-        package='wmx_ros2_package',
-        executable='gripper_controller',
-        name='gripper_controller',
-        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
-        additional_env={'MANIPULATOR_MODEL': 'dobot_cr3a'},
         output='screen',
     )
 
@@ -61,6 +52,5 @@ def generate_launch_description():
         ),
         start_wmx_ros2_general_nodes,
         start_joint_state_broadcaster,
-        start_joint_trajectory_controller,
-        start_gripper_controller
+        start_differential_drive_controller,
     ])

@@ -1,0 +1,46 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+    # use_sim_time is set by the launch file (use_sim_time arg) and
+    # auto-propagated to all loaded controllers. Do not hardcode here.
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    differential_drive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+differential_drive_controller:
+  ros__parameters:
+    left_wheel_names: ["drivewheel_left_joint"]
+    right_wheel_names: ["drivewheel_right_joint"]
+
+    wheel_separation: 0.55
+    wheel_radius: 0.095
+
+    wheel_separation_multiplier: 1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    publish_rate: 100.0
+    odom_frame_id: odom
+    base_frame_id: base_link
+    enable_odom_tf: false
+    open_loop: false
+    position_feedback: true
+
+    use_stamped_vel: true
+    cmd_vel_timeout: 0.25
+
+    # Match the wmx_ros2_package differential_drive_controller (the reference that
+    # works well): it feeds cmd_vel straight to the wheels with no smoothing, and the
+    # WmxSystemHardware StartVel profile (acc/dec_time_ms = 1 ms) does the accel/brake.
+    # diff_drive_controller enables velocity/acceleration/jerk limiters by default,
+    # and with max_deceleration / max_jerk unset (NaN) braking ramps poorly. Disable
+    # all limiters so this controller is a pure passthrough.
+    linear.x.has_velocity_limits: false
+    linear.x.has_acceleration_limits: false
+    linear.x.has_jerk_limits: false
+    angular.z.has_velocity_limits: false
+    angular.z.has_acceleration_limits: false
+    angular.z.has_jerk_limits: false

@@ -19,7 +19,7 @@
 
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
-using wmx3Api::Io;
+using wmx3Api::IO;
 using wmx3Api::WMX3Api;
 
 class GripperController : public rclcpp::Node {
@@ -40,7 +40,7 @@ private:
   bool initialized_ = false;
 
   WMX3Api wmx3Lib_;
-  Io Wmx3Lib_Io_;
+  IO Wmx3Lib_Io_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
@@ -100,7 +100,7 @@ void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg) {
 
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
-  Wmx3Lib_Io_ = Io(&wmx3Lib_);
+  Wmx3Lib_Io_ = IO(&wmx3Lib_);
 
   const char* manipulatorModel = std::getenv("MANIPULATOR_MODEL");
   if (manipulatorModel && std::string(manipulatorModel) == "dobot_cr3a") {

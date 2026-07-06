@@ -25,6 +25,7 @@
 using wmx3Api::AdvancedMotion;
 using wmx3Api::AdvMotion;
 using wmx3Api::AxisSelection;
+using wmx3Api::Config;
 using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
@@ -42,6 +43,7 @@ public:
 
   std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
+  std::string wmxParamFilePath_;
 
   int err_;
   char errString_[256];
@@ -56,6 +58,7 @@ private:
   AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
   double time_spl[MAX_TRAJ_POINTS];
   AxisSelection axisSel;
+  Config::AxisParam axisParam_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
@@ -73,6 +76,8 @@ private:
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle);
 
   void setRosParameter();
+  void setWmxParam(char * path);
+  void getWmxParam();
   void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
   void logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory);
 };
@@ -140,6 +145,9 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
   wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
 
+  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
+  getWmxParam();
+
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
     this,
     jointTrajectoryAction_,
@@ -156,14 +164,51 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is ready");
 }
 
+void JointTrajectoryController::setWmxParam(char * path)
+{
+  err_ = wmx3LibCm_.config->ImportAndSetAll(path);
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
+  } else {
+    RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
+  }
+}
+
+void JointTrajectoryController::getWmxParam()
+{
+  err_ = wmx3LibCm_.config->GetAxisParam(&axisParam_);
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
+  } else {
+    for (int axis : jointAxes_) {
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, denominator: %f", axis,
+        axisParam_.gearRatioDenominator[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, polarity: %d", axis,
+        (int)axisParam_.axisPolarity[axis]);
+      RCLCPP_INFO(
+        this->get_logger(), "axis: %d, abs encoder: %d", axis,
+        axisParam_.absoluteEncoderMode[axis]);
+      RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, axisParam_.axisCommandMode[axis]);
+    }
+  }
+}
+
 void JointTrajectoryController::setRosParameter()
 {
   this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
   this->declare_parameter<std::string>(
     "joint_trajectory_action", "/joint_trajectory_action/no_param");
+  this->declare_parameter<std::string>("wmx_param_file_path", "/joint_trajectory/no_param");
 
   this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
+  this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
   std::string joint_axes_str;
   for (size_t i = 0; i < jointAxes_.size(); ++i) {
@@ -174,6 +219,7 @@ void JointTrajectoryController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", joint_axes_str.c_str());
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
+  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 

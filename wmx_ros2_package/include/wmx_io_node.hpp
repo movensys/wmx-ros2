@@ -36,7 +36,7 @@ private:
   char buffer_[512];
 
   wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::Io> wmxIo_;
+  std::unique_ptr<wmx3Api::IO> wmxIo_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
