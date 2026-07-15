@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot name="movensys_navigation" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="wmx_param_file"
+             default="$(find wmx_r2_package)/config/diffbot_wmx_parameters.xml"/>
+
+  <xacro:include filename="$(find movensys_navigation_description)/urdf/diffbot/diffbot.xacro"/>
+  <xacro:include filename="$(find movensys_navigation_description)/urdf/diffbot/perception.xacro"/>
+  <xacro:include filename="$(find wmx_r2_control)/urdf/diffbot.wmx.ros2_control.xacro"/>
+
+  <xacro:diffbot/>
+
+  <xacro:diffbot_wmx_r2_control wmx_param_file="$(arg wmx_param_file)"/>
+
+</robot>
