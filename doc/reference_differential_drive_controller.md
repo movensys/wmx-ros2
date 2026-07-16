@@ -1,6 +1,6 @@
 # Differential Drive Controller Reference
 
-Standalone rclcpp node (`wmx_ros2_package/src/differential_drive_controller.cpp`)
+Standalone rclcpp node (`wmx_r2_package/src/differential_drive_controller.cpp`)
 that drives two WMX3 wheel axes directly via CoreMotion `StartVel` and exposes the
 autonomy contract (command velocity in, odometry feedback out). The WMX/ROS-free
 math (kinematics, dead-reckoning, deltas, accel EMA) lives in the unit-tested
@@ -177,7 +177,7 @@ exit codes.
 
 The node does **not** start communication, clear alarms, or switch servos on —
 that is owned by the engine/general nodes (see
-`reference_wmx_ros2_general_nodes.md` for the service sequence).
+`reference_wmx_r2_general_nodes.md` for the service sequence).
 
 **Control loop** (every `1/rate`, single `GetStatus` per cycle):
 
@@ -214,7 +214,7 @@ composable component — run it as its own process, one per robot.
 ## Configuration files
 
 A deployment consists of two files plus the launch wiring
-(example: `launch/wmx_ros2_diffbot_navigation.launch.py`):
+(example: `launch/wmx_r2_diffbot_navigation.launch.py`):
 
 1. **ROS parameter YAML** — `config/diffbot_navigation_config.yaml`, key
    `differential_drive_controller.ros__parameters` (all tables above).
@@ -268,12 +268,12 @@ What the Toolkit needs to template per robot / per deployment:
 
 ## Build
 
-`wmx_ros2_package` compiles against the WMX3 SDK at the CMake cache path
+`wmx_r2_package` compiles against the WMX3 SDK at the CMake cache path
 `WMX3_SDK_PATH` (default `/opt/wmx3`); the same path (with a trailing `/`
 appended by CMake) is compiled in and passed to `CreateDevice` at runtime.
 The diff-drive logic is header-only (`include/differential_drive_controller.hpp`,
 no WMX/ROS deps) and unit-tested via 4 gtest suites in this package —
-`colcon test --packages-select wmx_ros2_package`.
+`colcon test --packages-select wmx_r2_package`.
 
 At **runtime** the dynamic linker must be able to find the SDK's shared
 libraries (`libimdll.so` etc.): either an `ld.so.conf.d` entry for

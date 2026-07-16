@@ -1,4 +1,4 @@
-# WMX ROS2 Application
+# WMX R2 Application
 
 ROS2 interface for [WMX3](https://www.movensys.com/en/products/software_motion_control/wmx_en), a real-time EtherCAT motion control SDK by Movensys, enabling control of industrial robots and multi-axis systems from the ROS2 ecosystem.
 
@@ -6,7 +6,7 @@ This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, 
 
 ## Architecture
 
-### Low-level Control ([wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py))
+### Low-level Control ([wmx_r2_general.launch.py](wmx_r2_package/launch/wmx_r2_general_package.launch.py))
 
 ```mermaid
 ---
@@ -25,7 +25,7 @@ flowchart LR;
 ```
 
 
-### Trajectory Control ([wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py))
+### Trajectory Control ([wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py))
 
 ```mermaid
 ---
@@ -48,9 +48,9 @@ flowchart LR;
 
 ## Packages
 
-**wmx_ros2_message** - Custom messages and services for axis control
+**wmx_r2_message** - Custom messages and services for axis control
 
-**wmx_ros2_package** - Main nodes for robot control
+**wmx_r2_package** - Main nodes for robot control
 
 ## Nodes
 
@@ -68,9 +68,9 @@ flowchart LR;
 
 ## Launch Files
 
-**[wmx_ros2_cr3a_manipulator.launch.py](wmx_ros2_package/launch/wmx_ros2_cr3a_manipulator.launch.py)** - For trajectory control (starts `joint_state_broadcaster` + `joint_trajectory_controller`)
+**[wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py)** - For trajectory control (starts `joint_state_broadcaster` + `joint_trajectory_controller`)
 
-**[wmx_ros2_general.launch.py](wmx_ros2_package/launch/wmx_ros2_general_package.launch.py)** - For low-level axis control (starts `wmx_ros2_general_node`)
+**[wmx_r2_general.launch.py](wmx_r2_package/launch/wmx_r2_general_package.launch.py)** - For low-level axis control (starts `wmx_r2_general_node`)
 
 ## MoveIt2 Integration
 
@@ -82,18 +82,18 @@ joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_traje
 
 ## Documentation
 
-To quickly set up the WMX ROS2 package and explore its key features, follow these steps:
+To quickly set up the WMX R2 package and explore its key features, follow these steps:
 | Doc | Description |
 |-----|-------------|
 | [doc/first_setup.md](doc/first_setup.md) | Environment setup, dependencies, build |
 | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) | Launch the Dobot CR3A manipulator |
-| [doc/launch_wmx_ros2_general_nodes.md](doc/launch_wmx_ros2_general_nodes.md) | Launch the wmx general nodes  |
-| [doc/reference_wmx_ros2_general_nodes.md](doc/reference_wmx_ros2_general_nodes.md) | ROS2 service/topic reference with startup sequence |
+| [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) | Launch the wmx general nodes  |
+| [doc/reference_wmx_r2_general_nodes.md](doc/reference_wmx_r2_general_nodes.md) | ROS2 service/topic reference with startup sequence |
 
 For the complete and up-to-date documentation, please visit the official site:
-**[WMX ROS2 Documentation](https://movensys.github.io/wmx-ros2-doc/)**
+**[WMX R2 Documentation](https://movensys.github.io/wmx-r2-doc/)**
 
 ## Demo Videos
 
-### Physical AI powered by WMX ROS2 on NVIDIA Jetson Thor
+### Physical AI powered by WMX R2 on NVIDIA Jetson Thor
 [![“WMX Next” with NVIDIA Isaac](images/wmx_gtc_presentation.png)](https://www.youtube.com/watch?v=h-G9vtAGAIU)
