@@ -22,7 +22,7 @@ This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, 
 
 > **Note:** This package controls real motion hardware and requires a real-time environment. It is not a simulator.
 
-- **WMX Linux** (real-time patched) with the WMX3 SDK pre-installed (see [doc/first_setup.md](doc/first_setup.md)).
+- **WMX Linux** (real-time patched) with the WMX3 SDK pre-installed (see [WMX installation](https://movensys.github.io/wmx-r2-doc/getting_started/install_wmx3.html)).
 - EtherCAT-capable hardware (servo drives / IO reachable from the WMX3 master).
 - ROS2 **Humble** or **Jazzy**.
 - `rmw_cyclonedds` as the RMW implementation.
