@@ -1,6 +1,6 @@
 # WMX R2 Application
 
-[![CI](https://github.com/movensys/wmx-ros2/actions/workflows/ci.yml/badge.svg)](https://github.com/movensys/wmx-ros2/actions/workflows/ci.yml)
+[![CI](https://github.com/movensys/wmx-r2/actions/workflows/ci.yml/badge.svg)](https://github.com/movensys/wmx-r2/actions/workflows/ci.yml)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy-22314E?logo=ros&logoColor=white)](https://docs.ros.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.txt)
 [![Docs](https://img.shields.io/badge/docs-wmx--r2-brightgreen)](https://movensys.github.io/wmx-r2-doc/)
