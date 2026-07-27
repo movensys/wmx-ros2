@@ -166,10 +166,31 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
 
 void JointTrajectoryController::setWmxParam(char * path)
 {
-  err_ = wmx3LibCm_.config->ImportAndSetAll(path);
+  Config::SystemParam sysParamError;
+  Config::AxisParam axisParamError;
+  err_ = wmx3LibCm_.config->ImportAndSetAll(path, &sysParamError, &axisParamError);
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
+    for (int axis : jointAxes_) {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "  [axis %d] AxisParam error flags: gearNum=%.0f gearDen=%.6f polarity=%d "
+        "absEnc=%d maxSpd=%.0f maxSpdUnitNum=%.6f maxSpdUnitDen=%.6f singleTurnMode=%d "
+        "singleTurnCnt=%u maxTrq=%.1f posTrq=%.1f negTrq=%.1f axisUnit=%.6f cmdMode=%d",
+        axis,
+        axisParamError.gearRatioNumerator[axis], axisParamError.gearRatioDenominator[axis],
+        static_cast<int>(axisParamError.axisPolarity[axis]),
+        static_cast<int>(axisParamError.absoluteEncoderMode[axis]),
+        axisParamError.maxMotorSpeed[axis],
+        axisParamError.maxMotorSpeedUnitNumerator[axis],
+        axisParamError.maxMotorSpeedUnitDenominator[axis],
+        static_cast<int>(axisParamError.singleTurnMode[axis]),
+        axisParamError.singleTurnEncoderCount[axis],
+        axisParamError.maxTrqLimit[axis], axisParamError.positiveTrqLimit[axis],
+        axisParamError.negativeTrqLimit[axis], axisParamError.axisUnit[axis],
+        static_cast<int>(axisParamError.axisCommandMode[axis]));
+    }
   } else {
     RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
   }
