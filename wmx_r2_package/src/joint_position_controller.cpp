@@ -36,6 +36,7 @@ public:
 private:
   bool initialized_ = false;
   std::atomic<bool> initializing_{false};
+  std::atomic<bool> in_execution_{false};
 
   WMX3Api wmx3Lib_;
   std::unique_ptr<CoreMotion> wmx3LibCm_;
@@ -56,12 +57,14 @@ private:
   std::map<std::string, int> axisByName_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr execActiveSub_;
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr jointTrajectorySub_;
 
   std::thread init_thread_;
 
   void setRosParameter();
   void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+  void onExecActive(const std_msgs::msg::Bool::SharedPtr msg);
   void runInitSequence();
   void jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
   bool buildCommand(const trajectory_msgs::msg::JointTrajectory & traj);
@@ -78,6 +81,10 @@ JointPositionController::JointPositionController()
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/engine/ready", ready_qos,
     std::bind(&JointPositionController::onEngineReady, this, _1));
+
+  execActiveSub_ = this->create_subscription<std_msgs::msg::Bool>(
+    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local(),
+    std::bind(&JointPositionController::onExecActive, this, _1));
 
   RCLCPP_INFO(this->get_logger(), "joint_position_controller waiting for engine...");
 }
@@ -163,6 +170,16 @@ void JointPositionController::onEngineReady(const std_msgs::msg::Bool::SharedPtr
 
   // Spawn dedicated thread so the blocking retry loop doesn't block executor
   init_thread_ = std::thread(&JointPositionController::runInitSequence, this);
+}
+
+void JointPositionController::onExecActive(const std_msgs::msg::Bool::SharedPtr msg)
+{
+  if (in_execution_.exchange(msg->data) == msg->data) {
+    return;
+  }
+  RCLCPP_INFO(
+    this->get_logger(), "Servo commands %s (move_group execution %s)",
+    msg->data ? "blocked" : "allowed", msg->data ? "started" : "finished");
 }
 
 void JointPositionController::runInitSequence()
@@ -275,7 +292,7 @@ bool JointPositionController::buildCommand(const trajectory_msgs::msg::JointTraj
 void JointPositionController::jointTrajectoryCallback(
   const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
-  if (msg->points.empty() || !buildCommand(*msg)) {
+  if (msg->points.empty() || in_execution_.load() || !buildCommand(*msg)) {
     return;
   }
 
