@@ -51,6 +51,14 @@ target_link_libraries(joint_trajectory_controller coremotionapi advancedmotionap
 target_link_directories(joint_trajectory_controller PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(joint_trajectory_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
+add_executable(joint_position_controller src/joint_position_controller.cpp)
+ament_target_dependencies(joint_position_controller
+  rclcpp std_msgs trajectory_msgs)
+target_include_directories(joint_position_controller PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
+target_link_libraries(joint_position_controller coremotionapi wmx3api imdll)
+target_link_directories(joint_position_controller PRIVATE ${WMX3_SDK_PATH}/lib)
+target_compile_definitions(joint_position_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+
 add_executable(differential_drive_controller src/differential_drive_controller.cpp)
 ament_target_dependencies(differential_drive_controller
   rclcpp std_msgs std_srvs geometry_msgs nav_msgs
@@ -98,6 +106,7 @@ target_compile_definitions(wmx_ethercat_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_P
 install(TARGETS
   joint_state_broadcaster
   joint_trajectory_controller
+  joint_position_controller
   differential_drive_controller
   gripper_controller
   wmx_engine_node
