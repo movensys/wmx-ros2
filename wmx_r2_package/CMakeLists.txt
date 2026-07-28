@@ -140,6 +140,9 @@ if(BUILD_TESTING)
   add_launch_test(test/test_ethercat_node.py
     TIMEOUT 60
   )
+  add_launch_test(test/test_joint_position_controller.py
+    TIMEOUT 120
+  )
 
   # C++ unit tests for the diff-drive logic (header-only, WMX/ROS-free) declared
   # in include/differential_drive_controller.hpp.
