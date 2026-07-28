@@ -15,10 +15,10 @@ def generate_launch_description():
     ctrl_share = get_package_share_directory('wmx_r2_control')
     wmx_share = get_package_share_directory('wmx_r2_package')
 
-    urdf_xacro = os.path.join(ctrl_share, 'urdf', 'cr3a.wmx.urdf.xacro')
-    controllers = os.path.join(ctrl_share, 'config', 'cr3a_controllers.yaml')
-    wmx_param_file = os.path.join(wmx_share, 'config', 'cr3a_wmx_parameters.xml')
-    manipulator_config = os.path.join(wmx_share, 'config', 'cr3a_manipulator_config.yaml')
+    urdf_xacro = os.path.join(ctrl_share, 'urdf', 'cr5a.wmx.urdf.xacro')
+    controllers = os.path.join(ctrl_share, 'config', 'cr5a_controllers.yaml')
+    wmx_param_file = os.path.join(wmx_share, 'config', 'cr5a_wmx_parameters.xml')
+    manipulator_config = os.path.join(wmx_share, 'config', 'cr5a_manipulator_config.yaml')
 
     robot_description = {
         'robot_description': ParameterValue(
@@ -78,15 +78,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    gripper_controller = Node(
-        package='wmx_r2_package',
-        executable='gripper_controller',
-        name='gripper_controller',
-        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
-        additional_env={'MANIPULATOR_MODEL': 'dobot_cr3a'},
-        output='screen',
-    )
-
     isaacsim_joint_command_relay = Node(
         package='topic_tools',
         executable='relay',
@@ -108,6 +99,5 @@ def generate_launch_description():
         joint_state_broadcaster_spawner,
         joint_trajectory_controller,
         joint_position_controller,
-        gripper_controller,
         isaacsim_joint_command_relay,
     ])
