@@ -3,6 +3,8 @@
 
 #include "wmx_engine_node.hpp"
 
+#include <cinttypes>
+
 using std::placeholders::_1;
 using std::placeholders::_2;
 
@@ -64,9 +66,9 @@ void WmxEngineNode::publishReady()
 void WmxEngineNode::startEngine()
 {
   const int core = static_cast<int>(this->get_parameter("engine_core").as_int());
-  const long long affinityMask = this->get_parameter("engine_affinity_mask").as_int();
+  const int64_t affinityMask = this->get_parameter("engine_affinity_mask").as_int();
   RCLCPP_INFO(
-    this->get_logger(), "Starting engine... (core=%d, affinityMask=0x%llx)",
+    this->get_logger(), "Starting engine... (core=%d, affinityMask=0x%" PRIx64 ")",
     core, affinityMask);
   unsigned int timeout = 10000;
   int maxRetries = 5;
@@ -294,7 +296,7 @@ void WmxEngineNode::setEngine(
   char buffer[512];
   if (request->data) {
     const int core = static_cast<int>(this->get_parameter("engine_core").as_int());
-    const long long affinityMask = this->get_parameter("engine_affinity_mask").as_int();
+    const int64_t affinityMask = this->get_parameter("engine_affinity_mask").as_int();
     err = wmx3Lib_.CreateDevice(
       request->path.c_str(), wmx3Api::DeviceType::DeviceTypeNormal, timeout, core, affinityMask);
     if (err != wmx3Api::ErrorCode::None) {
