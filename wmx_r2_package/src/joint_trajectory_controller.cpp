@@ -1,6 +1,7 @@
 // Copyright 2026 Movensys Corporation.
 // Licensed under the MIT License. See LICENSE.txt for details.
 
+#include <functional>
 #include <memory>
 #include <thread>
 #include <sstream>
@@ -16,11 +17,18 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 
 #include "control_msgs/action/follow_joint_trajectory.hpp"
+#include "control_msgs/msg/joint_jog.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 #include "std_msgs/msg/bool.hpp"
 
 #define MAX_TRAJ_POINTS 1000
+
+struct ScopeExit
+{
+  std::function<void()> fn;
+  ~ScopeExit() {fn();}
+};
 
 using wmx3Api::AdvancedMotion;
 using wmx3Api::AdvMotion;
@@ -62,6 +70,8 @@ private:
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
+  rclcpp::Publisher<control_msgs::msg::JointJog>::SharedPtr servoResetPub_;
 
   // Action server callback declarations
   rclcpp_action::GoalResponse handle_goal(
@@ -80,6 +90,8 @@ private:
   void getWmxParam();
   void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
   void logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory);
+  void publishExecActive(bool active);
+  void resetServo(const std::vector<std::string> & joint_names);
 };
 
 JointTrajectoryController::JointTrajectoryController()
@@ -91,6 +103,13 @@ JointTrajectoryController::JointTrajectoryController()
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/engine/ready", ready_qos,
     std::bind(&JointTrajectoryController::onEngineReady, this, std::placeholders::_1));
+
+  servoResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
+    "/servo_node/delta_joint_cmds", 10);
+
+  execActivePub_ = this->create_publisher<std_msgs::msg::Bool>(
+    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local());
+  publishExecActive(false);
 
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller waiting for engine...");
 }
@@ -268,10 +287,33 @@ void JointTrajectoryController::handle_accepted(std::shared_ptr<GoalHandleFJT> g
     goal_handle}.detach();
 }
 
+void JointTrajectoryController::publishExecActive(bool active)
+{
+  std_msgs::msg::Bool msg;
+  msg.data = active;
+  execActivePub_->publish(msg);
+}
+
+void JointTrajectoryController::resetServo(const std::vector<std::string> & joint_names)
+{
+  control_msgs::msg::JointJog jog;
+  jog.header.stamp = this->get_clock()->now();
+  jog.joint_names = joint_names;
+  jog.velocities.assign(joint_names.size(), 0.0);
+  servoResetPub_->publish(jog);
+}
+
 void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_handle)
 {
   const auto goal = goal_handle->get_goal();
   const auto & trajectory = goal->trajectory;
+
+  publishExecActive(true);
+  const auto servo_joint_names = trajectory.joint_names;
+  ScopeExit on_exit{[this, servo_joint_names]() {
+      publishExecActive(false);
+      resetServo(servo_joint_names);
+    }};
 
   int num_points = trajectory.points.size();
 

@@ -107,6 +107,7 @@ flowchart LR;
 | `wmx_io_node` | IO control for input/output bits and bytes |
 | `wmx_ethercat_node` | EtherCAT master operations and slave management |
 | `joint_trajectory_controller` | Receives trajectory actions and executes via WMX3 C-Spline |
+| `joint_position_controller` | Follows MoveIt Servo's streamed `JointTrajectory` via WMX3 linear interpolation, so every axis arrives at the same instant |
 | `joint_state_broadcaster` | Publishes joint feedback from the WMX3 encoder to `/joint_states` |
 | `gripper_controller` | Gripper command handling for manipulators |
 
@@ -115,7 +116,7 @@ flowchart LR;
 | Launch file | Purpose | Nodes started |
 |-------------|---------|---------------|
 | [wmx_r2_general_nodes.launch.py](wmx_r2_package/launch/wmx_r2_general_nodes.launch.py) | Low-level axis / IO / EtherCAT control | `wmx_engine_node`, `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` |
-| [wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py) | Dobot CR3A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller`, `gripper_controller` |
+| [wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py) | Dobot CR3A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller`, `joint_position_controller`, `gripper_controller` |
 | [wmx_r2_cr5a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr5a_manipulator.launch.py) | Dobot CR5A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller` |
 
 ## Supported Robots

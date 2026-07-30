@@ -17,6 +17,15 @@ joint_trajectory_controller:
     joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_trajectory
     wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
+joint_position_controller:
+  ros__parameters:
+    joint_axes: [0, 1, 2, 3, 4, 5]
+    joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    joint_trajectory_topic: /movensys_manipulator_arm_controller/joint_trajectory
+    accel_ratio: 0.3
+    default_velocity: 0.5
+    min_step: 0.001
+
 gripper_controller:
   ros__parameters:
     wmx_gripper_topic: /wmx/set_gripper

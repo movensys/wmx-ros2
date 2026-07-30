@@ -44,6 +44,14 @@ def generate_launch_description():
         output='screen',
     )
 
+    start_joint_position_controller = Node(
+        package='wmx_r2_package',
+        executable='joint_position_controller',
+        name='joint_position_controller',
+        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
+        output='screen',
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
@@ -53,4 +61,5 @@ def generate_launch_description():
         start_wmx_r2_general_nodes,
         start_joint_state_broadcaster,
         start_joint_trajectory_controller,
+        start_joint_position_controller,
     ])
