@@ -50,6 +50,14 @@ WmxCoreMotionNode::WmxCoreMotionNode()
     "wmx/axis/homing",
     std::bind(&WmxCoreMotionNode::setHoming, this, _1, _2));
 
+  stopAxisService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
+    "wmx/axis/stop",
+    std::bind(&WmxCoreMotionNode::stopAxes, this, _1, _2));
+
+  jogTimeoutMs_ = this->declare_parameter("jog_timeout_ms", 200.0);
+  jogRunTimeMs_ = this->declare_parameter("jog_run_time_ms", 2000.0);
+  jogJerkRatio_ = this->declare_parameter("jog_jerk_ratio", 0.75);
+
   loadParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
     "wmx/params/load",
     std::bind(&WmxCoreMotionNode::loadWmxParams, this, _1, _2));
@@ -66,7 +74,18 @@ WmxCoreMotionNode::~WmxCoreMotionNode()
   if (axisStateTimer_) {
     axisStateTimer_->cancel();
   }
+  if (jogWatchdogTimer_) {
+    jogWatchdogTimer_->cancel();
+  }
   if (initialized_) {
+    {
+      std::lock_guard<std::mutex> lock(jogMutex_);
+      for (const auto & entry : jogState_) {
+        wmx3LibCm_->motion->Stop(entry.first);
+      }
+      jogState_.clear();
+    }
+
     err_ = wmx3Lib_.CloseDevice();
     if (err_ != ErrorCode::None) {
       wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
@@ -122,9 +141,17 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
     "wmx/axis/position/relative", 1,
     std::bind(&WmxCoreMotionNode::axisPoseRelativeCallback, this, _1));
 
+  axisJogSub_ = this->create_subscription<wmx_r2_message::msg::AxisVelocity>(
+    "wmx/axis/jog", 1,
+    std::bind(&WmxCoreMotionNode::axisJogCallback, this, _1));
+
   axisStateTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / rate_),
     std::bind(&WmxCoreMotionNode::axisStateStep, this));
+
+  jogWatchdogTimer_ = this->create_wall_timer(
+    std::chrono::milliseconds(20),
+    std::bind(&WmxCoreMotionNode::jogWatchdogStep, this));
 
   initialized_ = true;
 
@@ -238,6 +265,184 @@ void WmxCoreMotionNode::axisVelCallback(const wmx_r2_message::msg::AxisVelocity:
         msg->index[i], err_, errString_);
     }
   }
+}
+
+// Jog command. The publisher (keyboard/joystick teleop, CLI, ...) must keep
+// republishing while the operator holds the control; jogWatchdogStep() stops
+// the axis once refreshes stop arriving. Velocity sign selects the direction.
+void WmxCoreMotionNode::axisJogCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg)
+{
+  if (!initialized_) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Jog ignored: CoreMotion not initialized.");
+    return;
+  }
+
+  const size_t axis_count = msg->index.size();
+  if (msg->velocity.size() != axis_count ||
+    msg->acc.size() != axis_count ||
+    msg->dec.size() != axis_count)
+  {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Jog ignored: index/velocity/acc/dec must be the same length.");
+    return;
+  }
+
+  const rclcpp::Time deadline =
+    this->now() + rclcpp::Duration::from_nanoseconds(
+    static_cast<int64_t>(jogTimeoutMs_ * 1e6));
+
+  for (size_t i = 0; i < axis_count; ++i) {
+    const int axis = msg->index[i];
+    const double velocity = msg->velocity[i];
+
+    if (velocity == 0.0) {
+      std::lock_guard<std::mutex> lock(jogMutex_);
+      if (jogState_.erase(axis) > 0) {
+        stopAxis(axis);
+      }
+      continue;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(jogMutex_);
+      auto it = jogState_.find(axis);
+      if (it != jogState_.end() && it->second.velocity == velocity) {
+        // Same direction and speed: only refresh the dead-man deadline.
+        // Re-issuing StartJog here would override a jog with a jog, which the
+        // WMX3 manual does not define. It also means that once jog_run_time_ms
+        // elapses the axis stays stopped until the operator releases and
+        // presses again, which is the intended behavior.
+        it->second.deadline = deadline;
+        continue;
+      }
+    }
+
+    // Same profile WOS uses for its jog buttons. A run time requires a
+    // time-based profile: Trapezoidal is rejected with ProfileTypeNotSupported.
+    // acc/dec stay accelerations on the wire and are converted to ramp times
+    // here, so AxisVelocity keeps the same meaning as on wmx/axis/velocity.
+    const double accTimeMs = (msg->acc[i] > 0.0) ?
+      std::abs(velocity) / msg->acc[i] * 1000.0 : 0.0;
+    const double decTimeMs = (msg->dec[i] > 0.0) ?
+      std::abs(velocity) / msg->dec[i] * 1000.0 : 0.0;
+
+    wmx3Api::Motion::JogCommand jogCommand = wmx3Api::Motion::JogCommand();
+    jogCommand.axis = axis;
+    jogCommand.profile.type = ProfileType::T::TimeAccJerkRatio;
+    jogCommand.profile.velocity = velocity;
+    jogCommand.profile.acc = 0;
+    jogCommand.profile.dec = 0;
+    jogCommand.profile.jerkAcc = 0;
+    jogCommand.profile.jerkDec = 0;
+    jogCommand.profile.jerkAccRatio = jogJerkRatio_;
+    jogCommand.profile.jerkDecRatio = jogJerkRatio_;
+    jogCommand.profile.accTimeMilliseconds = accTimeMs;
+    jogCommand.profile.decTimeMilliseconds = decTimeMs;
+    jogCommand.profile.startingVelocity = 0;
+    jogCommand.profile.endVelocity = 0;
+    jogCommand.profile.secondVelocity = 0;
+    jogCommand.profile.movingAverageTimeMilliseconds = 0;
+    // Backstop: if this node dies mid-jog the engine still decelerates the axis.
+    // Once it elapses the axis stays stopped until the operator releases and
+    // presses again, because a held key only refreshes the dead-man deadline.
+    jogCommand.SetRunTime(jogRunTimeMs_);
+
+    const int err = wmx3LibCm_->motion->StartJog(&jogCommand);
+    if (err != ErrorCode::None) {
+      char errString[256];
+      wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to jog motor %d. Error=%d (%s)", axis, err, errString);
+      continue;
+    }
+
+    std::lock_guard<std::mutex> lock(jogMutex_);
+    jogState_.insert_or_assign(axis, JogState{velocity, deadline});
+  }
+}
+
+// Dead-man: stop every axis whose jog refresh has expired.
+void WmxCoreMotionNode::jogWatchdogStep()
+{
+  if (!initialized_) {
+    return;
+  }
+
+  const rclcpp::Time now = this->now();
+  std::vector<int> expired;
+
+  {
+    std::lock_guard<std::mutex> lock(jogMutex_);
+    for (auto it = jogState_.begin(); it != jogState_.end(); ) {
+      if (now >= it->second.deadline) {
+        expired.push_back(it->first);
+        it = jogState_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  for (const int axis : expired) {
+    stopAxis(axis);
+  }
+}
+
+// Decelerate an axis to a stop. Returns the WMX3 error code.
+// Stopping an already idle axis is expected here (jog_run_time_ms may have
+// elapsed before the operator released), so callers decide how loud to be.
+int WmxCoreMotionNode::stopAxis(int axis)
+{
+  const int err = wmx3LibCm_->motion->Stop(axis);
+  if (err != ErrorCode::None) {
+    char errString[256];
+    wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
+    RCLCPP_DEBUG(
+      this->get_logger(),
+      "Stop on axis %d returned %d (%s)", axis, err, errString);
+  }
+  return err;
+}
+
+void WmxCoreMotionNode::stopAxes(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
+{
+  if (!initialized_) {
+    response->success = false;
+    response->message = "CoreMotion not initialized. Engine not ready.";
+    return;
+  }
+
+  bool all_success = true;
+  std::stringstream msg_stream;
+
+  for (size_t i = 0; i < request->index.size(); ++i) {
+    const int axis = request->index[i];
+
+    {
+      std::lock_guard<std::mutex> lock(jogMutex_);
+      jogState_.erase(axis);
+    }
+
+    const int err = stopAxis(axis);
+    if (err != ErrorCode::None) {
+      char errString[256];
+      wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
+      msg_stream << "Failed to stop axis " << axis
+                 << ". Error=" << err << " (" << errString << "); ";
+      all_success = false;
+    } else {
+      msg_stream << "Stopped axis " << axis << "; ";
+    }
+  }
+
+  response->success = all_success;
+  response->message = msg_stream.str();
 }
 
 void WmxCoreMotionNode::setAxisOn(

@@ -5,9 +5,12 @@
 #define WMX_CORE_MOTION_NODE_HPP_
 
 #include <atomic>
+#include <cmath>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <sstream>
 #include <chrono>
@@ -53,7 +56,22 @@ private:
   wmx3Api::Motion::PosCommand position_;
   wmx3Api::Config::HomeParam homeParam_;
 
+  // Jog is a dead-man command: the publisher must keep refreshing wmx/axis/jog,
+  // and the axis is stopped once refreshes stop arriving (cmd_vel pattern).
+  struct JogState
+  {
+    double velocity;
+    rclcpp::Time deadline;
+  };
+
+  double jogTimeoutMs_ = 200.0;
+  double jogRunTimeMs_ = 2000.0;
+  double jogJerkRatio_ = 0.75;
+  std::mutex jogMutex_;
+  std::unordered_map<int, JogState> jogState_;
+
   rclcpp::TimerBase::SharedPtr axisStateTimer_;
+  rclcpp::TimerBase::SharedPtr jogWatchdogTimer_;
   wmx_r2_message::msg::AxisState axisStateMsg_;
 
   rclcpp::CallbackGroup::SharedPtr init_cb_group_;
@@ -61,6 +79,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr coreMotionReadyPub_;
   rclcpp::Publisher<wmx_r2_message::msg::AxisState>::SharedPtr axisStatePub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisVelocity>::SharedPtr axisVelSub_;
+  rclcpp::Subscription<wmx_r2_message::msg::AxisVelocity>::SharedPtr axisJogSub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisPose>::SharedPtr axisPoseSub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisPose>::SharedPtr axisPoseRelativeSub_;
 
@@ -70,6 +89,7 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetAxis>::SharedPtr setAxisPolarityService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxisGearRatio>::SharedPtr setAxisGearRatioService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxis>::SharedPtr setHomingService_;
+  rclcpp::Service<wmx_r2_message::srv::SetAxis>::SharedPtr stopAxisService_;
   rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadParamsService_;
   rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getParamsService_;
 
@@ -79,6 +99,10 @@ private:
   void axisPoseCallback(const wmx_r2_message::msg::AxisPose::SharedPtr msg);
   void axisPoseRelativeCallback(const wmx_r2_message::msg::AxisPose::SharedPtr msg);
   void axisVelCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg);
+  void axisJogCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg);
+
+  void jogWatchdogStep();
+  int stopAxis(int axis);
 
   void setAxisOn(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
@@ -96,6 +120,9 @@ private:
     const std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Response> response);
   void setHoming(
+    const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
+    std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
+  void stopAxes(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
   void loadWmxParams(
