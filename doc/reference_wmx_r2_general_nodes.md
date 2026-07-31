@@ -7,7 +7,7 @@ ros2 service call /wmx/engine/get_status std_srvs/srv/Trigger "{}"
 
 # 2. Load axis parameters from file
 ros2 service call /wmx/params/load wmx_r2_message/srv/LoadWmxParams \
-  "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
+  "{file_path: '/home/$USER/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
 
 # 3. Clear any amp alarms
 ros2 service call /wmx/axis/clear_alarm wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
@@ -15,10 +15,17 @@ ros2 service call /wmx/axis/clear_alarm wmx_r2_message/srv/SetAxis "{index: [0,1
 # 4. Enable servos
 ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [1,1,1,1,1,1]}"
 
+ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis "{index: [0], data: [1]}"
+
 # 5. Home all axes (sets current position as home)
 ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
 ```
 
+ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+
+
+ros2 service call /wmx/axis/set_gear_ratio wmx_r2_message/srv/SetAxisGearRatio \
+  "{index: [0], numerator: [8388608.0], denominator: [360.0]}"
 
 ---
 
@@ -41,6 +48,32 @@ ros2 topic pub --once /wmx/axis/position/relative wmx_r2_message/msg/AxisPose \
 ```
 ros2 topic pub --once /wmx/axis/velocity wmx_r2_message/msg/AxisVelocity \
     "{index: [0, 1], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"  
+```
+
+```
+xset r rate 660 25
+xset r rate 150 30
+```
+
+### Jog (hold-to-move)
+`/wmx/axis/jog` is a dead-man command: the publisher must keep republishing while
+the operator holds the control. The axis is stopped once refreshes stop arriving
+(`jog_timeout_ms`). The sign of `velocity` selects the direction.
+
+```
+# Jog axis 0 in the positive direction. Ctrl-C acts as the release.
+ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
+    "{index: [0], velocity: [10000], acc: [100000], dec: [100000]}"
+
+# Negative direction
+ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
+    "{index: [0], velocity: [-10000], acc: [100000], dec: [100000]}"
+```
+
+Keyboard teleop for the same topic (`a` = negative, `d` = positive, `q` = quit):
+```
+ros2 run wmx_r2_package jog_keyboard_node --ros-args \
+    -p axis:=0 -p velocity:=1000.0 -p acc:=10000.0 -p dec:=100000.0
 ```
 
 
@@ -142,9 +175,16 @@ ros2 service call /wmx/axis/set_gear_ratio wmx_r2_message/srv/SetAxisGearRatio \
   "{index: [0,1], numerator: [1.0,1.0], denominator: [1.0,1.0]}"
 ```
 
+
+
 ### Homing (sets current position as home)
 ```
 ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis "{index: [0,1], data: [0,0]}"
+```
+
+### Stop (decelerate to a stop)
+```
+ros2 service call /wmx/axis/stop wmx_r2_message/srv/SetAxis "{index: [0,1], data: [0,0]}"
 ```
 
 ---
@@ -243,6 +283,16 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
 - `data` for `set_mode`: `0` = Position, `1` = Velocity, `2` = Torque
 - `data` for `set_polarity`: `1` = normal, `-1` = reversed
 - Homing always uses `CurrentPos` type — sets the current encoder position as home (zero)
+- `stop` uses `Motion::Stop` (decelerate); `data` is ignored
+
+**Jog**
+- Runs `Motion::StartJog`, which requires the axis to be in Position mode (`set_mode` `0`)
+- `jog_timeout_ms` (default `200`) — axis stops this long after refreshes stop arriving
+- `jog_run_time_ms` (default `2000`) — max duration of a single jog, enforced by the
+  engine so the axis still stops if the publishing node dies. Once it elapses the axis
+  stays stopped until the operator releases and presses again
+- Republishing the same velocity only refreshes the dead-man; it does not re-issue
+  `StartJog` (jog-over-jog override is undefined in WMX3)
 
 **WMX Parameters**
 - `params/load` requires an absolute path to a valid WMX3 XML file; engine must be ready first
