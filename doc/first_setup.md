@@ -1,4 +1,4 @@
-# WMX ROS2 Packages
+# WMX R2 Packages
 
 **Note that this ROS2 Packages requires pre-installed WMX Linux.**
 
@@ -26,6 +26,12 @@ sudo apt install -y ros-${ROS_DISTRO}-graph-msgs \
                     ros-${ROS_DISTRO}-moveit-task-constructor-core \
                     ros-${ROS_DISTRO}-ros2-control \
                     ros-${ROS_DISTRO}-ros2-controllers \
+                    ros-${ROS_DISTRO}-controller-manager \
+                    ros-${ROS_DISTRO}-diff-drive-controller \
+                    ros-${ROS_DISTRO}-joint-trajectory-controller \
+                    ros-${ROS_DISTRO}-joint-state-broadcaster \
+                    ros-${ROS_DISTRO}-xacro \
+                    ros-${ROS_DISTRO}-topic-tools \
                     ros-${ROS_DISTRO}-rmw-cyclonedds-cpp
 ```
 
@@ -33,13 +39,13 @@ sudo apt install -y ros-${ROS_DISTRO}-graph-msgs \
 ```
 mkdir -p ~/workspaces/movensys_ws/src
 cd ~/workspaces/movensys_ws/src && \
-   git clone https://github.com/movensys/wmx-ros2.git
+   git clone https://github.com/movensys/wmx-r2.git
 ```
 
 ## Build
 ```
 cd ~/workspaces/movensys_ws
-colcon build --packages-select wmx_ros2_message
+colcon build --packages-select wmx_r2_message
 source install/setup.bash
 colcon build
 source ~/.bashrc

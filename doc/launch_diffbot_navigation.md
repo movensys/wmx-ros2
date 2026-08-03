@@ -1,4 +1,4 @@
-# For trajectory control
+# For differential robot
 ```
 sudo --preserve-env=PATH \
      --preserve-env=AMENT_PREFIX_PATH \
@@ -11,8 +11,9 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
      bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && source $HOME/workspaces/movensys_ws/install/setup.bash && \
-     ros2 launch wmx_r2_package wmx_r2_cr3a_manipulator.launch.py use_sim_time:=false"
+     ros2 launch wmx_r2_package wmx_r2_diffbot_navigation.launch.py use_sim_time:=false"
 ```
+
 
 
 # ROS2 Control
@@ -28,5 +29,5 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
      bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && source $HOME/workspaces/movensys_ws/install/setup.bash && \
-     ros2 launch wmx_r2_control wmx_r2_control_cr3a_manipulator.launch.py use_sim_time:=false"
+     ros2 launch wmx_r2_control wmx_r2_control_diffbot_navigation.launch.py use_sim_time:=false"
 ```

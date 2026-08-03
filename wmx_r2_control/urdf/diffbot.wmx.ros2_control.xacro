@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="diffbot_wmx_r2_control"
+               params="name:=WmxDiffbotSystem
+                       wmx_param_file
+                       left_axis:=0
+                       right_axis:=1">
+
+    <ros2_control name="${name}" type="system">
+      <hardware>
+        <plugin>wmx_r2_control/WmxSystemHardware</plugin>
+        <param name="device_name">wmx_diffbot_control</param>
+        <param name="wmx_param_file">${wmx_param_file}</param>
+        <param name="acc_time_ms">1.0</param>
+        <param name="dec_time_ms">1.0</param>
+      </hardware>
+
+      <joint name="drivewheel_left_joint">
+        <param name="axis">${left_axis}</param>
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="drivewheel_right_joint">
+        <param name="axis">${right_axis}</param>
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+    </ros2_control>
+
+  </xacro:macro>
+</robot>

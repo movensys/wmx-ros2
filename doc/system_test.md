@@ -1,4 +1,4 @@
-## Testing WMX ROS2 Package
+## Testing WMX R2 Package
 
 > **WARNING: Do NOT run tests on a machine connected to real EtherCAT hardware.**
 > Integration tests start and stop the WMX3 engine, send service calls, and may trigger axis commands. 
@@ -14,7 +14,7 @@ Running them while connected to real hardware (e.g. the CR3A manipulator) could 
 - ROS 2 workspace built:
   ```
   source /opt/ros/$ROS_DISTRO/setup.bash
-  colcon build --packages-up-to wmx_ros2_package
+  colcon build --packages-up-to wmx_r2_package
   ```
 - Integration tests require `sudo` (WMX3 SDK needs root for license and `/dev/cpu_dma_latency`)
 - When running with `sudo`, ROS 2 environment variables must be preserved
@@ -33,7 +33,7 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-  colcon test --packages-select wmx_ros2_message wmx_ros2_package
+  colcon test --packages-select wmx_r2_message wmx_r2_package
 ```
 
 ### Run a specific test
@@ -50,7 +50,7 @@ sudo --preserve-env=PATH \
      --preserve-env=ROS_PYTHON_VERSION \
      --preserve-env=ROS_DOMAIN_ID \
      --preserve-env=RMW_IMPLEMENTATION \
-  colcon test --packages-select wmx_ros2_package \
+  colcon test --packages-select wmx_r2_package \
     --ctest-args -R test_engine_lifecycle
 ```
 
@@ -58,13 +58,13 @@ sudo --preserve-env=PATH \
 Message interface tests do not require hardware or sudo:
 ```
 source /opt/ros/$ROS_DISTRO/setup.bash && source install/setup.bash
-colcon test --packages-select wmx_ros2_package \
+colcon test --packages-select wmx_r2_package \
   --ctest-args -R test_message_interfaces
 ```
 
 ### View test results
 ```
-colcon test-result --verbose --test-result-base build/wmx_ros2_package
+colcon test-result --verbose --test-result-base build/wmx_r2_package
 ```
 
 ### Test coverage
@@ -87,6 +87,6 @@ colcon test-result --verbose --test-result-base build/wmx_ros2_package
 - EtherCAT `get_network_state` may return `success=false` without EtherCAT hardware connected — the test verifies the service responds, not the hardware state
 - If a build cache from a previous branch causes errors, clean and rebuild:
   ```
-  rm -rf build/wmx_ros2_message install/wmx_ros2_message
-  colcon build --packages-up-to wmx_ros2_package
+  rm -rf build/wmx_r2_message install/wmx_r2_message
+  colcon build --packages-up-to wmx_r2_package
   ```
