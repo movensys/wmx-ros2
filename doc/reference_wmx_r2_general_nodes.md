@@ -31,7 +31,7 @@ ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,
 ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
 ```
 ---
-
+i
 
 ## Engine Topics (Warning: These command will rotate the axes)
 ### Send Axis Absolute Position
@@ -44,7 +44,7 @@ ros2 topic pub --once /wmx/axis/position wmx_r2_message/msg/AxisPose \
 ```
 ros2 topic pub --once /wmx/axis/position/relative wmx_r2_message/msg/AxisPose \
     "{index: [0, 1], target: [8388608, 10000], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"
-```
+```i
 
 
 ### Send Axis Velocity
@@ -55,7 +55,7 @@ ros2 topic pub --once /wmx/axis/velocity wmx_r2_message/msg/AxisVelocity \
 
 
 
-
+i
 ### Jog (hold-to-move)
 `/wmx/axis/jog` is a dead-man command: the publisher must keep republishing while
 the operator holds the control. The axis is stopped once refreshes stop arriving
@@ -65,7 +65,7 @@ the operator holds the control. The axis is stopped once refreshes stop arriving
 # Jog axis 0 in the positive direction. Ctrl-C acts as the release.
 ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
     "{index: [0], velocity: [10000], acc: [100000], dec: [100000]}"
-
+i
 # Negative direction
 ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
     "{index: [0], velocity: [-10000], acc: [100000], dec: [100000]}"
