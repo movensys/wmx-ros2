@@ -4,9 +4,14 @@
 
 ## 1. Bashrc Configuration [~/.bashrc]
 ```
-export ROS_DOMAIN_ID=70                         #use any number
-export ROS_DISTRO=jazzy                         #support {jazzy, humble}
+# ROS
+export ROS_DOMAIN_ID=70                         # use any number
+export ROS_DISTRO=jazzy                         # support {jazzy, humble}
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+# WMX
+export WMX_CORE=3                               # CPU core for the WMX real-time engine (-1 = SDK default)
+export WMX_AFFINITY_MASK=12                     # CPU affinity bitmask for the WMX engine threads (one bit per core e.g. 12 for cores 2 and 3)
 
 source /opt/ros/$ROS_DISTRO/setup.bash
 source ~/workspaces/movensys_ws/install/setup.bash
