@@ -374,3 +374,94 @@ TEST(ClosedLoop, FillsAnEmptyBufferUpToSetpoint)
 
   EXPECT_GE(r.final_depth, target) << "regulator failed to build runway";
 }
+
+// ===========================================================================
+// PeriodTracker
+// ===========================================================================
+
+using wmx_r2_control::cyclic::PeriodTracker;
+
+TEST(PeriodTracker, UsesSeedBeforeAnySample)
+{
+  const PeriodTracker tracker(10.0);
+  EXPECT_DOUBLE_EQ(tracker.periodMs(), 10.0);
+  EXPECT_EQ(tracker.samples(), 0u);
+  EXPECT_FALSE(tracker.settled());
+}
+
+TEST(PeriodTracker, ConvergesTowardTheMeasuredPeriod)
+{
+  // Seeded at the nominal 10 ms but the loop actually runs at 11 ms.
+  PeriodTracker tracker(10.0, 100u, 0.1);
+  for (int i = 0; i < 100; ++i) {
+    tracker.observe(11.0);
+  }
+  EXPECT_NEAR(tracker.periodMs(), 11.0, 0.01);
+  EXPECT_TRUE(tracker.settled());
+}
+
+TEST(PeriodTracker, AveragesOutSymmetricJitter)
+{
+  PeriodTracker tracker(10.0, 100u, 0.1);
+  for (int i = 0; i < 100; ++i) {
+    tracker.observe(i % 2 == 0 ? 9.0 : 11.0);
+  }
+  EXPECT_NEAR(tracker.periodMs(), 10.0, 0.2);
+}
+
+// Once settled, a stall must not drag the estimate: stretching every subsequent
+// command would silently add latency for the rest of the run.
+TEST(PeriodTracker, FreezesAfterWarmup)
+{
+  PeriodTracker tracker(10.0, 10u, 0.5);
+  for (int i = 0; i < 10; ++i) {
+    tracker.observe(10.0);
+  }
+  ASSERT_TRUE(tracker.settled());
+  const double settled = tracker.periodMs();
+
+  for (int i = 0; i < 50; ++i) {
+    tracker.observe(25.0);
+  }
+  EXPECT_DOUBLE_EQ(tracker.periodMs(), settled);
+  EXPECT_EQ(tracker.samples(), 10u);
+}
+
+TEST(PeriodTracker, RejectsOutliersDuringWarmup)
+{
+  PeriodTracker tracker(10.0, 100u, 0.1);
+  tracker.observe(100.0);  // 10x: a stall, not the loop rate
+  tracker.observe(0.5);    // 1/20x: a clock glitch
+  EXPECT_DOUBLE_EQ(tracker.periodMs(), 10.0);
+  EXPECT_EQ(tracker.samples(), 0u);
+  EXPECT_EQ(tracker.rejected(), 2u);
+
+  tracker.observe(11.0);  // in band, accepted
+  EXPECT_GT(tracker.periodMs(), 10.0);
+  EXPECT_EQ(tracker.samples(), 1u);
+}
+
+TEST(PeriodTracker, IgnoresNonFiniteAndNonPositiveSamples)
+{
+  PeriodTracker tracker(10.0);
+  tracker.observe(std::numeric_limits<double>::quiet_NaN());
+  tracker.observe(std::numeric_limits<double>::infinity());
+  tracker.observe(0.0);
+  tracker.observe(-5.0);
+  EXPECT_DOUBLE_EQ(tracker.periodMs(), 10.0);
+  EXPECT_EQ(tracker.samples(), 0u);
+}
+
+// The tracked period feeds nominalInterval(), so a drifted loop must change the
+// commanded interval -- that is the whole reason the tracker exists.
+TEST(PeriodTracker, FeedsNominalIntervalOnceSettled)
+{
+  PeriodTracker tracker(10.0, 50u, 0.2);
+  for (int i = 0; i < 50; ++i) {
+    tracker.observe(12.5);
+  }
+  StreamTiming t = makeTiming();
+  EXPECT_EQ(t.nominalInterval(), 20u);  // from the seeded 10 ms
+  t.push_period_ms = tracker.periodMs();
+  EXPECT_EQ(t.nominalInterval(), 25u);  // 12.5 ms / 0.5 ms
+}

@@ -33,6 +33,7 @@ endif()
 if(WMX3_SDK_FOUND)
   add_library(wmx_system_hardware SHARED
     src/wmx_system_hardware.cpp
+    src/wmx_cyclic_stream.cpp
   )
   target_include_directories(wmx_system_hardware PRIVATE
     include
@@ -84,6 +85,21 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_cyclic_stream_timing test/test_cyclic_stream_timing.cpp)
   target_include_directories(test_cyclic_stream_timing PRIVATE include)
+
+  # WmxCyclicStream guard clauses. These reject before the class touches the
+  # engine, so they need no hardware -- but they do need the SDK headers, so
+  # they cannot run on a CI runner.
+  if(WMX3_SDK_FOUND)
+    ament_add_gtest(test_wmx_cyclic_stream test/test_wmx_cyclic_stream.cpp)
+    target_include_directories(test_wmx_cyclic_stream PRIVATE
+      include
+      ${WMX3_SDK_PATH}/include
+      ${WMX3_SDK_PATH}/sample/Header
+    )
+    target_link_directories(test_wmx_cyclic_stream PRIVATE ${WMX3_SDK_PATH}/lib)
+    target_link_libraries(test_wmx_cyclic_stream
+      wmx_system_hardware coremotionapi cyclicbufferapi wmx3api imdll)
+  endif()
 endif()
 
 ament_export_include_directories(include)

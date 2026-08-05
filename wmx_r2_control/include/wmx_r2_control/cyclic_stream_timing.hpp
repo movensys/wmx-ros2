@@ -160,6 +160,55 @@ inline unsigned int nextInterval(
   return static_cast<unsigned int>(std::clamp(nominal + correction, lo, hi));
 }
 
+/// Tracks the real interval between push() calls, as handed to ros2_control's
+/// write(time, period).
+///
+/// Why not just trust the configured update_rate: nominalInterval() is a ratio
+/// of the loop period, so a 10% error in it is a permanent 10% bias on the
+/// commanded velocity of every segment. The measured period is the truth.
+///
+/// Averages an EMA over the first `warmup_samples` observations, then freezes.
+/// Freezing is the point: once running, one long write() (a preemption, a
+/// planning-scene update) must not be read as "the loop got slower", or the
+/// stream would stretch every command from then on and quietly accumulate lag.
+class PeriodTracker
+{
+public:
+  /// `seed_ms` is the expected period (1000 / update_rate), used until the first
+  /// sample lands and as the reference for outlier rejection.
+  explicit PeriodTracker(
+    double seed_ms, unsigned int warmup_samples = 100u, double alpha = 0.1)
+  : period_ms_(seed_ms), seed_ms_(seed_ms),
+    warmup_samples_(warmup_samples), alpha_(alpha) {}
+
+  /// Feed one measured period [ms]. Ignored once settled, and ignored for
+  /// samples that are not finite and positive, or that are far enough from the
+  /// seed to be a stall or clock glitch rather than the loop rate.
+  void observe(double measured_ms)
+  {
+    if (settled() || !std::isfinite(measured_ms) || measured_ms <= 0.0) {return;}
+    if (seed_ms_ > 0.0 && (measured_ms > 4.0 * seed_ms_ || measured_ms < 0.25 * seed_ms_)) {
+      ++rejected_;
+      return;
+    }
+    period_ms_ = (1.0 - alpha_) * period_ms_ + alpha_ * measured_ms;
+    ++samples_;
+  }
+
+  double periodMs() const {return period_ms_;}
+  bool settled() const {return samples_ >= warmup_samples_;}
+  unsigned int samples() const {return samples_;}
+  unsigned int rejected() const {return rejected_;}
+
+private:
+  double period_ms_;
+  double seed_ms_;
+  unsigned int warmup_samples_;
+  double alpha_;
+  unsigned int samples_ = 0u;
+  unsigned int rejected_ = 0u;
+};
+
 }  // namespace cyclic
 }  // namespace wmx_r2_control
 
