@@ -97,3 +97,49 @@ jobs:
           colcon test --packages-select wmx_r2_message \
             --event-handlers console_cohesion+
           colcon test-result --verbose
+
+  build-control:
+    name: Build wmx_r2_control (${{ matrix.ros_distro }})
+    runs-on: ${{ matrix.runner }}
+    container: ros:${{ matrix.ros_distro }}-ros-base
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: humble
+            runner: ubuntu-22.04
+          - ros_distro: jazzy
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/wmx-r2
+
+      - name: rosdep install
+        run: |
+          apt-get update
+          rosdep update --rosdistro ${{ matrix.ros_distro }}
+          rosdep install --from-paths src/wmx-r2/wmx_r2_control --ignore-src -y \
+            --rosdistro ${{ matrix.ros_distro }} \
+            --skip-keys "wmx_r2_package movensys_navigation_description movensys_manipulator_description"
+
+      # The WMX3 SDK cannot be installed on a runner, so the wmx_system_hardware
+      # plugin is skipped by the EXISTS guard in CMakeLists.txt. What this job
+      # does cover is that the package configures without the SDK and that the
+      # SDK-free unit tests (cyclic-buffer stream timing) build and pass.
+      #
+      # wmx_r2_package's gtests could join this job the same way once its
+      # WMX-linked targets get an equivalent guard.
+      - name: colcon build
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          colcon build --packages-select wmx_r2_control \
+            --event-handlers console_cohesion+
+
+      - name: colcon test
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          source install/setup.bash
+          colcon test --packages-select wmx_r2_control \
+            --event-handlers console_cohesion+
+          colcon test-result --verbose

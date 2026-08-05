@@ -18,32 +18,47 @@ find_package(rclcpp_lifecycle REQUIRED)
 
 set(WMX3_SDK_PATH "/opt/wmx3" CACHE PATH "Path to WMX3 SDK installation")
 
-add_library(wmx_system_hardware SHARED
-  src/wmx_system_hardware.cpp
-)
-target_include_directories(wmx_system_hardware PRIVATE
-  include
-  ${WMX3_SDK_PATH}/include
-  ${WMX3_SDK_PATH}/sample/Header
-)
-target_compile_definitions(wmx_system_hardware PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
-target_link_directories(wmx_system_hardware PRIVATE ${WMX3_SDK_PATH}/lib)
-target_link_libraries(wmx_system_hardware coremotionapi wmx3api imdll)
-ament_target_dependencies(wmx_system_hardware
-  hardware_interface
-  pluginlib
-  rclcpp
-  rclcpp_lifecycle
-)
+# The WMX3 SDK only exists on WMX Linux machines. Guard the hardware plugin so
+# this package still configures on a plain ROS 2 box or a CI runner, where the
+# SDK-free unit tests below can then still be built and run.
+if(EXISTS "${WMX3_SDK_PATH}/include")
+  set(WMX3_SDK_FOUND TRUE)
+else()
+  set(WMX3_SDK_FOUND FALSE)
+  message(STATUS
+    "WMX3 SDK not found at ${WMX3_SDK_PATH}: skipping wmx_system_hardware. "
+    "SDK-free unit tests still build.")
+endif()
 
-# Export the hardware plugin to pluginlib
-pluginlib_export_plugin_description_file(hardware_interface wmx_r2_control_plugin.xml)
+if(WMX3_SDK_FOUND)
+  add_library(wmx_system_hardware SHARED
+    src/wmx_system_hardware.cpp
+  )
+  target_include_directories(wmx_system_hardware PRIVATE
+    include
+    ${WMX3_SDK_PATH}/include
+    ${WMX3_SDK_PATH}/sample/Header
+  )
+  target_compile_definitions(wmx_system_hardware PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
+  target_link_directories(wmx_system_hardware PRIVATE ${WMX3_SDK_PATH}/lib)
+  # cyclicbufferapi before wmx3api: static archives must precede what they need.
+  target_link_libraries(wmx_system_hardware coremotionapi cyclicbufferapi wmx3api imdll)
+  ament_target_dependencies(wmx_system_hardware
+    hardware_interface
+    pluginlib
+    rclcpp
+    rclcpp_lifecycle
+  )
 
-install(TARGETS wmx_system_hardware
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
-)
+  # Export the hardware plugin to pluginlib
+  pluginlib_export_plugin_description_file(hardware_interface wmx_r2_control_plugin.xml)
+
+  install(TARGETS wmx_system_hardware
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+  )
+endif()
 
 install(DIRECTORY include/
   DESTINATION include
@@ -63,8 +78,16 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   set(ament_cmake_copyright_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  # Cyclic-buffer stream timing: header-only, free of WMX and ROS types, so this
+  # builds and runs without the WMX3 SDK (see include/wmx_r2_control/).
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_cyclic_stream_timing test/test_cyclic_stream_timing.cpp)
+  target_include_directories(test_cyclic_stream_timing PRIVATE include)
 endif()
 
 ament_export_include_directories(include)
-ament_export_libraries(wmx_system_hardware)
+if(WMX3_SDK_FOUND)
+  ament_export_libraries(wmx_system_hardware)
+endif()
 ament_package()
