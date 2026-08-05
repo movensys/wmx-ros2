@@ -97,6 +97,7 @@ flowchart LR;
 |---------|-------------|
 | [wmx_r2_message](wmx_r2_message/) | Custom messages and services for axis, IO, EtherCAT, and engine control |
 | [wmx_r2_package](wmx_r2_package/) | Main nodes, launch files, and robot configurations |
+| [wmx_r2_control](wmx_r2_control/) | `ros2_control` hardware interface for WMX3 axes, so standard controllers (`joint_trajectory_controller`, `diff_drive_controller`) can drive them |
 
 ## Nodes
 
@@ -117,6 +118,7 @@ flowchart LR;
 | [wmx_r2_general_nodes.launch.py](wmx_r2_package/launch/wmx_r2_general_nodes.launch.py) | Low-level axis / IO / EtherCAT control | `wmx_engine_node`, `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` |
 | [wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py) | Dobot CR3A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller`, `gripper_controller` |
 | [wmx_r2_cr5a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr5a_manipulator.launch.py) | Dobot CR5A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller` |
+| [wmx_r2_control_cr3a_manipulator.launch.py](wmx_r2_control/launch/wmx_r2_control_cr3a_manipulator.launch.py) | Dobot CR3A under `ros2_control`, streaming positions through the cyclic buffer so MoveIt Servo can drive the arm | general nodes + `ros2_control_node`, `joint_state_broadcaster`, `movensys_manipulator_arm_controller`, `gripper_controller` |
 
 ## Supported Robots
 
@@ -145,6 +147,7 @@ To quickly set up the WMX ROS2 package and explore its key features, follow thes
 | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) | Launch the Dobot CR3A manipulator |
 | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) | Launch the Dobot CR5A manipulator |
 | [doc/reference_wmx_r2_general_nodes.md](doc/reference_wmx_r2_general_nodes.md) | ROS2 service/topic reference with startup sequence |
+| [doc/servo_position_streaming.md](doc/servo_position_streaming.md) | Stream positions through the WMX3 cyclic buffer so MoveIt Servo can drive the arm: bring-up, validation ladder, tuning, fallback |
 | [doc/system_test.md](doc/system_test.md) | System-level test procedures |
 
 For the complete and up-to-date documentation, please visit the official site:
@@ -155,6 +158,7 @@ For the complete and up-to-date documentation, please visit the official site:
 - [x] Low-level axis, IO, and EtherCAT control nodes
 - [x] Trajectory control for Dobot CR3A / CR5A
 - [x] MoveIt2 integration
+- [x] `ros2_control` hardware interface with cyclic-buffer position streaming (MoveIt Servo / teleop)
 - [x] CI on ROS2 Humble and Jazzy (lint + message build/test)
 - [ ] Nav2 integration example for mobile bases
 
