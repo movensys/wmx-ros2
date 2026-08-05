@@ -90,15 +90,25 @@ if(BUILD_TESTING)
   # engine, so they need no hardware -- but they do need the SDK headers, so
   # they cannot run on a CI runner.
   if(WMX3_SDK_FOUND)
-    ament_add_gtest(test_wmx_cyclic_stream test/test_wmx_cyclic_stream.cpp)
-    target_include_directories(test_wmx_cyclic_stream PRIVATE
-      include
-      ${WMX3_SDK_PATH}/include
-      ${WMX3_SDK_PATH}/sample/Header
-    )
-    target_link_directories(test_wmx_cyclic_stream PRIVATE ${WMX3_SDK_PATH}/lib)
-    target_link_libraries(test_wmx_cyclic_stream
-      wmx_system_hardware coremotionapi cyclicbufferapi wmx3api imdll)
+    # on_init() reads only the parsed HardwareInfo, so the hardware-interface
+    # tests need no engine either -- just the SDK headers to compile against.
+    foreach(_test test_wmx_cyclic_stream test_wmx_system_hardware_init)
+      ament_add_gtest(${_test} test/${_test}.cpp)
+      target_include_directories(${_test} PRIVATE
+        include
+        ${WMX3_SDK_PATH}/include
+        ${WMX3_SDK_PATH}/sample/Header
+      )
+      target_link_directories(${_test} PRIVATE ${WMX3_SDK_PATH}/lib)
+      target_link_libraries(${_test}
+        wmx_system_hardware coremotionapi cyclicbufferapi wmx3api imdll)
+      ament_target_dependencies(${_test}
+        hardware_interface
+        pluginlib
+        rclcpp
+        rclcpp_lifecycle
+      )
+    endforeach()
   endif()
 endif()
 

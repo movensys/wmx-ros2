@@ -11,6 +11,8 @@
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 
+#include "wmx_r2_control/wmx_cyclic_stream.hpp"
+
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 
@@ -31,6 +33,7 @@ namespace wmx_r2_control
 
 enum class JointMode
 {
+  Position,    // command_interface "position" -> WMX CyclicBuffer (AbsolutePos)
   Velocity,    // command_interface "velocity" -> WMX CoreMotion StartVel
   StateOnly    // no command_interface -> feedback only (motion driven elsewhere)
 };
@@ -96,6 +99,14 @@ private:
   // Joints
   std::vector<WmxJoint> joints_;
 
+  // Position-mode streaming (all position joints share one cyclic buffer, since
+  // they are commanded by a single multi-axis AddCommand).
+  WmxCyclicStream stream_;
+  std::vector<size_t> position_joint_idx_;   ///< indices into joints_, in axis order
+  std::vector<double> q_cmd_scratch_;        ///< preallocated: write() must not allocate
+  std::string stream_err_;                   ///< reused so the happy path stays allocation-free
+  bool stream_started_ = false;
+
   // Hardware parameters (from <hardware><param> in the ros2_control xacro)
   std::string sdk_path_;
   std::string device_name_;
@@ -104,6 +115,12 @@ private:
   double dec_time_ms_ = 1.0;
   int max_device_retries_ = 30;
   bool auto_servo_on_ = true;   ///< clear alarms + servo-on in on_activate, servo-off on deactivate
+  double cyclic_buffer_horizon_s_ = 5.0;
+  int cyclic_target_periods_ = 2;
+  double cyclic_max_acc_ = 0.0;
+  /// Expected write() period [ms]; only a seed, the real one is measured from
+  /// write()'s `period`. Should match 1000 / controller_manager update_rate.
+  double cyclic_push_period_ms_ = 10.0;
 
   char err_str_[256] = {0};
 
@@ -114,6 +131,10 @@ private:
   bool engineCommunicating();
   void startVelocity(const WmxJoint & joint, double omega);
   std::string getHwParam(const std::string & key, const std::string & def) const;
+  /// Seed each position joint's command from its current WMX *command* position,
+  /// so a write() that lands before any controller has written is a hold.
+  bool seedPositionCommands();
+  bool openAndStartStream();
 };
 
 }  // namespace wmx_r2_control
