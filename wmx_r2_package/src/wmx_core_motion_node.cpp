@@ -15,6 +15,10 @@ WmxCoreMotionNode::WmxCoreMotionNode()
 {
   init_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
+  // setHoming() blocks in motion->Wait() its own group until the axis goes Idle.
+  // Move setHoming() to set its own MutuallyExclusive group.
+  homing_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
   rclcpp::SubscriptionOptions sub_opts;
   sub_opts.callback_group = init_cb_group_;
 
@@ -48,7 +52,8 @@ WmxCoreMotionNode::WmxCoreMotionNode()
 
   setHomingService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
     "wmx/axis/homing",
-    std::bind(&WmxCoreMotionNode::setHoming, this, _1, _2));
+    std::bind(&WmxCoreMotionNode::setHoming, this, _1, _2),
+    rclcpp::ServicesQoS(), homing_cb_group_);
 
   stopAxisService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
     "wmx/axis/stop",
@@ -660,7 +665,8 @@ void WmxCoreMotionNode::setAxisGearRatio(
   response->success = all_success;
   response->message = msg_stream.str();
 }
-
+// ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis \
+//   "{index: [0, 1], data: [0, 0]}"
 void WmxCoreMotionNode::setHoming(
   const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
