@@ -3,12 +3,17 @@
 
 #include "wmx_engine_node.hpp"
 
+#include <cinttypes>
+
 using std::placeholders::_1;
 using std::placeholders::_2;
 
 WmxEngineNode::WmxEngineNode()
 : Node("wmx_engine_node"), wmx3Lib_Ecat_(&wmx3Lib_)
 {
+  this->declare_parameter<int>("engine_core", -1);
+  this->declare_parameter<int64_t>("engine_affinity_mask", 0);
+
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadyPub_ = this->create_publisher<std_msgs::msg::Bool>("wmx/engine/ready", ready_qos);
 
@@ -60,7 +65,11 @@ void WmxEngineNode::publishReady()
 
 void WmxEngineNode::startEngine()
 {
-  RCLCPP_INFO(this->get_logger(), "Starting engine...");
+  const int core = static_cast<int>(this->get_parameter("engine_core").as_int());
+  const int64_t affinityMask = this->get_parameter("engine_affinity_mask").as_int();
+  RCLCPP_INFO(
+    this->get_logger(), "Starting engine... (core=%d, affinityMask=0x%" PRIx64 ")",
+    core, affinityMask);
   unsigned int timeout = 10000;
   int maxRetries = 5;
   int retryDelay = 2000;
@@ -78,7 +87,8 @@ void WmxEngineNode::startEngine()
       std::this_thread::sleep_for(std::chrono::milliseconds(retryDelay));
     }
 
-    err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, wmx3Api::DeviceType::DeviceTypeNormal, timeout);
+    err = wmx3Lib_.CreateDevice(
+      WMX3_SDK_PATH, wmx3Api::DeviceType::DeviceTypeNormal, timeout, core, affinityMask);
 
     if (err == wmx3Api::ErrorCode::None) {
       wmx3Lib_.SetDeviceName("wmx_engine_node");
@@ -285,8 +295,10 @@ void WmxEngineNode::setEngine(
   char errString[256];
   char buffer[512];
   if (request->data) {
+    const int core = static_cast<int>(this->get_parameter("engine_core").as_int());
+    const int64_t affinityMask = this->get_parameter("engine_affinity_mask").as_int();
     err = wmx3Lib_.CreateDevice(
-      request->path.c_str(), wmx3Api::DeviceType::DeviceTypeNormal, timeout);
+      request->path.c_str(), wmx3Api::DeviceType::DeviceTypeNormal, timeout, core, affinityMask);
     if (err != wmx3Api::ErrorCode::None) {
       wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
       snprintf(
