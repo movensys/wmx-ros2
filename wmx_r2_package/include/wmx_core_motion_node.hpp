@@ -75,6 +75,7 @@ private:
   wmx_r2_message::msg::AxisState axisStateMsg_;
 
   rclcpp::CallbackGroup::SharedPtr init_cb_group_;
+  rclcpp::CallbackGroup::SharedPtr homing_cb_group_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr coreMotionReadyPub_;
   rclcpp::Publisher<wmx_r2_message::msg::AxisState>::SharedPtr axisStatePub_;
