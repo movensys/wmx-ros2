@@ -42,7 +42,7 @@ public:
 
 private:
   std::atomic<bool> initialized_{false};
-  int axisCount_ = 2;
+  int axisCount_;
   int err_;
   char errString_[256];
   char buffer_[512];
@@ -51,6 +51,8 @@ private:
   wmx3Api::WMX3Api wmx3Lib_;
   std::unique_ptr<wmx3Api::CoreMotion> wmx3LibCm_;
   wmx3Api::CoreMotionStatus cmStatus_;
+  // For getting axisCount_, we use this api.
+  wmx3Api::EngineStatus engineStatus_;
 
   wmx3Api::Velocity::VelCommand velocity_;
   wmx3Api::Motion::PosCommand position_;

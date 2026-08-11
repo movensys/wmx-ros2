@@ -124,6 +124,19 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
   wmx3Lib_.SetDeviceName("wmx_core_motion_node");
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
 
+  // get engineStatus to read # of axis (axisCount_)
+  wmx3Lib_.GetEngineStatus(&engineStatus_);
+  axisCount_ = 0;
+
+  // numOfInterrupts means # of cyclic handlers (max 2)
+  // numOfAxes means # of axes on that handler (not # of slaves)
+  for (int i = 0; i < engineStatus_.numOfInterrupts; ++i) {
+    axisCount_ += engineStatus_.interrupts[i].numOfAxes;
+  }
+  if (axisCount_ <= 0) {
+    RCLCPP_WARN(this->get_logger(), "Engine reported 0 axes; axis state will be empty.");
+  }
+
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
 
   axisStatePub_ = this->create_publisher<wmx_r2_message::msg::AxisState>(
@@ -161,7 +174,8 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
 
   engineReadySub_.reset();
 
-  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is ready (100 Hz)");
+  RCLCPP_INFO(
+    this->get_logger(), "wmx_core_motion_node is ready (%d axes, 100 Hz)", axisCount_);
 }
 
 void WmxCoreMotionNode::axisStateStep()
