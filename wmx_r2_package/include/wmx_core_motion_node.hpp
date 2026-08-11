@@ -42,7 +42,7 @@ public:
 
 private:
   std::atomic<bool> initialized_{false};
-  int axisCount_;  
+  int axisCount_;
   int err_;
   char errString_[256];
   char buffer_[512];

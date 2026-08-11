@@ -128,8 +128,8 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
   wmx3Lib_.GetEngineStatus(&engineStatus_);
   axisCount_ = 0;
 
-  // numOfInterrupts means # of master
-  // numOfAxes means # of slaves from the master
+  // numOfInterrupts means # of cyclic handlers (max 2)
+  // numOfAxes means # of axes on that handler (not # of slaves)
   for (int i = 0; i < engineStatus_.numOfInterrupts; ++i) {
     axisCount_ += engineStatus_.interrupts[i].numOfAxes;
   }
