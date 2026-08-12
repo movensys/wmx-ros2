@@ -92,7 +92,11 @@ target_link_libraries(wmx_engine_node coremotionapi wmx3api imdll)
 target_link_directories(wmx_engine_node PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(wmx_engine_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
-add_executable(wmx_core_motion_node src/wmx_core_motion_node.cpp)
+add_executable(wmx_core_motion_node
+  src/wmx_core_motion_node.cpp
+  src/wmx_core_motion_wmx_api.cpp
+  src/wmx_core_motion_ros2_callbacks.cpp
+  src/wmx_core_motion_node_lifecycles.cpp)
 ament_target_dependencies(wmx_core_motion_node
   rclcpp rclcpp_lifecycle std_msgs std_srvs wmx_r2_message)
 target_include_directories(wmx_core_motion_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
@@ -104,14 +108,22 @@ target_compile_definitions(wmx_core_motion_node PRIVATE WMX3_SDK_PATH="${WMX3_SD
 add_executable(jog_keyboard_node src/jog_keyboard_node.cpp)
 ament_target_dependencies(jog_keyboard_node rclcpp wmx_r2_message)
 
-add_executable(wmx_io_node src/wmx_io_node.cpp)
+add_executable(wmx_io_node
+  src/wmx_io_node.cpp
+  src/wmx_io_wmx_api.cpp
+  src/wmx_io_ros2_callbacks.cpp
+  src/wmx_io_node_lifecycles.cpp)
 ament_target_dependencies(wmx_io_node rclcpp rclcpp_lifecycle std_msgs wmx_r2_message)
 target_include_directories(wmx_io_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(wmx_io_node ioapi wmx3api imdll)
 target_link_directories(wmx_io_node PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(wmx_io_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
-add_executable(wmx_ethercat_node src/wmx_ethercat_node.cpp)
+add_executable(wmx_ethercat_node
+  src/wmx_ethercat_node.cpp
+  src/wmx_ethercat_wmx_api.cpp
+  src/wmx_ethercat_ros2_callbacks.cpp
+  src/wmx_ethercat_node_lifecycles.cpp)
 ament_target_dependencies(wmx_ethercat_node rclcpp rclcpp_lifecycle std_msgs wmx_r2_message)
 target_include_directories(wmx_ethercat_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(wmx_ethercat_node ecapi wmx3api imdll)
