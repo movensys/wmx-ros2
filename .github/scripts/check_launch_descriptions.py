@@ -3,32 +3,29 @@
 
 The WMX3 SDK is absent in CI, so the nodes themselves cannot be built there.
 Building the LaunchDescription objects still catches broken substitutions, a
-LifecycleNode declared without a namespace, and a managed_nodes list that does
-not parse into a ROS string array.
+and a LifecycleNode declared without a namespace.
 """
 
 import importlib.util
 import os
 import sys
 import tempfile
-from typing import List
 
 from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 from launch import LaunchContext
-from launch.substitutions import TextSubstitution
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import LifecycleNode
-from launch_ros.parameter_descriptions import ParameterValue
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LAUNCH_DIR = os.path.join(REPO_ROOT, 'wmx_r2_package', 'launch')
 
-# Every lifecycle node these launch files start, so a rename cannot silently
-# drop one from the engine's managed_nodes list.
+# Every lifecycle node these launch files start, so a rename or a dropped node
+# does not go unnoticed.
 EXPECTED_LIFECYCLE_NODES = {
     'wmx_r2_general_nodes.launch.py': 3,
-    'wmx_r2_cr3a_manipulator.launch.py': 3,
-    'wmx_r2_cr5a_manipulator.launch.py': 2,
-    'wmx_r2_diffbot_navigation.launch.py': 1,
+    'wmx_r2_cr3a_manipulator.launch.py': 4,
+    'wmx_r2_cr5a_manipulator.launch.py': 3,
+    'wmx_r2_diffbot_navigation.launch.py': 2,
 }
 
 
@@ -66,6 +63,23 @@ def load(path):
     return module.generate_launch_description()
 
 
+def entities_of(description):
+    """Top-level entities, with OpaqueFunctions expanded on argument defaults.
+
+    Node actions are never visited: visiting one would launch the process.
+    """
+    context = LaunchContext()
+    entities = []
+    for entity in description.entities:
+        if isinstance(entity, DeclareLaunchArgument):
+            entity.visit(context)
+        elif isinstance(entity, OpaqueFunction):
+            entities.extend(entity.execute(context) or [])
+        else:
+            entities.append(entity)
+    return entities
+
+
 def main():
     failures = []
 
@@ -83,7 +97,7 @@ def main():
             continue
 
         lifecycle_nodes = [
-            entity for entity in description.entities if isinstance(entity, LifecycleNode)
+            entity for entity in entities_of(description) if isinstance(entity, LifecycleNode)
         ]
         expected = EXPECTED_LIFECYCLE_NODES.get(name)
         if expected is not None and len(lifecycle_nodes) != expected:
@@ -91,14 +105,6 @@ def main():
                 f'{name}: expected {expected} lifecycle nodes, found {len(lifecycle_nodes)}')
 
         print(f'{name}: OK ({len(lifecycle_nodes)} lifecycle nodes)')
-
-    # managed_nodes reaches the engine as a ROS string array, not one string.
-    value = ParameterValue(
-        TextSubstitution(text="['wmx_core_motion_node', 'wmx_io_node']"),
-        value_type=List[str],
-    ).evaluate(LaunchContext())
-    if value != ['wmx_core_motion_node', 'wmx_io_node']:
-        failures.append(f'managed_nodes does not parse as a string array: {value!r}')
 
     for failure in failures:
         print(f'ERROR: {failure}', file=sys.stderr)

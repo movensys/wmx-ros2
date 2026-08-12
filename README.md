@@ -77,15 +77,18 @@ flowchart LR;
 `wmx_engine_node` owns the WMX3 engine. Every other WMX node is a
 [managed (lifecycle) node](https://design.ros2.org/articles/node_lifecycle.html):
 it starts `unconfigured` and only attaches to the device when the engine drives
-it to `configure`, then `activate`. The engine does that automatically once
-communication is up (`auto_manage_nodes`, default `true`) and exposes the same
-control as services:
+it to `configure`, then `activate`. Nothing lists those nodes anywhere — the
+engine finds them on the ROS graph and brings up each one it has not seen
+before, so a node that joins late or respawns is picked up too. This is not
+limited to WMX nodes: any managed node in the same namespace (a lifecycle
+`joint_state_publisher`, a nav2 node, your own) is brought up the same way.
+Individual nodes are driven by name:
 
 ```bash
-# States of every managed node
+# Lifecycle nodes the engine can see, and their states
 ros2 service call /wmx/engine/get_node_states std_srvs/srv/Trigger "{}"
 
-# Drive one node (empty node_name targets all of them)
+# Drive one node by name
 ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
   "{node_name: 'wmx_io_node', transition: 'deactivate'}"
 ```
@@ -132,7 +135,7 @@ flowchart LR;
 | `joint_trajectory_controller` | Receives trajectory actions and executes via WMX3 C-Spline (lifecycle) |
 | `joint_position_controller` | Follows MoveIt Servo's streamed `JointTrajectory` via WMX3 linear interpolation, so every axis arrives at the same instant (lifecycle) |
 | `differential_drive_controller` | Differential-drive command and odometry loop (lifecycle) |
-| `joint_state_broadcaster` | Publishes joint feedback from the WMX3 encoder to `/joint_states` |
+| `joint_state_broadcaster` | Publishes joint feedback from the WMX3 encoder to `/joint_states`; clears alarms and switches the servos on when activated (lifecycle) |
 | `gripper_controller` | Gripper command handling for manipulators (lifecycle) |
 
 ## Launch Files

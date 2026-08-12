@@ -24,8 +24,6 @@ using wmx3Api::ErrorCode;
 using wmx3Api::IO;
 using wmx3Api::WMX3Api;
 
-// Managed node: wmx_engine_node drives the transitions once the engine is
-// communicating (see wmx/engine/set_node_state).
 class GripperController : public rclcpp_lifecycle::LifecycleNode {
 public:
   using CallbackReturn =
@@ -50,8 +48,8 @@ public:
   char errString_[256];
 
 private:
-  std::atomic<bool> active_{false};
-  bool deviceAttached_ = false;
+  std::atomic<bool> isActive_{false};
+  bool isDeviceAttached_ = false;
 
   WMX3Api wmx3Lib_;
   IO Wmx3Lib_Io_;
@@ -80,10 +78,8 @@ GripperController::~GripperController(){
   RCLCPP_INFO(this->get_logger(), "gripper_controller is stopped");
 }
 
-// Attach to the device the engine created. Returns false so the transition can
-// fail loudly instead of leaving the node inactive with no device.
 bool GripperController::attachDevice(){
-  if (deviceAttached_) {
+  if (isDeviceAttached_) {
     return true;
   }
 
@@ -98,13 +94,13 @@ bool GripperController::attachDevice(){
   }
 
   wmx3Lib_.SetDeviceName("gripper_controller");
-  deviceAttached_ = true;
+  isDeviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
   return true;
 }
 
 void GripperController::releaseDevice(){
-  if (!deviceAttached_) {
+  if (!isDeviceAttached_) {
     return;
   }
 
@@ -115,7 +111,7 @@ void GripperController::releaseDevice(){
   } else {
     RCLCPP_INFO(this->get_logger(), "Device closed");
   }
-  deviceAttached_ = false;
+  isDeviceAttached_ = false;
 }
 
 GripperController::CallbackReturn GripperController::on_configure(
@@ -150,7 +146,7 @@ GripperController::CallbackReturn GripperController::on_activate(
   const rclcpp_lifecycle::State & previous_state)
 {
   LifecycleNode::on_activate(previous_state);
-  active_ = true;
+  isActive_ = true;
   RCLCPP_INFO(this->get_logger(), "gripper_controller is active");
   return CallbackReturn::SUCCESS;
 }
@@ -158,7 +154,7 @@ GripperController::CallbackReturn GripperController::on_activate(
 GripperController::CallbackReturn GripperController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  active_ = false;
+  isActive_ = false;
   LifecycleNode::on_deactivate(previous_state);
   RCLCPP_INFO(this->get_logger(), "gripper_controller is inactive");
   return CallbackReturn::SUCCESS;
@@ -167,7 +163,7 @@ GripperController::CallbackReturn GripperController::on_deactivate(
 GripperController::CallbackReturn GripperController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  active_ = false;
+  isActive_ = false;
   setGripperService_.reset();
   releaseDevice();
 
@@ -237,7 +233,7 @@ void GripperController::setRosParameter(){
 
 void GripperController::setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                                         std::shared_ptr<std_srvs::srv::SetBool::Response> response){
-  if (!active_) {
+  if (!isActive_) {
     response->success = false;
     response->message = "gripper_controller is not active (state: " +
                         this->get_current_state().label() + ").";

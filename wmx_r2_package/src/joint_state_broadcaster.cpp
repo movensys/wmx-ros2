@@ -10,8 +10,9 @@
 #include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 
 #include "wmx_r2_message/srv/set_axis.hpp"
@@ -28,11 +29,20 @@ using wmx3Api::ErrorCode;
 using wmx3Api::IO;
 using wmx3Api::WMX3Api;
 
-class JointStateBroadcaster : public rclcpp::Node
+class JointStateBroadcaster : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   JointStateBroadcaster();
-  ~JointStateBroadcaster();
+  ~JointStateBroadcaster() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
   int jointFeedbackRate_;
   float gripperCloseValue_;
@@ -51,27 +61,26 @@ public:
   char errString_[256];
 
 private:
-  bool initialized_ = false;
-  std::atomic<bool> initializing_{false};
+  std::atomic<bool> isActive_{false};
+  bool isDeviceAttached_ = false;
 
   WMX3Api wmx3Lib_;
   CoreMotionStatus cmStatus_;
   std::unique_ptr<CoreMotion> wmx3LibCm_;
   std::unique_ptr<IO> wmx3Lib_Io_;
 
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr coreMotionReadySub_;
+  rclcpp::CallbackGroup::SharedPtr axisClientCbGroup_;
   rclcpp::Client<wmx_r2_message::srv::SetAxis>::SharedPtr clearAlarmClient_;
   rclcpp::Client<wmx_r2_message::srv::SetAxis>::SharedPtr setAxisOnClient_;
 
   rclcpp::TimerBase::SharedPtr encoderJointTimer_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr gazeboJointPub_;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Float64MultiArray>::SharedPtr gazeboJointPub_;
 
-  std::thread init_thread_;
-
-  void onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg);
-  void runInitSequence();
+  bool attachDevice();
+  void releaseDevice();
+  void servoOff();
   bool callSetAxisService(rclcpp::Client<wmx_r2_message::srv::SetAxis>::SharedPtr client,
                           const std::string & service_name,
                           const std::vector<int64_t> & index,
@@ -80,137 +89,112 @@ private:
   void setRosParameter();
 };
 
-JointStateBroadcaster::JointStateBroadcaster() : Node("joint_state_broadcaster")
+JointStateBroadcaster::JointStateBroadcaster()
+: LifecycleNode("joint_state_broadcaster")
 {
   RCLCPP_INFO(this->get_logger(), "start joint_state_broadcaster");
 
   setRosParameter();
 
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  coreMotionReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/core_motion/ready", ready_qos,
-    std::bind(&JointStateBroadcaster::onCoreMotionReady, this, _1));
+  axisClientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   clearAlarmClient_ = this->create_client<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/clear_alarm");
+    "wmx/axis/clear_alarm", rclcpp::ServicesQoS(), axisClientCbGroup_);
 
   setAxisOnClient_ = this->create_client<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/set_on");
+    "wmx/axis/set_on", rclcpp::ServicesQoS(), axisClientCbGroup_);
 
-  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster waiting for core_motion...");
+  RCLCPP_INFO(
+    this->get_logger(), "joint_state_broadcaster is unconfigured, waiting for configure...");
 }
 
 JointStateBroadcaster::~JointStateBroadcaster()
 {
   RCLCPP_INFO(this->get_logger(), "Stop joint_state_broadcaster");
 
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  if (initialized_) {
-    if (encoderJointTimer_) {
-      encoderJointTimer_->cancel();
-    }
-
-    for (int axis : jointAxes_) {
-      err_ = wmx3LibCm_->axisControl->SetServoOn(axis, 0);
-      if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(
-          this->get_logger(), "Servo %d error to off. Error=%d (%s)", axis, err_,
-          errString_);
-      } else {
-        RCLCPP_INFO(this->get_logger(), "Servo %d off", axis);
-      }
-    }
-
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
+  servoOff();
+  releaseDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is stopped");
 }
 
-void JointStateBroadcaster::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg)
+bool JointStateBroadcaster::attachDevice()
 {
-  if (!msg->data || initialized_ || initializing_.exchange(true)) {
-    return;
+  if (isDeviceAttached_) {
+    return true;
   }
 
-  RCLCPP_INFO(this->get_logger(), "CoreMotion ready — starting init on dedicated thread...");
-
-  // Join any previous thread (e.g. from a failed retry)
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  // Spawn dedicated thread so blocking wait_for() doesn't block executor
-  init_thread_ = std::thread(&JointStateBroadcaster::runInitSequence, this);
-}
-
-void JointStateBroadcaster::runInitSequence()
-{
   unsigned int timeout = 10000;
-  static constexpr int kMaxDeviceRetries = 30;
-
-  for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
-    err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
-    if (err_ == ErrorCode::None) {
-      break;
-    }
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-        attempt, kMaxDeviceRetries);
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    } else {
-      RCLCPP_ERROR(
-        this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_,
-        errString_);
-      initializing_ = false;
-      return;
-    }
-  }
+  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
 
   if (err_ != ErrorCode::None) {
-    RCLCPP_FATAL(
-      this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
-    initializing_ = false;
-    return;
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    if (err_ == ErrorCode::StartProcessLockError) {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device (lock busy). Is the engine communicating?");
+    } else {
+      RCLCPP_ERROR(
+        this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    }
+    return false;
   }
 
   wmx3Lib_.SetDeviceName("joint_state_broadcaster");
-
+  isDeviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
+  return true;
+}
+
+void JointStateBroadcaster::releaseDevice()
+{
+  if (!isDeviceAttached_) {
+    return;
+  }
+
+  wmx3Lib_Io_.reset();
+  wmx3LibCm_.reset();
+
+  err_ = wmx3Lib_.CloseDevice();
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
+  } else {
+    RCLCPP_INFO(this->get_logger(), "Device closed");
+  }
+  isDeviceAttached_ = false;
+}
+
+void JointStateBroadcaster::servoOff()
+{
+  if (!isActive_ || !wmx3LibCm_) {
+    return;
+  }
+
+  for (int axis : jointAxes_) {
+    err_ = wmx3LibCm_->axisControl->SetServoOn(axis, 0);
+    if (err_ != ErrorCode::None) {
+      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+      RCLCPP_ERROR(
+        this->get_logger(), "Servo %d error to off. Error=%d (%s)", axis, err_, errString_);
+    } else {
+      RCLCPP_INFO(this->get_logger(), "Servo %d off", axis);
+    }
+  }
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_configure(
+  const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring joint_state_broadcaster...");
+
+  if (!attachDevice()) {
+    return CallbackReturn::FAILURE;
+  }
 
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
   wmx3Lib_Io_ = std::make_unique<IO>(&wmx3Lib_);
 
-  std::vector<int64_t> zeroData(jointAxes_.size(), 0);
-  std::vector<int64_t> onData(jointAxes_.size(), 1);
-
-  // Clear alarms on all axes
-  if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", jointAxes_, zeroData)) {
-    RCLCPP_ERROR(this->get_logger(), "Init failed at clear_alarm — node will not retry");
-    initializing_ = false;
-    return;
-  }
-
-  // Set servo on for all axes
-  if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", jointAxes_, onData)) {
-    RCLCPP_ERROR(this->get_logger(), "Init failed at set_on — node will not retry");
-    initializing_ = false;
-    return;
-  }
-
-  // Create publishers and timer on the node (thread-safe in rclcpp)
   encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
   isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);
   gazeboJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);
@@ -218,10 +202,68 @@ void JointStateBroadcaster::runInitSequence()
   encoderJointTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / jointFeedbackRate_),
     std::bind(&JointStateBroadcaster::publishJointState, this));
+  encoderJointTimer_->cancel();
 
-  initialized_ = true;
-  coreMotionReadySub_.reset();
-  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is ready");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  std::vector<int64_t> zeroData(jointAxes_.size(), 0);
+  std::vector<int64_t> onData(jointAxes_.size(), 1);
+
+  if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", jointAxes_, zeroData)) {
+    RCLCPP_ERROR(this->get_logger(), "Activation failed at clear_alarm");
+    return CallbackReturn::FAILURE;
+  }
+
+  if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", jointAxes_, onData)) {
+    RCLCPP_ERROR(this->get_logger(), "Activation failed at set_on");
+    return CallbackReturn::FAILURE;
+  }
+
+  LifecycleNode::on_activate(previous_state);
+  isActive_ = true;
+  encoderJointTimer_->reset();
+
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is active");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  encoderJointTimer_->cancel();
+  servoOff();
+  isActive_ = false;
+
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
+  isActive_ = false;
+
+  encoderJointTimer_.reset();
+  encoderJointPub_.reset();
+  isaacsimJointPub_.reset();
+  gazeboJointPub_.reset();
+
+  releaseDevice();
+
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 bool JointStateBroadcaster::callSetAxisService(
@@ -258,8 +300,10 @@ bool JointStateBroadcaster::callSetAxisService(
 
     auto response = future.get();
     if (!response->success) {
-      // Server may not be initialized yet -- retry instead of aborting
-      if (response->message.find("not initialized") != std::string::npos) {
+      // Server may not be active yet -- retry instead of aborting
+      if (response->message.find("not active") != std::string::npos ||
+        response->message.find("not initialized") != std::string::npos)
+      {
         RCLCPP_WARN(
           this->get_logger(),
           "%s: server not ready yet (attempt %d/%d), retrying...",
@@ -388,7 +432,9 @@ int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<JointStateBroadcaster>();
-  rclcpp::spin(node);
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(node->get_node_base_interface());
+  executor.spin();
   rclcpp::shutdown();
   return 0;
 }

@@ -39,7 +39,8 @@ install(DIRECTORY
 )
 
 add_executable(joint_state_broadcaster src/joint_state_broadcaster.cpp)
-ament_target_dependencies(joint_state_broadcaster rclcpp std_msgs sensor_msgs std_srvs wmx_r2_message)
+ament_target_dependencies(joint_state_broadcaster
+  rclcpp rclcpp_lifecycle std_msgs sensor_msgs std_srvs wmx_r2_message)
 target_include_directories(joint_state_broadcaster PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
 target_link_libraries(joint_state_broadcaster coremotionapi ioapi wmx3api imdll)
 target_link_directories(joint_state_broadcaster PRIVATE ${WMX3_SDK_PATH}/lib)
@@ -83,7 +84,7 @@ add_executable(wmx_engine_node src/wmx_engine_node.cpp)
 ament_target_dependencies(wmx_engine_node
   rclcpp lifecycle_msgs std_msgs std_srvs wmx_r2_message)
 target_include_directories(wmx_engine_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
-target_link_libraries(wmx_engine_node wmx3api imdll)
+target_link_libraries(wmx_engine_node coremotionapi wmx3api imdll)
 target_link_directories(wmx_engine_node PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(wmx_engine_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 

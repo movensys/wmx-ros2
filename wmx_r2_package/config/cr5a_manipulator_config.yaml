@@ -11,7 +11,6 @@ joint_trajectory_controller:
   ros__parameters:
     joint_axes: [0, 1, 2, 3, 4, 5]
     joint_trajectory_action: /movensys_manipulator_arm_controller/follow_joint_trajectory
-    wmx_param_file_path: ""  # resolved at launch time via get_package_share_directory
 
 joint_position_controller:
   ros__parameters:
@@ -22,3 +21,10 @@ joint_position_controller:
     default_velocity: 0.5
     min_step: 0.001
 
+wmx_engine_node:
+  ros__parameters:
+    device_path: "/opt/wmx3/"
+    device_name: "wmx_r2"
+    engine_core: -1           # CPU core for the RT engine (-1 = SDK default)
+    engine_affinity_mask: 0   # CPU affinity bitmask (0 = SDK default)
+    wmx_param_file_path: ""   # full path to cr5a_wmx_parameters.xml

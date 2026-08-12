@@ -106,14 +106,14 @@ ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: false}"
 ```
 
 ### Set Engine Device (create/close WMX3 device)
+The path and device name are fixed in `wmx_engine_node.hpp` (`/opt/wmx3/`, named
+`wmx_r2`), so this is a plain on/off.
 ```
 # Create device
-ros2 service call /wmx/engine/set_engine wmx_r2_message/srv/SetEngine \
-  "{data: true, path: '/opt/wmx3/', name: 'my_device'}"
+ros2 service call /wmx/engine/set_engine std_srvs/srv/SetBool "{data: true}"
 
-# Close device
-ros2 service call /wmx/engine/set_engine wmx_r2_message/srv/SetEngine \
-  "{data: false, path: '', name: ''}"
+# Close device (takes the lifecycle nodes down to unconfigured first)
+ros2 service call /wmx/engine/set_engine std_srvs/srv/SetBool "{data: false}"
 ```
 
 ### Scan Network
@@ -126,31 +126,39 @@ ros2 service call /wmx/ecat/scan_network wmx_r2_message/srv/EcatScanNetwork \
 
 ---
 
-## Managed Node Services (wmx_engine_node)
+## Lifecycle Node Services (wmx_engine_node)
 `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` and the robot
 controllers are lifecycle nodes. They start `unconfigured` and only attach to the
 WMX3 device once `wmx_engine_node` drives them through `configure` and
-`activate`, which it does automatically when communication starts
-(`auto_manage_nodes`, default `true`).
+`activate`.
+
+There is nothing to configure: the engine scans the ROS graph every 2 s for
+nodes offering `<node>/change_state` and brings up each one it has not handled
+yet, as long as the engine is communicating. A node that joins late or respawns
+is picked up on a later sweep; a node an operator deactivated on purpose is left
+alone.
+
+This applies to **every** lifecycle node in the engine's namespace, not only the
+ones in this package — a lifecycle `joint_state_publisher`, a nav2 node or your
+own managed node is configured and activated the same way, after the WMX
+device-level nodes it may depend on.
 
 ### Read the states
+Lists every lifecycle node currently on the graph, with its state.
 ```
 ros2 service call /wmx/engine/get_node_states std_srvs/srv/Trigger "{}"
 ```
 
 ### Drive a transition
-`transition` is one of `configure`, `activate`, `deactivate`, `cleanup`,
-`shutdown`, `bringup` (configure + activate), `bringdown` (deactivate).
-An empty `node_name` targets every managed node.
+Always one node, by name. `transition` is one of `configure`, `activate`,
+`deactivate`, `cleanup`, `shutdown`, `bringup` (configure + activate),
+`bringdown` (deactivate).
 ```
-# One node
 ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
   "{node_name: 'wmx_io_node', transition: 'deactivate'}"
-
-# All managed nodes
-ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
-  "{node_name: '', transition: 'bringup'}"
 ```
+A plain name is resolved against `wmx_engine_node`'s namespace; an absolute name
+(`/robot1/wmx_io_node`) is used as given.
 
 The standard CLI works too, and bypasses the engine:
 ```
@@ -159,15 +167,12 @@ ros2 lifecycle get /wmx_io_node
 ros2 lifecycle set /wmx_io_node deactivate
 ```
 
-### Engine parameters
-| Parameter | Default | Meaning |
-|-----------|---------|---------|
-| `auto_manage_nodes` | `true` | Configure + activate the managed nodes when communication starts, and take them down before communication stops or the device closes |
-| `managed_nodes` | `['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node']` | Nodes the engine manages, brought up in this order. Robot launch files extend the list with their controllers |
-
 ---
 
 ## WMX Parameter Services
+Served by `wmx_engine_node`, which owns the device. Set the engine's
+`wmx_param_file_path` parameter (the robot launch files do) to import a file
+automatically once communication starts.
 ### Load Parameters from File
 ```
 # Dobot CR3A
@@ -374,6 +379,8 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
   touching the device; topics and timers are stopped while inactive
 - `deactivate` stops what the node was driving (jogging axes, wheel commands, trajectories)
   but keeps the device attached; `cleanup` also detaches from the device
-- `wmx/engine/set_comm false` deactivates the managed nodes first, and
+- Bring-up order is device-level nodes (`wmx_*`) first, then the controllers that command
+  their axes; take-down is the reverse
+- `wmx/engine/set_comm false` deactivates the lifecycle nodes first, and
   `wmx/engine/set_engine false` cleans them up, so no node holds a handle to a device
   the engine is about to close

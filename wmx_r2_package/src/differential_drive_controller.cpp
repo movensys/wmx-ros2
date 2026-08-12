@@ -60,8 +60,6 @@ using wmx3Api::WMX3Api;
 
 namespace ddl = diff_drive;
 
-// Managed node: wmx_engine_node drives the transitions once the engine is
-// communicating (see wmx/engine/set_node_state).
 class DifferentialDriveController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -102,14 +100,13 @@ public:
   std::string encoderOdometryTopic_;
   std::string odomDeltasTopic_;
   std::string odomAccelTopic_;
-  std::string wmxParamFilePath_;
 
   int err_;
   char errString_[256];
 
 private:
-  std::atomic<bool> active_{false};
-  bool deviceAttached_ = false;
+  std::atomic<bool> isActive_{false};
+  bool isDeviceAttached_ = false;
 
   // --- WMX ---
   WMX3Api wmx3Lib_;
@@ -158,7 +155,6 @@ private:
   bool attachDevice();
   void releaseDevice();
   void setRosParameter();
-  void setWmxParam(char * path);
 
   // Control loop
   void cmdStampedCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
@@ -203,11 +199,9 @@ DifferentialDriveController::~DifferentialDriveController()
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is stopped");
 }
 
-// Attach to the device the engine created. Returns false so the transition can
-// fail loudly instead of leaving the node inactive with no device.
 bool DifferentialDriveController::attachDevice()
 {
-  if (deviceAttached_) {
+  if (isDeviceAttached_) {
     return true;
   }
 
@@ -228,14 +222,14 @@ bool DifferentialDriveController::attachDevice()
   }
 
   wmx3Lib_.SetDeviceName("differential_drive_controller");
-  deviceAttached_ = true;
+  isDeviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
   return true;
 }
 
 void DifferentialDriveController::releaseDevice()
 {
-  if (!deviceAttached_) {
+  if (!isDeviceAttached_) {
     return;
   }
 
@@ -247,7 +241,7 @@ void DifferentialDriveController::releaseDevice()
   } else {
     RCLCPP_INFO(this->get_logger(), "Device closed");
   }
-  deviceAttached_ = false;
+  isDeviceAttached_ = false;
 }
 
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_configure(
@@ -260,8 +254,6 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
   }
 
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
-
-  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
 
   encoderOmegaPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
     encoderOmegaTopic_, 1);
@@ -281,8 +273,6 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
   cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
 
-  // Single control loop: one GetStatus per cycle drives both odometry and command.
-  // Held stopped until on_activate(): an inactive controller must not drive wheels.
   auto period = std::chrono::milliseconds(1000 / rate_);
   controlTimer_ = this->create_wall_timer(
     period, std::bind(&DifferentialDriveController::controlStep, this));
@@ -296,9 +286,8 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_acti
   const rclcpp_lifecycle::State & previous_state)
 {
   LifecycleNode::on_activate(previous_state);
-  active_ = true;
+  isActive_ = true;
 
-  // Re-baseline: encoders and the command may have moved on while inactive.
   havePrev_ = false;
   haveCmd_ = false;
   lastSentValid_ = false;
@@ -312,10 +301,9 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_acti
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  active_ = false;
+  isActive_ = false;
   controlTimer_->cancel();
 
-  // Stop the wheels: no control loop is left to time out the last command.
   setVelocity(leftAxis_, 0.0);
   setVelocity(rightAxis_, 0.0);
   lastSentValid_ = false;
@@ -328,7 +316,7 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_deac
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  active_ = false;
+  isActive_ = false;
 
   controlTimer_.reset();
   cmdVelStampedSub_.reset();
@@ -617,17 +605,6 @@ geometry_msgs::msg::Quaternion DifferentialDriveController::yawToQuaternion(doub
   return q;
 }
 
-void DifferentialDriveController::setWmxParam(char * path)
-{
-  err_ = wmx3LibCm_->config->ImportAndSetAll(path);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
-  }
-}
-
 void DifferentialDriveController::setRosParameter()
 {
   this->declare_parameter<int>("left_axis", 0);
@@ -653,7 +630,6 @@ void DifferentialDriveController::setRosParameter()
   this->declare_parameter<std::string>("encoder_odometry_topic", "/odom_enc");
   this->declare_parameter<std::string>("odom_deltas_topic", "/odom_deltas");
   this->declare_parameter<std::string>("odom_accel_topic", "/odom_accel");
-  this->declare_parameter<std::string>("wmx_param_file_path", "/diff_drive/no_param");
 
   this->get_parameter("left_axis", leftAxis_);
   this->get_parameter("right_axis", rightAxis_);
@@ -678,7 +654,6 @@ void DifferentialDriveController::setRosParameter()
   this->get_parameter("encoder_odometry_topic", encoderOdometryTopic_);
   this->get_parameter("odom_deltas_topic", odomDeltasTopic_);
   this->get_parameter("odom_accel_topic", odomAccelTopic_);
-  this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
   if (rate_ <= 0) {
     RCLCPP_WARN(this->get_logger(), "rate must be > 0; falling back to 100 Hz");
@@ -733,7 +708,6 @@ void DifferentialDriveController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "encoder_odometry_topic: %s", encoderOdometryTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "odom_deltas_topic: %s", odomDeltasTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "odom_accel_topic: %s", odomAccelTopic_.c_str());
-  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 

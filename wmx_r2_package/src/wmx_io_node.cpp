@@ -19,11 +19,9 @@ WmxIoNode::~WmxIoNode()
   RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
 }
 
-// Attach to the device the engine created. Returns false so the transition can
-// fail loudly instead of leaving the node inactive with no device.
 bool WmxIoNode::attachDevice()
 {
-  if (deviceAttached_) {
+  if (isDeviceAttached_) {
     return true;
   }
 
@@ -45,14 +43,14 @@ bool WmxIoNode::attachDevice()
   }
 
   wmx3Lib_.SetDeviceName("wmx_io_node");
-  deviceAttached_ = true;
+  isDeviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
   return true;
 }
 
 void WmxIoNode::releaseDevice()
 {
-  if (!deviceAttached_) {
+  if (!isDeviceAttached_) {
     return;
   }
 
@@ -64,7 +62,7 @@ void WmxIoNode::releaseDevice()
   } else {
     RCLCPP_INFO(this->get_logger(), "Device closed");
   }
-  deviceAttached_ = false;
+  isDeviceAttached_ = false;
 }
 
 std::string WmxIoNode::notActiveMessage() const
@@ -114,14 +112,14 @@ WmxIoNode::CallbackReturn WmxIoNode::on_configure(const rclcpp_lifecycle::State 
 WmxIoNode::CallbackReturn WmxIoNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
   LifecycleNode::on_activate(previous_state);
-  active_ = true;
+  isActive_ = true;
   RCLCPP_INFO(this->get_logger(), "wmx_io_node is active");
   return CallbackReturn::SUCCESS;
 }
 
 WmxIoNode::CallbackReturn WmxIoNode::on_deactivate(const rclcpp_lifecycle::State & previous_state)
 {
-  active_ = false;
+  isActive_ = false;
   LifecycleNode::on_deactivate(previous_state);
   RCLCPP_INFO(this->get_logger(), "wmx_io_node is inactive");
   return CallbackReturn::SUCCESS;
@@ -129,7 +127,7 @@ WmxIoNode::CallbackReturn WmxIoNode::on_deactivate(const rclcpp_lifecycle::State
 
 WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
-  active_ = false;
+  isActive_ = false;
 
   getInputBitService_.reset();
   getOutputBitService_.reset();
@@ -153,7 +151,7 @@ void WmxIoNode::getInputBit(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!active_) {
+  if (!isActive_) {
     response->success = false;
     response->message = notActiveMessage();
     return;
@@ -185,7 +183,7 @@ void WmxIoNode::getOutputBit(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!active_) {
+  if (!isActive_) {
     response->success = false;
     response->message = notActiveMessage();
     return;
@@ -217,7 +215,7 @@ void WmxIoNode::getInputBytes(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!active_) {
+  if (!isActive_) {
     response->success = false;
     response->message = notActiveMessage();
     return;
@@ -255,7 +253,7 @@ void WmxIoNode::getOutputBytes(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!active_) {
+  if (!isActive_) {
     response->success = false;
     response->message = notActiveMessage();
     return;
@@ -293,7 +291,7 @@ void WmxIoNode::setOutputBit(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBit::Response> response)
 {
-  if (!active_) {
+  if (!isActive_) {
     response->success = false;
     response->message = notActiveMessage();
     return;
@@ -330,7 +328,7 @@ void WmxIoNode::setOutputBytes(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Response> response)
 {
-  if (!active_) {
+  if (!isActive_) {
     response->success = false;
     response->message = notActiveMessage();
     return;

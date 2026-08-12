@@ -14,7 +14,7 @@ from std_srvs.srv import Trigger
 
 from wmx_r2_message.srv import SetNodeState
 
-MANAGED_NODES = ['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node']
+LIFECYCLE_NODES = ['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node']
 
 
 @pytest.mark.launch_test
@@ -33,7 +33,7 @@ def generate_test_description():
             namespace='',
             output='screen',
         )
-        for name in MANAGED_NODES
+        for name in LIFECYCLE_NODES
     ]
 
     return launch.LaunchDescription([
@@ -66,9 +66,9 @@ class TestLifecycleNodes(unittest.TestCase):
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=timeout_sec)
         return future.result()
 
-    def test_managed_nodes_expose_lifecycle_services(self):
-        """Each managed node should offer the standard lifecycle services."""
-        for name in MANAGED_NODES:
+    def test_nodes_expose_lifecycle_services(self):
+        """Each node under test should offer the standard lifecycle services."""
+        for name in LIFECYCLE_NODES:
             client = self.node.create_client(GetState, f'{name}/get_state')
             self.assertTrue(
                 client.wait_for_service(timeout_sec=20),
@@ -83,8 +83,8 @@ class TestLifecycleNodes(unittest.TestCase):
                 f'{name} reported an unexpected state',
             )
 
-    def test_engine_reports_managed_node_states(self):
-        """wmx/engine/get_node_states should list every managed node."""
+    def test_engine_reports_node_states(self):
+        """wmx/engine/get_node_states should list the lifecycle nodes it finds."""
         client = self.node.create_client(Trigger, 'wmx/engine/get_node_states')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
@@ -94,7 +94,7 @@ class TestLifecycleNodes(unittest.TestCase):
         result = self.call(client, Trigger.Request())
         self.assertIsNotNone(result, 'Service call returned no result')
         self.assertTrue(result.success)
-        for name in MANAGED_NODES:
+        for name in LIFECYCLE_NODES:
             self.assertIn(name, result.message)
 
     def test_engine_rejects_unknown_transition(self):
@@ -113,8 +113,8 @@ class TestLifecycleNodes(unittest.TestCase):
         self.assertIsNotNone(result, 'Service call returned no result')
         self.assertFalse(result.success)
 
-    def test_engine_rejects_unknown_node(self):
-        """A node outside managed_nodes should be reported as unknown."""
+    def test_engine_rejects_missing_node_name(self):
+        """An empty node_name should be rejected: transitions are per node."""
         client = self.node.create_client(SetNodeState, 'wmx/engine/set_node_state')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
@@ -122,7 +122,7 @@ class TestLifecycleNodes(unittest.TestCase):
         )
 
         req = SetNodeState.Request()
-        req.node_name = 'no_such_node'
+        req.node_name = ''
         req.transition = 'bringup'
         result = self.call(client, req)
 
@@ -143,8 +143,8 @@ class TestLifecycleNodes(unittest.TestCase):
             'wmx/engine/set_node_state service not available',
         )
 
-        # The engine brings the node up on its own once the engine communicates.
-        # Without a running engine there is nothing to deactivate, so skip.
+        # The engine discovers the node and brings it up on its own once it is
+        # communicating. Without a running engine there is nothing to deactivate.
         state = self.call(state_client, GetState.Request())
         self.assertIsNotNone(state, 'wmx_io_node/get_state returned no result')
         if state.current_state.label != 'active':

@@ -95,9 +95,9 @@ in the generated node config like any other value.
 **Namespaces.** The five data-topic defaults are *absolute* names, so launching
 the node in a ROS namespace does **not** namespace them — override the topic
 parameters explicitly for multi-robot/namespaced deployments. The lifecycle
-services (`~/change_state`, `~/get_state`) do follow the namespace, so the name
-in `wmx_engine_node`'s `managed_nodes` must match the namespaced node name, or
-the engine never brings the controller up.
+services (`~/change_state`, `~/get_state`) do follow the namespace; the engine
+discovers the controller under its fully-qualified name, and
+`wmx/engine/set_node_state` takes that same name.
 
 ### `/odom_enc` covariance (fixed, not parameterized)
 
@@ -157,8 +157,8 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 
 **Startup.** This is a managed (lifecycle) node. It starts `unconfigured` and
 does nothing until `wmx_engine_node` drives it — automatically once the engine
-communicates (`auto_manage_nodes`), or on demand through
-`wmx/engine/set_node_state` / `ros2 lifecycle set`.
+communicates, or on demand through `wmx/engine/set_node_state` /
+`ros2 lifecycle set`.
 
 `on_configure`:
 
@@ -266,8 +266,8 @@ What the Toolkit needs to template per robot / per deployment:
   configured); otherwise two publishers would fight over `odom → base_link`.
 - **Usually defaults:** topic names (already the autonomy contract), frames, `rate`,
   `cmd_vel_timeout`, `accel_publish_rate`, `accel_alpha`, `acc_time`/`dec_time`.
-- **Not parameterized (by design):** the lifecycle gate (the engine's
-  `managed_nodes` list owns it), the `/odom_enc` covariance values, servo-on/alarm-clear handling (engine/general
+- **Not parameterized (by design):** the lifecycle gate (`wmx_engine_node` owns it),
+  the `/odom_enc` covariance values, servo-on/alarm-clear handling (engine/general
   nodes own these), and any gear-ratio scaling (WMX XML owns it).
 
 ## Build

@@ -43,8 +43,6 @@ using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::WMX3Api;
 
-// Managed node: wmx_engine_node drives the transitions once the engine is
-// communicating (see wmx/engine/set_node_state).
 class JointTrajectoryController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -64,14 +62,13 @@ public:
 
   std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
-  std::string wmxParamFilePath_;
 
   int err_;
   char errString_[256];
 
 private:
-  std::atomic<bool> active_{false};
-  bool deviceAttached_ = false;
+  std::atomic<bool> isActive_{false};
+  bool isDeviceAttached_ = false;
 
   WMX3Api wmx3Lib_;
   CoreMotion wmx3LibCm_;
@@ -80,7 +77,6 @@ private:
   AdvMotion::SplinePoint pt_spl[MAX_TRAJ_POINTS];
   double time_spl[MAX_TRAJ_POINTS];
   AxisSelection axisSel;
-  Config::AxisParam axisParam_;
 
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
@@ -99,8 +95,6 @@ private:
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle);
 
   void setRosParameter();
-  void setWmxParam(char * path);
-  void getWmxParam();
   bool attachDevice();
   void releaseDevice();
   void logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory);
@@ -126,11 +120,9 @@ JointTrajectoryController::~JointTrajectoryController()
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is stopped");
 }
 
-// Attach to the device the engine created. Returns false so the transition can
-// fail loudly instead of leaving the node inactive with no device.
 bool JointTrajectoryController::attachDevice()
 {
-  if (deviceAttached_) {
+  if (isDeviceAttached_) {
     return true;
   }
 
@@ -152,14 +144,14 @@ bool JointTrajectoryController::attachDevice()
   }
 
   wmx3Lib_.SetDeviceName("joint_trajectory_controller");
-  deviceAttached_ = true;
+  isDeviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
   return true;
 }
 
 void JointTrajectoryController::releaseDevice()
 {
-  if (!deviceAttached_) {
+  if (!isDeviceAttached_) {
     return;
   }
 
@@ -172,7 +164,7 @@ void JointTrajectoryController::releaseDevice()
   } else {
     RCLCPP_INFO(this->get_logger(), "Device closed");
   }
-  deviceAttached_ = false;
+  isDeviceAttached_ = false;
 }
 
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configure(
@@ -187,9 +179,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
   wmx3LibCm_ = CoreMotion(&wmx3Lib_);
   wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
   wmx3LibAm_.advMotion->CreateSplineBuffer(0, MAX_TRAJ_POINTS);
-
-  setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
-  getWmxParam();
 
   servoResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
     "/servo_node/delta_joint_cmds", 10);
@@ -215,9 +204,8 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate
   const rclcpp_lifecycle::State & previous_state)
 {
   LifecycleNode::on_activate(previous_state);
-  active_ = true;
+  isActive_ = true;
 
-  // Latch the initial "no execution running" state for joint_position_controller.
   publishExecActive(false);
 
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is active");
@@ -227,10 +215,8 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  active_ = false;
+  isActive_ = false;
 
-  // Publish before the publisher goes inactive, otherwise the sample is dropped
-  // and the latched "execution running" would never be cleared.
   publishExecActive(false);
 
   LifecycleNode::on_deactivate(previous_state);
@@ -241,7 +227,7 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactiva
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  active_ = false;
+  isActive_ = false;
 
   action_server_.reset();
   execActivePub_.reset();
@@ -259,72 +245,14 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_shutdown
   return on_cleanup(previous_state);
 }
 
-void JointTrajectoryController::setWmxParam(char * path)
-{
-  Config::SystemParam sysParamError;
-  Config::AxisParam axisParamError;
-  err_ = wmx3LibCm_.config->ImportAndSetAll(path, &sysParamError, &axisParamError);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to set WMX params. Error=%d (%s)", err_, errString_);
-    for (int axis : jointAxes_) {
-      RCLCPP_ERROR(
-        this->get_logger(),
-        "  [axis %d] AxisParam error flags: gearNum=%.0f gearDen=%.6f polarity=%d "
-        "absEnc=%d maxSpd=%.0f maxSpdUnitNum=%.6f maxSpdUnitDen=%.6f singleTurnMode=%d "
-        "singleTurnCnt=%u maxTrq=%.1f posTrq=%.1f negTrq=%.1f axisUnit=%.6f cmdMode=%d",
-        axis,
-        axisParamError.gearRatioNumerator[axis], axisParamError.gearRatioDenominator[axis],
-        static_cast<int>(axisParamError.axisPolarity[axis]),
-        static_cast<int>(axisParamError.absoluteEncoderMode[axis]),
-        axisParamError.maxMotorSpeed[axis],
-        axisParamError.maxMotorSpeedUnitNumerator[axis],
-        axisParamError.maxMotorSpeedUnitDenominator[axis],
-        static_cast<int>(axisParamError.singleTurnMode[axis]),
-        axisParamError.singleTurnEncoderCount[axis],
-        axisParamError.maxTrqLimit[axis], axisParamError.positiveTrqLimit[axis],
-        axisParamError.negativeTrqLimit[axis], axisParamError.axisUnit[axis],
-        static_cast<int>(axisParamError.axisCommandMode[axis]));
-    }
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Success to set WMX params");
-  }
-}
-
-void JointTrajectoryController::getWmxParam()
-{
-  err_ = wmx3LibCm_.config->GetAxisParam(&axisParam_);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(), "Failed to get axis params. Error=%d (%s)", err_, errString_);
-  } else {
-    for (int axis : jointAxes_) {
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, numerator: %f", axis, axisParam_.gearRatioNumerator[axis]);
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, denominator: %f", axis,
-        axisParam_.gearRatioDenominator[axis]);
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, polarity: %d", axis,
-        (int)axisParam_.axisPolarity[axis]);
-      RCLCPP_INFO(
-        this->get_logger(), "axis: %d, abs encoder: %d", axis,
-        axisParam_.absoluteEncoderMode[axis]);
-      RCLCPP_INFO(this->get_logger(), "axis: %d, mode: %d", axis, axisParam_.axisCommandMode[axis]);
-    }
-  }
-}
-
 void JointTrajectoryController::setRosParameter()
 {
   this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
   this->declare_parameter<std::string>(
     "joint_trajectory_action", "/joint_trajectory_action/no_param");
-  this->declare_parameter<std::string>("wmx_param_file_path", "/joint_trajectory/no_param");
 
   this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
-  this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
 
   std::string joint_axes_str;
   for (size_t i = 0; i < jointAxes_.size(); ++i) {
@@ -335,7 +263,6 @@ void JointTrajectoryController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", joint_axes_str.c_str());
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
-  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
@@ -346,7 +273,7 @@ rclcpp_action::GoalResponse JointTrajectoryController::handle_goal(
   (void)uuid;
   (void)goal;
 
-  if (!active_) {
+  if (!isActive_) {
     RCLCPP_WARN(
       this->get_logger(), "Goal rejected: joint_trajectory_controller is not active (state: %s).",
       this->get_current_state().label().c_str());

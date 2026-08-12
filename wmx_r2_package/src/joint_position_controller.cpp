@@ -28,8 +28,6 @@ using wmx3Api::Motion;
 using wmx3Api::ProfileType;
 using wmx3Api::WMX3Api;
 
-// Managed node: wmx_engine_node drives the transitions once the engine is
-// communicating (see wmx/engine/set_node_state).
 class JointPositionController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -46,8 +44,8 @@ public:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
-  std::atomic<bool> active_{false};
-  bool deviceAttached_ = false;
+  std::atomic<bool> isActive_{false};
+  bool isDeviceAttached_ = false;
   std::atomic<bool> in_execution_{false};
 
   WMX3Api wmx3Lib_;
@@ -99,11 +97,9 @@ JointPositionController::~JointPositionController()
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is stopped");
 }
 
-// Attach to the device the engine created. Returns false so the transition can
-// fail loudly instead of leaving the node inactive with no device.
 bool JointPositionController::attachDevice()
 {
-  if (deviceAttached_) {
+  if (isDeviceAttached_) {
     return true;
   }
 
@@ -124,14 +120,14 @@ bool JointPositionController::attachDevice()
   }
 
   wmx3Lib_.SetDeviceName("joint_position_controller");
-  deviceAttached_ = true;
+  isDeviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
   return true;
 }
 
 void JointPositionController::releaseDevice()
 {
-  if (!deviceAttached_) {
+  if (!isDeviceAttached_) {
     return;
   }
 
@@ -143,7 +139,7 @@ void JointPositionController::releaseDevice()
   } else {
     RCLCPP_INFO(this->get_logger(), "Device closed");
   }
-  deviceAttached_ = false;
+  isDeviceAttached_ = false;
 }
 
 JointPositionController::CallbackReturn JointPositionController::on_configure(
@@ -173,7 +169,7 @@ JointPositionController::CallbackReturn JointPositionController::on_activate(
   const rclcpp_lifecycle::State & previous_state)
 {
   LifecycleNode::on_activate(previous_state);
-  active_ = true;
+  isActive_ = true;
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is active");
   return CallbackReturn::SUCCESS;
 }
@@ -181,9 +177,8 @@ JointPositionController::CallbackReturn JointPositionController::on_activate(
 JointPositionController::CallbackReturn JointPositionController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  active_ = false;
+  isActive_ = false;
 
-  // Leave no axis moving behind: an inactive controller stops commanding.
   if (wmx3LibCm_) {
     wmx3LibCm_->motion->Stop(&axisSel_);
     wmx3LibCm_->motion->Wait(&axisSel_);
@@ -197,7 +192,7 @@ JointPositionController::CallbackReturn JointPositionController::on_deactivate(
 JointPositionController::CallbackReturn JointPositionController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  active_ = false;
+  isActive_ = false;
 
   jointTrajectorySub_.reset();
   execActiveSub_.reset();
@@ -328,7 +323,7 @@ bool JointPositionController::buildCommand(const trajectory_msgs::msg::JointTraj
 void JointPositionController::jointTrajectoryCallback(
   const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
-  if (!active_ || msg->points.empty() || in_execution_.load() || !buildCommand(*msg)) {
+  if (!isActive_ || msg->points.empty() || in_execution_.load() || !buildCommand(*msg)) {
     return;
   }
 

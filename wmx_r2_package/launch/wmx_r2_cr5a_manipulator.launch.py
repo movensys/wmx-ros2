@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode, Node
+from launch_ros.actions import LifecycleNode
 
 
 def generate_launch_description():
@@ -13,12 +13,6 @@ def generate_launch_description():
 
     pkg_share = get_package_share_directory('wmx_r2_package')
     manipulator_config = os.path.join(pkg_share, 'config', 'cr5a_manipulator_config.yaml')
-    wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr5a_wmx_parameters.xml')
-
-    # Brought up in this order by wmx_engine_node once the engine communicates.
-    managed_nodes = (
-        "['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node', "
-        "'joint_trajectory_controller', 'joint_position_controller']")
 
     start_wmx_r2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -26,14 +20,15 @@ def generate_launch_description():
         ),
         launch_arguments={
             'use_sim_time': use_sim_time,
-            'managed_nodes': managed_nodes,
+            'config_file': manipulator_config,
         }.items(),
     )
 
-    start_joint_state_broadcaster = Node(
+    start_joint_state_broadcaster = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_state_broadcaster',
         name='joint_state_broadcaster',
+        namespace='',
         parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
@@ -43,13 +38,7 @@ def generate_launch_description():
         executable='joint_trajectory_controller',
         name='joint_trajectory_controller',
         namespace='',
-        parameters=[
-            manipulator_config,
-            {
-                'use_sim_time': use_sim_time,
-                'wmx_param_file_path': wmx_param_file_path,
-            },
-        ],
+        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
 

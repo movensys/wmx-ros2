@@ -27,11 +27,6 @@
 using std::placeholders::_1;
 using std::placeholders::_2;
 
-// Managed node. wmx_engine_node drives the transitions:
-//   configure  attach to the WMX3 device and advertise the EtherCAT services
-//   activate   start serving EtherCAT requests
-//   deactivate reject EtherCAT requests, keep the device attached
-//   cleanup    drop the services and detach from the device
 class WmxEtherCatNode : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -48,8 +43,8 @@ public:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
-  std::atomic<bool> active_{false};
-  bool deviceAttached_ = false;
+  std::atomic<bool> isActive_{false};
+  bool isDeviceAttached_ = false;
   int err_;
   char errString_[256];
   char buffer_[512];

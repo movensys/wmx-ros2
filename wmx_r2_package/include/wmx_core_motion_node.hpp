@@ -19,13 +19,10 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
-#include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 
 #include "wmx_r2_message/srv/set_axis.hpp"
 #include "wmx_r2_message/srv/set_axis_gear_ratio.hpp"
-#include "wmx_r2_message/srv/load_wmx_params.hpp"
-#include "wmx_r2_message/srv/get_wmx_params.hpp"
 #include "wmx_r2_message/msg/axis_velocity.hpp"
 #include "wmx_r2_message/msg/axis_state.hpp"
 #include "wmx_r2_message/msg/axis_pose.hpp"
@@ -36,12 +33,6 @@
 using std::placeholders::_1;
 using std::placeholders::_2;
 
-// Managed node. wmx_engine_node drives the transitions:
-//   configure  attach to the WMX3 device, read the axis count and advertise the
-//              axis services, topics and (stopped) timers
-//   activate   run the state/jog timers and accept motion commands
-//   deactivate stop the timers, stop every jogging axis, reject commands
-//   cleanup    drop the interfaces and detach from the device
 class WmxCoreMotionNode : public rclcpp_lifecycle::LifecycleNode
 {
 public:
@@ -58,8 +49,8 @@ public:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
-  std::atomic<bool> active_{false};
-  bool deviceAttached_ = false;
+  std::atomic<bool> isActive_{false};
+  bool isDeviceAttached_ = false;
   int axisCount_ = 0;
   int err_;
   char errString_[256];
@@ -95,7 +86,6 @@ private:
   wmx_r2_message::msg::AxisState axisStateMsg_;
 
   rclcpp::CallbackGroup::SharedPtr homing_cb_group_;
-  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr coreMotionReadyPub_;
   rclcpp_lifecycle::LifecyclePublisher<wmx_r2_message::msg::AxisState>::SharedPtr axisStatePub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisVelocity>::SharedPtr axisVelSub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisVelocity>::SharedPtr axisJogSub_;
@@ -109,8 +99,6 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetAxisGearRatio>::SharedPtr setAxisGearRatioService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxis>::SharedPtr setHomingService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxis>::SharedPtr stopAxisService_;
-  rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadParamsService_;
-  rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getParamsService_;
 
   bool attachDevice();
   void releaseDevice();
@@ -148,12 +136,6 @@ private:
   void stopAxes(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
-  void loadWmxParams(
-    const std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Request> request,
-    std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Response> response);
-  void getWmxParams(
-    const std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Request> request,
-    std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Response> response);
 };
 
 #endif  // WMX_CORE_MOTION_NODE_HPP_

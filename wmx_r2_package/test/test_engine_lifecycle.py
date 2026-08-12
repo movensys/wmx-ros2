@@ -59,9 +59,10 @@ class TestEngineLifecycle(unittest.TestCase):
         self.assertIsNotNone(future.result(), 'Service call returned no result')
         result = future.result()
         self.assertTrue(result.success)
-        # No managed node is launched here, so every one of them is unreachable.
-        for name in ['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node']:
-            self.assertIn(name, result.message)
+        # The engine discovers lifecycle nodes on the graph. None is launched
+        # here, so it reports an empty set rather than failing.
+        self.assertTrue(result.message)
+        self.assertNotIn('wmx_engine_node', result.message)
 
     def test_get_engine_status_service(self):
         """wmx/engine/get_status service should return a valid engine state."""

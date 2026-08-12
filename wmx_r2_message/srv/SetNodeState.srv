@@ -1,6 +1,8 @@
-# Drive a lifecycle transition on the nodes managed by wmx_engine_node.
+# Drive a lifecycle transition on one node managed by wmx_engine_node.
 
-# Managed node name, e.g. "wmx_io_node". Empty targets every managed node.
+# Node to act on, e.g. "wmx_io_node". A plain name is resolved against
+# wmx_engine_node's namespace; an absolute name is used as given.
+# wmx/engine/get_node_states lists the lifecycle nodes currently on the graph.
 string node_name
 
 # configure | activate | deactivate | cleanup | shutdown | bringup | bringdown
@@ -11,6 +13,6 @@ string transition
 bool success
 string message
 
-# Nodes touched by this request and the lifecycle state each one ended up in.
+# The node acted on and the lifecycle state it ended up in.
 string[] node_names
 string[] states
