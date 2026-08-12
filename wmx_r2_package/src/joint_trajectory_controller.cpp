@@ -1,6 +1,7 @@
 // Copyright 2026 Movensys Corporation.
 // Licensed under the MIT License. See LICENSE.txt for details.
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <thread>
@@ -15,6 +16,8 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "control_msgs/msg/joint_jog.hpp"
@@ -40,14 +43,24 @@ using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::WMX3Api;
 
-class JointTrajectoryController : public rclcpp::Node
+// Managed node: wmx_engine_node drives the transitions once the engine is
+// communicating (see wmx/engine/set_node_state).
+class JointTrajectoryController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
   using GoalHandleFJT = rclcpp_action::ServerGoalHandle<FollowJointTrajectory>;
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
   JointTrajectoryController();
-  ~JointTrajectoryController();
+  ~JointTrajectoryController() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
   std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
@@ -57,7 +70,8 @@ public:
   char errString_[256];
 
 private:
-  bool initialized_ = false;
+  std::atomic<bool> active_{false};
+  bool deviceAttached_ = false;
 
   WMX3Api wmx3Lib_;
   CoreMotion wmx3LibCm_;
@@ -68,10 +82,9 @@ private:
   AxisSelection axisSel;
   Config::AxisParam axisParam_;
 
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
-  rclcpp::Publisher<control_msgs::msg::JointJog>::SharedPtr servoResetPub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
+  rclcpp_lifecycle::LifecyclePublisher<control_msgs::msg::JointJog>::SharedPtr servoResetPub_;
 
   // Action server callback declarations
   rclcpp_action::GoalResponse handle_goal(
@@ -88,58 +101,38 @@ private:
   void setRosParameter();
   void setWmxParam(char * path);
   void getWmxParam();
-  void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
+  bool attachDevice();
+  void releaseDevice();
   void logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory);
   void publishExecActive(bool active);
   void resetServo(const std::vector<std::string> & joint_names);
 };
 
 JointTrajectoryController::JointTrajectoryController()
-: Node("joint_trajectory_controller")
+: LifecycleNode("joint_trajectory_controller")
 {
   setRosParameter();
 
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&JointTrajectoryController::onEngineReady, this, std::placeholders::_1));
-
-  servoResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
-    "/servo_node/delta_joint_cmds", 10);
-
-  execActivePub_ = this->create_publisher<std_msgs::msg::Bool>(
-    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local());
-  publishExecActive(false);
-
-  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller waiting for engine...");
+  RCLCPP_INFO(
+    this->get_logger(), "joint_trajectory_controller is unconfigured, waiting for configure...");
 }
 
 JointTrajectoryController::~JointTrajectoryController()
 {
   RCLCPP_INFO(this->get_logger(), "Stop joint_trajectory_controller");
 
-  if (initialized_) {
-    wmx3LibAm_.advMotion->FreeSplineBuffer(0);
-
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device");
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
+  releaseDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is stopped");
 }
 
-void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg)
+// Attach to the device the engine created. Returns false so the transition can
+// fail loudly instead of leaving the node inactive with no device.
+bool JointTrajectoryController::attachDevice()
 {
-  if (!msg->data || initialized_) {
-    return;
+  if (deviceAttached_) {
+    return true;
   }
-
-  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing AdvancedMotion...");
 
   unsigned int timeout = 10000;
   err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
@@ -147,18 +140,49 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
   if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Failed to attach to device (lock busy, will retry on next signal).");
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device (lock busy). Is the engine communicating?");
     } else {
       RCLCPP_ERROR(
         this->get_logger(),
         "Failed to attach to device. Error=%d (%s)", err_, errString_);
     }
-    return;
+    return false;
   }
 
   wmx3Lib_.SetDeviceName("joint_trajectory_controller");
+  deviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
+  return true;
+}
+
+void JointTrajectoryController::releaseDevice()
+{
+  if (!deviceAttached_) {
+    return;
+  }
+
+  wmx3LibAm_.advMotion->FreeSplineBuffer(0);
+
+  err_ = wmx3Lib_.CloseDevice();
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to close device");
+  } else {
+    RCLCPP_INFO(this->get_logger(), "Device closed");
+  }
+  deviceAttached_ = false;
+}
+
+JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configure(
+  const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring joint_trajectory_controller...");
+
+  if (!attachDevice()) {
+    return CallbackReturn::FAILURE;
+  }
 
   wmx3LibCm_ = CoreMotion(&wmx3Lib_);
   wmx3LibAm_ = AdvancedMotion(&wmx3Lib_);
@@ -166,6 +190,12 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
 
   setWmxParam(const_cast<char *>(wmxParamFilePath_.c_str()));
   getWmxParam();
+
+  servoResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
+    "/servo_node/delta_joint_cmds", 10);
+
+  execActivePub_ = this->create_publisher<std_msgs::msg::Bool>(
+    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local());
 
   action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
     this,
@@ -177,10 +207,56 @@ void JointTrajectoryController::onEngineReady(std_msgs::msg::Bool::ConstSharedPt
     std::bind(&JointTrajectoryController::handle_accepted, this, std::placeholders::_1)
   );
 
-  initialized_ = true;
-  engineReadySub_.reset();
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
 
-  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is ready");
+JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  LifecycleNode::on_activate(previous_state);
+  active_ = true;
+
+  // Latch the initial "no execution running" state for joint_position_controller.
+  publishExecActive(false);
+
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is active");
+  return CallbackReturn::SUCCESS;
+}
+
+JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  active_ = false;
+
+  // Publish before the publisher goes inactive, otherwise the sample is dropped
+  // and the latched "execution running" would never be cleared.
+  publishExecActive(false);
+
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+JointTrajectoryController::CallbackReturn JointTrajectoryController::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
+  active_ = false;
+
+  action_server_.reset();
+  execActivePub_.reset();
+  servoResetPub_.reset();
+
+  releaseDevice();
+
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+JointTrajectoryController::CallbackReturn JointTrajectoryController::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void JointTrajectoryController::setWmxParam(char * path)
@@ -269,6 +345,14 @@ rclcpp_action::GoalResponse JointTrajectoryController::handle_goal(
 {
   (void)uuid;
   (void)goal;
+
+  if (!active_) {
+    RCLCPP_WARN(
+      this->get_logger(), "Goal rejected: joint_trajectory_controller is not active (state: %s).",
+      this->get_current_state().label().c_str());
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+
   RCLCPP_INFO(this->get_logger(), "Received goal request");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -450,7 +534,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<JointTrajectoryController>();
-  rclcpp::spin(node);
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

@@ -32,6 +32,8 @@
 #include "CoreMotionApi.h"
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
@@ -58,11 +60,22 @@ using wmx3Api::WMX3Api;
 
 namespace ddl = diff_drive;
 
-class DifferentialDriveController : public rclcpp::Node
+// Managed node: wmx_engine_node drives the transitions once the engine is
+// communicating (see wmx/engine/set_node_state).
+class DifferentialDriveController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   DifferentialDriveController();
-  ~DifferentialDriveController();
+  ~DifferentialDriveController() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
   // Geometry / axes
   int leftAxis_;
@@ -95,8 +108,8 @@ public:
   char errString_[256];
 
 private:
-  std::atomic<bool> initialized_{false};
-  std::atomic<bool> initializing_{false};
+  std::atomic<bool> active_{false};
+  bool deviceAttached_ = false;
 
   // --- WMX ---
   WMX3Api wmx3Lib_;
@@ -133,19 +146,17 @@ private:
 
   // --- ROS interfaces ---
   rclcpp::TimerBase::SharedPtr controlTimer_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmdVelStampedSub_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr encoderOmegaPub_;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr encoderOdometryPub_;
-  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr odomDeltasPub_;
-  rclcpp::Publisher<geometry_msgs::msg::AccelStamped>::SharedPtr odomAccelPub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Float64MultiArray>::SharedPtr
+    encoderOmegaPub_;
+  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr encoderOdometryPub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::TwistStamped>::SharedPtr odomDeltasPub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::AccelStamped>::SharedPtr odomAccelPub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tfBroadcaster_;
 
-  std::thread init_thread_;
-
   // Lifecycle
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
-  void runInitSequence();
+  bool attachDevice();
+  void releaseDevice();
   void setRosParameter();
   void setWmxParam(char * path);
 
@@ -166,7 +177,7 @@ private:
 };
 
 DifferentialDriveController::DifferentialDriveController()
-: Node("differential_drive_controller"),
+: LifecycleNode("differential_drive_controller"),
   prevLoopTime_(0, 0, RCL_ROS_TIME),
   prevAccelTime_(0, 0, RCL_ROS_TIME),
   lastCmdTime_(0, 0, RCL_ROS_TIME)
@@ -178,90 +189,75 @@ DifferentialDriveController::DifferentialDriveController()
   model_ = ddl::DiffDriveModel{wheelRadius_, wheelToWheel_};
   accel_ = std::make_unique<ddl::AccelEstimator>(accelAlpha_);
 
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&DifferentialDriveController::onEngineReady, this, _1));
-
-  RCLCPP_INFO(this->get_logger(), "differential_drive_controller waiting for engine...");
+  RCLCPP_INFO(
+    this->get_logger(),
+    "differential_drive_controller is unconfigured, waiting for configure...");
 }
 
 DifferentialDriveController::~DifferentialDriveController()
 {
   RCLCPP_INFO(this->get_logger(), "Stop differential_drive_controller");
 
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  if (initialized_) {
-    if (controlTimer_) {controlTimer_->cancel();}
-
-    setVelocity(leftAxis_, 0.0);
-    setVelocity(rightAxis_, 0.0);
-
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
+  releaseDevice();
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is stopped");
 }
 
-void DifferentialDriveController::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
+// Attach to the device the engine created. Returns false so the transition can
+// fail loudly instead of leaving the node inactive with no device.
+bool DifferentialDriveController::attachDevice()
 {
-  if (!msg->data || initialized_ || initializing_.exchange(true)) {
-    return;
+  if (deviceAttached_) {
+    return true;
   }
 
-  RCLCPP_INFO(this->get_logger(), "Engine ready — starting init on dedicated thread...");
-
-  // Join any previous thread (e.g. from a failed retry)
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  // Spawn dedicated thread so blocking device-attach retries don't block the executor
-  init_thread_ = std::thread(&DifferentialDriveController::runInitSequence, this);
-}
-
-void DifferentialDriveController::runInitSequence()
-{
   unsigned int timeout = 10000;
-  static constexpr int kMaxDeviceRetries = 30;
+  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
 
-  for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
-    err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
-    if (err_ == ErrorCode::None) {
-      break;
-    }
+  if (err_ != ErrorCode::None) {
     wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
     if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-        attempt, kMaxDeviceRetries);
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device (lock busy). Is the engine communicating?");
     } else {
       RCLCPP_ERROR(
         this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_, errString_);
-      initializing_ = false;
-      return;
     }
-  }
-
-  if (err_ != ErrorCode::None) {
-    RCLCPP_FATAL(
-      this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
-    initializing_ = false;
-    return;
+    return false;
   }
 
   wmx3Lib_.SetDeviceName("differential_drive_controller");
+  deviceAttached_ = true;
   RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
+  return true;
+}
+
+void DifferentialDriveController::releaseDevice()
+{
+  if (!deviceAttached_) {
+    return;
+  }
+
+  wmx3LibCm_.reset();
+  err_ = wmx3Lib_.CloseDevice();
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
+  } else {
+    RCLCPP_INFO(this->get_logger(), "Device closed");
+  }
+  deviceAttached_ = false;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_configure(
+  const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring differential_drive_controller...");
+
+  if (!attachDevice()) {
+    return CallbackReturn::FAILURE;
+  }
 
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
 
@@ -286,13 +282,72 @@ void DifferentialDriveController::runInitSequence()
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
 
   // Single control loop: one GetStatus per cycle drives both odometry and command.
+  // Held stopped until on_activate(): an inactive controller must not drive wheels.
   auto period = std::chrono::milliseconds(1000 / rate_);
   controlTimer_ = this->create_wall_timer(
     period, std::bind(&DifferentialDriveController::controlStep, this));
+  controlTimer_->cancel();
 
-  initialized_ = true;
-  engineReadySub_.reset();
-  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is ready");
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  LifecycleNode::on_activate(previous_state);
+  active_ = true;
+
+  // Re-baseline: encoders and the command may have moved on while inactive.
+  havePrev_ = false;
+  haveCmd_ = false;
+  lastSentValid_ = false;
+
+  controlTimer_->reset();
+
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is active");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  active_ = false;
+  controlTimer_->cancel();
+
+  // Stop the wheels: no control loop is left to time out the last command.
+  setVelocity(leftAxis_, 0.0);
+  setVelocity(rightAxis_, 0.0);
+  lastSentValid_ = false;
+
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
+  active_ = false;
+
+  controlTimer_.reset();
+  cmdVelStampedSub_.reset();
+  tfBroadcaster_.reset();
+  encoderOmegaPub_.reset();
+  encoderOdometryPub_.reset();
+  odomDeltasPub_.reset();
+  odomAccelPub_.reset();
+
+  releaseDevice();
+
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void DifferentialDriveController::cmdStampedCallback(
@@ -685,7 +740,8 @@ void DifferentialDriveController::setRosParameter()
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<DifferentialDriveController>());
+  auto node = std::make_shared<DifferentialDriveController>();
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

@@ -19,6 +19,7 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetEngine.srv"
+  "srv/SetNodeState.srv"
   "srv/SetAxis.srv"
   "srv/SetAxisGearRatio.srv"
   "srv/GetIoBit.srv"
@@ -29,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/EcatGetNetworkState.srv"
   "srv/EcatRegisterRead.srv"
   "srv/EcatResetStatistics.srv"
+  "srv/EcatScanNetwork.srv"
   "srv/EcatStartHotconnect.srv"
 
   "srv/LoadWmxParams.srv"

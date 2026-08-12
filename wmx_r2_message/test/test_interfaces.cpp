@@ -22,6 +22,7 @@
 #include "wmx_r2_message/srv/set_engine.hpp"
 #include "wmx_r2_message/srv/set_io_bit.hpp"
 #include "wmx_r2_message/srv/set_io_bytes.hpp"
+#include "wmx_r2_message/srv/set_node_state.hpp"
 
 TEST(AxisState, roundtrip_fields) {
   wmx_r2_message::msg::AxisState msg;
@@ -72,6 +73,23 @@ TEST(SetEngine, request_and_response) {
   res.success = false;
   res.message = "not ready";
   EXPECT_FALSE(res.success);
+}
+
+TEST(SetNodeState, request_and_response) {
+  wmx_r2_message::srv::SetNodeState::Request req;
+  req.node_name = "wmx_io_node";
+  req.transition = "deactivate";
+  EXPECT_EQ(req.node_name, "wmx_io_node");
+  EXPECT_EQ(req.transition, "deactivate");
+
+  wmx_r2_message::srv::SetNodeState::Response res;
+  res.success = true;
+  res.message = "wmx_io_node: deactivate done";
+  res.node_names = {"wmx_io_node"};
+  res.states = {"inactive"};
+  EXPECT_TRUE(res.success);
+  ASSERT_EQ(res.node_names.size(), res.states.size());
+  EXPECT_EQ(res.states[0], "inactive");
 }
 
 TEST(SetAxis, request_arrays) {

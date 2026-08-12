@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 
@@ -27,15 +28,26 @@ using wmx3Api::Motion;
 using wmx3Api::ProfileType;
 using wmx3Api::WMX3Api;
 
-class JointPositionController : public rclcpp::Node
+// Managed node: wmx_engine_node drives the transitions once the engine is
+// communicating (see wmx/engine/set_node_state).
+class JointPositionController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   JointPositionController();
-  ~JointPositionController();
+  ~JointPositionController() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
-  bool initialized_ = false;
-  std::atomic<bool> initializing_{false};
+  std::atomic<bool> active_{false};
+  bool deviceAttached_ = false;
   std::atomic<bool> in_execution_{false};
 
   WMX3Api wmx3Lib_;
@@ -56,61 +68,150 @@ private:
 
   std::map<std::string, int> axisByName_;
 
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr execActiveSub_;
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr jointTrajectorySub_;
 
-  std::thread init_thread_;
-
   void setRosParameter();
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+  bool attachDevice();
+  void releaseDevice();
   void onExecActive(const std_msgs::msg::Bool::SharedPtr msg);
-  void runInitSequence();
   void jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
   bool buildCommand(const trajectory_msgs::msg::JointTrajectory & traj);
 };
 
 JointPositionController::JointPositionController()
-: Node("joint_position_controller")
+: LifecycleNode("joint_position_controller")
 {
   RCLCPP_INFO(this->get_logger(), "start joint_position_controller");
 
   setRosParameter();
 
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&JointPositionController::onEngineReady, this, _1));
-
-  execActiveSub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local(),
-    std::bind(&JointPositionController::onExecActive, this, _1));
-
-  RCLCPP_INFO(this->get_logger(), "joint_position_controller waiting for engine...");
+  RCLCPP_INFO(
+    this->get_logger(), "joint_position_controller is unconfigured, waiting for configure...");
 }
 
 JointPositionController::~JointPositionController()
 {
   RCLCPP_INFO(this->get_logger(), "Stop joint_position_controller");
 
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  if (initialized_) {
-    wmx3LibCm_->motion->Stop(&axisSel_);
-    wmx3LibCm_->motion->Wait(&axisSel_);
-
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
+  releaseDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is stopped");
+}
+
+// Attach to the device the engine created. Returns false so the transition can
+// fail loudly instead of leaving the node inactive with no device.
+bool JointPositionController::attachDevice()
+{
+  if (deviceAttached_) {
+    return true;
+  }
+
+  unsigned int timeout = 10000;
+  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
+
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    if (err_ == ErrorCode::StartProcessLockError) {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device (lock busy). Is the engine communicating?");
+    } else {
+      RCLCPP_ERROR(
+        this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    }
+    return false;
+  }
+
+  wmx3Lib_.SetDeviceName("joint_position_controller");
+  deviceAttached_ = true;
+  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
+  return true;
+}
+
+void JointPositionController::releaseDevice()
+{
+  if (!deviceAttached_) {
+    return;
+  }
+
+  wmx3LibCm_.reset();
+  err_ = wmx3Lib_.CloseDevice();
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
+  } else {
+    RCLCPP_INFO(this->get_logger(), "Device closed");
+  }
+  deviceAttached_ = false;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_configure(
+  const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring joint_position_controller...");
+
+  if (!attachDevice()) {
+    return CallbackReturn::FAILURE;
+  }
+
+  wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
+
+  execActiveSub_ = this->create_subscription<std_msgs::msg::Bool>(
+    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local(),
+    std::bind(&JointPositionController::onExecActive, this, _1));
+
+  jointTrajectorySub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
+    jointTrajectoryTopic_, 1,
+    std::bind(&JointPositionController::jointTrajectoryCallback, this, _1));
+
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  LifecycleNode::on_activate(previous_state);
+  active_ = true;
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is active");
+  return CallbackReturn::SUCCESS;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  active_ = false;
+
+  // Leave no axis moving behind: an inactive controller stops commanding.
+  if (wmx3LibCm_) {
+    wmx3LibCm_->motion->Stop(&axisSel_);
+    wmx3LibCm_->motion->Wait(&axisSel_);
+  }
+
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
+  active_ = false;
+
+  jointTrajectorySub_.reset();
+  execActiveSub_.reset();
+
+  releaseDevice();
+
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void JointPositionController::setRosParameter()
@@ -155,23 +256,6 @@ void JointPositionController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
-void JointPositionController::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  if (!msg->data || initialized_ || initializing_.exchange(true)) {
-    return;
-  }
-
-  RCLCPP_INFO(this->get_logger(), "Engine ready — starting init on dedicated thread...");
-
-  // Join any previous thread (e.g. from a failed retry)
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  // Spawn dedicated thread so the blocking retry loop doesn't block executor
-  init_thread_ = std::thread(&JointPositionController::runInitSequence, this);
-}
-
 void JointPositionController::onExecActive(const std_msgs::msg::Bool::SharedPtr msg)
 {
   if (in_execution_.exchange(msg->data) == msg->data) {
@@ -180,54 +264,6 @@ void JointPositionController::onExecActive(const std_msgs::msg::Bool::SharedPtr 
   RCLCPP_INFO(
     this->get_logger(), "Servo commands %s (move_group execution %s)",
     msg->data ? "blocked" : "allowed", msg->data ? "started" : "finished");
-}
-
-void JointPositionController::runInitSequence()
-{
-  unsigned int timeout = 10000;
-  static constexpr int kMaxDeviceRetries = 30;
-
-  for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
-    err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
-    if (err_ == ErrorCode::None) {
-      break;
-    }
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-        attempt, kMaxDeviceRetries);
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    } else {
-      RCLCPP_ERROR(
-        this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_,
-        errString_);
-      initializing_ = false;
-      return;
-    }
-  }
-
-  if (err_ != ErrorCode::None) {
-    RCLCPP_FATAL(
-      this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
-    initializing_ = false;
-    return;
-  }
-
-  wmx3Lib_.SetDeviceName("joint_position_controller");
-
-  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
-
-  wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
-
-  jointTrajectorySub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
-    jointTrajectoryTopic_, 1,
-    std::bind(&JointPositionController::jointTrajectoryCallback, this, _1));
-
-  initialized_ = true;
-  engineReadySub_.reset();
-
-  RCLCPP_INFO(this->get_logger(), "joint_position_controller is ready");
 }
 
 bool JointPositionController::buildCommand(const trajectory_msgs::msg::JointTrajectory & traj)
@@ -292,7 +328,7 @@ bool JointPositionController::buildCommand(const trajectory_msgs::msg::JointTraj
 void JointPositionController::jointTrajectoryCallback(
   const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
-  if (msg->points.empty() || in_execution_.load() || !buildCommand(*msg)) {
+  if (!active_ || msg->points.empty() || in_execution_.load() || !buildCommand(*msg)) {
     return;
   }
 
@@ -309,7 +345,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<JointPositionController>();
-  rclcpp::spin(node);
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

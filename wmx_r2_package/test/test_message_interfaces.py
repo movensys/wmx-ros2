@@ -20,6 +20,7 @@ from wmx_r2_message.srv import SetAxisGearRatio
 from wmx_r2_message.srv import SetEngine
 from wmx_r2_message.srv import SetIoBit
 from wmx_r2_message.srv import SetIoBytes
+from wmx_r2_message.srv import SetNodeState
 
 
 class TestAxisStateMsg(unittest.TestCase):
@@ -108,6 +109,28 @@ class TestSetEngineSrv(unittest.TestCase):
         res = SetEngine.Response()
         self.assertTrue(hasattr(res, 'success'))
         self.assertTrue(hasattr(res, 'message'))
+
+
+class TestSetNodeStateSrv(unittest.TestCase):
+    """Verify SetNodeState.srv fields."""
+
+    def test_request_fields(self):
+        req = SetNodeState.Request()
+        self.assertTrue(hasattr(req, 'node_name'))
+        self.assertTrue(hasattr(req, 'transition'))
+
+    def test_response_fields(self):
+        res = SetNodeState.Response()
+        self.assertTrue(hasattr(res, 'success'))
+        self.assertTrue(hasattr(res, 'message'))
+        self.assertTrue(hasattr(res, 'node_names'))
+        self.assertTrue(hasattr(res, 'states'))
+
+    def test_response_arrays_are_index_aligned(self):
+        res = SetNodeState.Response()
+        res.node_names = ['wmx_io_node', 'wmx_ethercat_node']
+        res.states = ['active', 'inactive']
+        self.assertEqual(len(res.node_names), len(res.states))
 
 
 class TestSetAxisSrv(unittest.TestCase):

@@ -105,21 +105,65 @@ ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: true}"
 ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: false}"
 ```
 
-### Set Device (create/close WMX3 device)
+### Set Engine Device (create/close WMX3 device)
 ```
 # Create device
-ros2 service call /wmx/engine/set_device wmx_r2_message/srv/SetEngine \
+ros2 service call /wmx/engine/set_engine wmx_r2_message/srv/SetEngine \
   "{data: true, path: '/opt/wmx3/', name: 'my_device'}"
 
 # Close device
-ros2 service call /wmx/engine/set_device wmx_r2_message/srv/SetEngine \
+ros2 service call /wmx/engine/set_engine wmx_r2_message/srv/SetEngine \
   "{data: false, path: '', name: ''}"
 ```
 
 ### Scan Network
+Moved to `wmx_ethercat_node` (it owns the EtherCAT master handle) and now takes
+the master id. The node must be `active`.
 ```
-ros2 service call /wmx/engine/scan_network std_srvs/srv/Trigger "{}"
+ros2 service call /wmx/ecat/scan_network wmx_r2_message/srv/EcatScanNetwork \
+  "{master_id: 0}"
 ```
+
+---
+
+## Managed Node Services (wmx_engine_node)
+`wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` and the robot
+controllers are lifecycle nodes. They start `unconfigured` and only attach to the
+WMX3 device once `wmx_engine_node` drives them through `configure` and
+`activate`, which it does automatically when communication starts
+(`auto_manage_nodes`, default `true`).
+
+### Read the states
+```
+ros2 service call /wmx/engine/get_node_states std_srvs/srv/Trigger "{}"
+```
+
+### Drive a transition
+`transition` is one of `configure`, `activate`, `deactivate`, `cleanup`,
+`shutdown`, `bringup` (configure + activate), `bringdown` (deactivate).
+An empty `node_name` targets every managed node.
+```
+# One node
+ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: 'wmx_io_node', transition: 'deactivate'}"
+
+# All managed nodes
+ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: '', transition: 'bringup'}"
+```
+
+The standard CLI works too, and bypasses the engine:
+```
+ros2 lifecycle nodes
+ros2 lifecycle get /wmx_io_node
+ros2 lifecycle set /wmx_io_node deactivate
+```
+
+### Engine parameters
+| Parameter | Default | Meaning |
+|-----------|---------|---------|
+| `auto_manage_nodes` | `true` | Configure + activate the managed nodes when communication starts, and take them down before communication stops or the device closes |
+| `managed_nodes` | `['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node']` | Nodes the engine manages, brought up in this order. Robot launch files extend the list with their controllers |
 
 ---
 
@@ -323,3 +367,13 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
 - `reg_address` is a 12-bit ESC register address (decimal), valid range `0x000`–`0xFFF`
 - `reg_address + length` must not exceed `0x1000` (4096 bytes)
 - `reset_statistics` calls `ResetRefClockInfo` + `ResetTransmitStatisticsInfo` + `ScanNetwork` in sequence
+- `scan_network` moved here from `wmx_engine_node` (`/wmx/engine/scan_network` no longer exists)
+
+**Lifecycle**
+- A service on an inactive node answers `success: false` with the current state instead of
+  touching the device; topics and timers are stopped while inactive
+- `deactivate` stops what the node was driving (jogging axes, wheel commands, trajectories)
+  but keeps the device attached; `cleanup` also detaches from the device
+- `wmx/engine/set_comm false` deactivates the managed nodes first, and
+  `wmx/engine/set_engine false` cleans them up, so no node holds a handle to a device
+  the engine is about to close

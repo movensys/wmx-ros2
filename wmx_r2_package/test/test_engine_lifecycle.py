@@ -9,7 +9,6 @@ import launch_testing.actions
 import pytest
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
 
@@ -45,34 +44,24 @@ class TestEngineLifecycle(unittest.TestCase):
     def tearDown(self):
         self.node.destroy_node()
 
-    def test_engine_publishes_ready(self):
-        """Engine node should publish True on wmx/engine/ready after startup."""
-        received = []
-
-        def cb(msg):
-            received.append(msg.data)
-
-        self.node.create_subscription(
-            Bool,
-            'wmx/engine/ready',
-            cb,
-            rclpy.qos.QoSProfile(
-                reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
-                durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
-                depth=1,
-            ),
-        )
-
-        end_time = self.node.get_clock().now() + rclpy.duration.Duration(seconds=15)
-        while self.node.get_clock().now() < end_time:
-            rclpy.spin_once(self.node, timeout_sec=0.5)
-            if any(v is True for v in received):
-                break
+    def test_engine_reports_node_states(self):
+        """wmx/engine/get_node_states should answer once the engine node is up."""
+        client = self.node.create_client(Trigger, 'wmx/engine/get_node_states')
 
         self.assertTrue(
-            any(v is True for v in received),
-            'Engine did not publish ready=True within 15 seconds',
+            client.wait_for_service(timeout_sec=15),
+            'get_node_states service not available within 15 seconds',
         )
+
+        future = client.call_async(Trigger.Request())
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=30)
+
+        self.assertIsNotNone(future.result(), 'Service call returned no result')
+        result = future.result()
+        self.assertTrue(result.success)
+        # No managed node is launched here, so every one of them is unreachable.
+        for name in ['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node']:
+            self.assertIn(name, result.message)
 
     def test_get_engine_status_service(self):
         """wmx/engine/get_status service should return a valid engine state."""

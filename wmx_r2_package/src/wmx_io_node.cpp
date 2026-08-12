@@ -8,12 +8,80 @@ using wmx3Api::ErrorCode;
 using wmx3Api::IO;
 
 WmxIoNode::WmxIoNode()
-: Node("wmx_io_node")
+: LifecycleNode("wmx_io_node")
 {
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&WmxIoNode::onEngineReady, this, _1));
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is unconfigured, waiting for configure...");
+}
+
+WmxIoNode::~WmxIoNode()
+{
+  releaseDevice();
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
+}
+
+// Attach to the device the engine created. Returns false so the transition can
+// fail loudly instead of leaving the node inactive with no device.
+bool WmxIoNode::attachDevice()
+{
+  if (deviceAttached_) {
+    return true;
+  }
+
+  unsigned int timeout = 10000;
+  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
+
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    if (err_ == ErrorCode::StartProcessLockError) {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device (lock busy). Is the engine communicating?");
+    } else {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    }
+    return false;
+  }
+
+  wmx3Lib_.SetDeviceName("wmx_io_node");
+  deviceAttached_ = true;
+  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
+  return true;
+}
+
+void WmxIoNode::releaseDevice()
+{
+  if (!deviceAttached_) {
+    return;
+  }
+
+  wmxIo_.reset();
+  err_ = wmx3Lib_.CloseDevice();
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to close device");
+  } else {
+    RCLCPP_INFO(this->get_logger(), "Device closed");
+  }
+  deviceAttached_ = false;
+}
+
+std::string WmxIoNode::notActiveMessage() const
+{
+  return "wmx_io_node is not active (state: " +
+         this->get_current_state().label() + ").";
+}
+
+WmxIoNode::CallbackReturn WmxIoNode::on_configure(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring wmx_io_node...");
+
+  if (!attachDevice()) {
+    return CallbackReturn::FAILURE;
+  }
+
+  wmxIo_ = std::make_unique<IO>(&wmx3Lib_);
 
   getInputBitService_ = this->create_service<wmx_r2_message::srv::GetIoBit>(
     "wmx/io/get_input_bit",
@@ -39,66 +107,55 @@ WmxIoNode::WmxIoNode()
     "wmx/io/set_output_bytes",
     std::bind(&WmxIoNode::setOutputBytes, this, _1, _2));
 
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node waiting for engine...");
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is configured");
+  return CallbackReturn::SUCCESS;
 }
 
-WmxIoNode::~WmxIoNode()
+WmxIoNode::CallbackReturn WmxIoNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
-  if (initialized_) {
-    wmxIo_.reset();
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device");
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
+  LifecycleNode::on_activate(previous_state);
+  active_ = true;
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is active");
+  return CallbackReturn::SUCCESS;
 }
 
-void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
+WmxIoNode::CallbackReturn WmxIoNode::on_deactivate(const rclcpp_lifecycle::State & previous_state)
 {
-  if (!msg->data || initialized_) {
-    return;
-  }
+  active_ = false;
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is inactive");
+  return CallbackReturn::SUCCESS;
+}
 
-  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing IO...");
+WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
+{
+  active_ = false;
 
-  unsigned int timeout = 10000;
-  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
+  getInputBitService_.reset();
+  getOutputBitService_.reset();
+  getInputBytesService_.reset();
+  getOutputBytesService_.reset();
+  setOutputBitService_.reset();
+  setOutputBytesService_.reset();
 
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Failed to attach to device (lock busy, will retry on next signal).");
-    } else {
-      RCLCPP_ERROR(
-        this->get_logger(),
-        "Failed to attach to device. Error=%d (%s)", err_, errString_);
-    }
-    return;
-  }
+  releaseDevice();
 
-  wmx3Lib_.SetDeviceName("wmx_io_node");
-  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
 
-  wmxIo_ = std::make_unique<IO>(&wmx3Lib_);
-  initialized_ = true;
-
-  engineReadySub_.reset();
-
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node is ready");
+WmxIoNode::CallbackReturn WmxIoNode::on_shutdown(const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void WmxIoNode::getInputBit(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -128,9 +185,9 @@ void WmxIoNode::getOutputBit(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -160,9 +217,9 @@ void WmxIoNode::getInputBytes(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -198,9 +255,9 @@ void WmxIoNode::getOutputBytes(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -236,9 +293,9 @@ void WmxIoNode::setOutputBit(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBit::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -273,9 +330,9 @@ void WmxIoNode::setOutputBytes(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -313,7 +370,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<WmxIoNode>();
-  rclcpp::spin(node);
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

@@ -71,18 +71,23 @@ colcon test-result --verbose --test-result-base build/wmx_r2_package
 
 | Test | Subtests | What it covers |
 |------|----------|----------------|
-| test_message_interfaces | 28 | All 3 msg types (AxisState, AxisPose, AxisVelocity) and 13 srv types: field existence, types, population, renames (in_pos->motion_complete, denumerator->denominator) |
-| test_engine_lifecycle | 3 | Engine publishes ready=True, get_status service responds with valid state, clean shutdown |
+| test_message_interfaces | 31 | All 3 msg types (AxisState, AxisPose, AxisVelocity) and 15 srv types: field existence, types, population, renames (in_pos->motion_complete, denumerator->denominator) |
+| test_engine_lifecycle | 3 | get_node_states lists every managed node, get_status service responds with valid state, clean shutdown |
+| test_lifecycle_nodes | 6 | Managed nodes expose get_state/change_state, engine reports their states, rejects unknown node and unknown transition, deactivate/activate round trip, clean shutdown |
 | test_core_motion_node | 9 | AxisState publishing with header (stamp, frame_id), array field length consistency, 5 service availability checks, get_params returns data |
 | test_io_node | 7 | All 6 IO services available and responding (get/set input/output bit/bytes), clean shutdown |
 | test_ethercat_node | 6 | All 4 EtherCAT services available (get_network_state, register_read, reset_statistics, start_hotconnect), master field population, clean shutdown |
 | Lint (6 tests) | — | cppcheck, flake8, lint_cmake, pep257, uncrustify, xmllint |
 
-**Total: 11 test targets, 53+ subtests**
+**Total: 12 test targets, 62+ subtests**
 
 ### Notes
 
 - Integration tests launch `wmx_engine_node` and the node under test, then shut them down after tests complete
+- The nodes under test are lifecycle nodes: `wmx_engine_node` configures and activates them
+  (`auto_manage_nodes`, default `true`), so their services only appear once the engine is
+  communicating. A test that needs a controller outside the default `managed_nodes` list
+  passes it to the engine (see `test_joint_position_controller.py`)
 - The WMX3 free license mode limits communication to one hour
 - EtherCAT `get_network_state` may return `success=false` without EtherCAT hardware connected — the test verifies the service responds, not the hardware state
 - If a build cache from a previous branch causes errors, clean and rebuild:

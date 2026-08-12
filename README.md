@@ -61,15 +61,38 @@ title: Low-level Control
 ---
 flowchart LR;
     A[ROS2 Services/Topics] --> B[wmx_engine_node];
-    A --> C[wmx_core_motion_node];
-    A --> D[wmx_io_node];
-    A --> E[wmx_ethercat_node];
+    A --> C["wmx_core_motion_node (lifecycle)"];
+    A --> D["wmx_io_node (lifecycle)"];
+    A --> E["wmx_ethercat_node (lifecycle)"];
+    B -->|configure / activate| C;
+    B -->|configure / activate| D;
+    B -->|configure / activate| E;
     B --> F[WMX3 API];
     C --> F;
     D --> F;
     E --> F;
     F --> G[WMX Engine];
 ```
+
+`wmx_engine_node` owns the WMX3 engine. Every other WMX node is a
+[managed (lifecycle) node](https://design.ros2.org/articles/node_lifecycle.html):
+it starts `unconfigured` and only attaches to the device when the engine drives
+it to `configure`, then `activate`. The engine does that automatically once
+communication is up (`auto_manage_nodes`, default `true`) and exposes the same
+control as services:
+
+```bash
+# States of every managed node
+ros2 service call /wmx/engine/get_node_states std_srvs/srv/Trigger "{}"
+
+# Drive one node (empty node_name targets all of them)
+ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: 'wmx_io_node', transition: 'deactivate'}"
+```
+
+`transition` is one of `configure`, `activate`, `deactivate`, `cleanup`,
+`shutdown`, `bringup` (configure + activate) or `bringdown` (deactivate). The
+standard `ros2 lifecycle` CLI works on the nodes directly as well.
 
 ### Trajectory Control ([wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py))
 
@@ -102,14 +125,15 @@ flowchart LR;
 
 | Node | Role |
 |------|------|
-| `wmx_engine_node` | Engine and device initialization, overall state management |
-| `wmx_core_motion_node` | Core motion control and trajectory execution |
-| `wmx_io_node` | IO control for input/output bits and bytes |
-| `wmx_ethercat_node` | EtherCAT master operations and slave management |
-| `joint_trajectory_controller` | Receives trajectory actions and executes via WMX3 C-Spline |
-| `joint_position_controller` | Follows MoveIt Servo's streamed `JointTrajectory` via WMX3 linear interpolation, so every axis arrives at the same instant |
+| `wmx_engine_node` | Engine and device initialization; manages the lifecycle of every node below |
+| `wmx_core_motion_node` | Core motion control and trajectory execution (lifecycle) |
+| `wmx_io_node` | IO control for input/output bits and bytes (lifecycle) |
+| `wmx_ethercat_node` | EtherCAT master operations, network scan and slave management (lifecycle) |
+| `joint_trajectory_controller` | Receives trajectory actions and executes via WMX3 C-Spline (lifecycle) |
+| `joint_position_controller` | Follows MoveIt Servo's streamed `JointTrajectory` via WMX3 linear interpolation, so every axis arrives at the same instant (lifecycle) |
+| `differential_drive_controller` | Differential-drive command and odometry loop (lifecycle) |
 | `joint_state_broadcaster` | Publishes joint feedback from the WMX3 encoder to `/joint_states` |
-| `gripper_controller` | Gripper command handling for manipulators |
+| `gripper_controller` | Gripper command handling for manipulators (lifecycle) |
 
 ## Launch Files
 

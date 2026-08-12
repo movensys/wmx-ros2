@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
 
 
 def generate_launch_description():
@@ -15,11 +15,19 @@ def generate_launch_description():
     manipulator_config = os.path.join(pkg_share, 'config', 'cr5a_manipulator_config.yaml')
     wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr5a_wmx_parameters.xml')
 
+    # Brought up in this order by wmx_engine_node once the engine communicates.
+    managed_nodes = (
+        "['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node', "
+        "'joint_trajectory_controller', 'joint_position_controller']")
+
     start_wmx_r2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_share, 'launch', 'wmx_r2_general_nodes.launch.py')
         ),
-        launch_arguments={'use_sim_time': use_sim_time}.items(),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'managed_nodes': managed_nodes,
+        }.items(),
     )
 
     start_joint_state_broadcaster = Node(
@@ -30,10 +38,11 @@ def generate_launch_description():
         output='screen',
     )
 
-    start_joint_trajectory_controller = Node(
+    start_joint_trajectory_controller = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_trajectory_controller',
         name='joint_trajectory_controller',
+        namespace='',
         parameters=[
             manipulator_config,
             {
@@ -44,10 +53,11 @@ def generate_launch_description():
         output='screen',
     )
 
-    start_joint_position_controller = Node(
+    start_joint_position_controller = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_position_controller',
         name='joint_position_controller',
+        namespace='',
         parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )

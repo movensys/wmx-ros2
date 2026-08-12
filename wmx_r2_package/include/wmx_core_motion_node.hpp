@@ -17,6 +17,8 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 
@@ -34,15 +36,31 @@
 using std::placeholders::_1;
 using std::placeholders::_2;
 
-class WmxCoreMotionNode : public rclcpp::Node
+// Managed node. wmx_engine_node drives the transitions:
+//   configure  attach to the WMX3 device, read the axis count and advertise the
+//              axis services, topics and (stopped) timers
+//   activate   run the state/jog timers and accept motion commands
+//   deactivate stop the timers, stop every jogging axis, reject commands
+//   cleanup    drop the interfaces and detach from the device
+class WmxCoreMotionNode : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   WmxCoreMotionNode();
-  ~WmxCoreMotionNode();
+  ~WmxCoreMotionNode() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
-  std::atomic<bool> initialized_{false};
-  int axisCount_;
+  std::atomic<bool> active_{false};
+  bool deviceAttached_ = false;
+  int axisCount_ = 0;
   int err_;
   char errString_[256];
   char buffer_[512];
@@ -76,11 +94,9 @@ private:
   rclcpp::TimerBase::SharedPtr jogWatchdogTimer_;
   wmx_r2_message::msg::AxisState axisStateMsg_;
 
-  rclcpp::CallbackGroup::SharedPtr init_cb_group_;
   rclcpp::CallbackGroup::SharedPtr homing_cb_group_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr coreMotionReadyPub_;
-  rclcpp::Publisher<wmx_r2_message::msg::AxisState>::SharedPtr axisStatePub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr coreMotionReadyPub_;
+  rclcpp_lifecycle::LifecyclePublisher<wmx_r2_message::msg::AxisState>::SharedPtr axisStatePub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisVelocity>::SharedPtr axisVelSub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisVelocity>::SharedPtr axisJogSub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxisPose>::SharedPtr axisPoseSub_;
@@ -96,7 +112,11 @@ private:
   rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadParamsService_;
   rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getParamsService_;
 
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+  bool attachDevice();
+  void releaseDevice();
+  void stopAllJogs();
+  std::string notActiveMessage() const;
+
   void axisStateStep();
 
   void axisPoseCallback(const wmx_r2_message::msg::AxisPose::SharedPtr msg);

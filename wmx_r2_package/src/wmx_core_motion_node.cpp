@@ -11,22 +11,126 @@ using wmx3Api::ErrorCode;
 using wmx3Api::ProfileType;
 
 WmxCoreMotionNode::WmxCoreMotionNode()
-: Node("wmx_core_motion_node")
+: LifecycleNode("wmx_core_motion_node")
 {
-  init_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  jogTimeoutMs_ = this->declare_parameter("jog_timeout_ms", 200.0);
+  jogRunTimeMs_ = this->declare_parameter("jog_run_time_ms", 2000.0);
+  jogJerkRatio_ = this->declare_parameter("jog_jerk_ratio", 0.75);
 
-  // setHoming() blocks in motion->Wait() its own group until the axis goes Idle.
-  // Move setHoming() to set its own MutuallyExclusive group.
+  // setHoming() blocks in motion->Wait() until the axis goes Idle, so it gets
+  // its own MutuallyExclusive group. Created here, not in on_configure(): the
+  // executor collects the node's callback groups when the node is added.
   homing_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-  rclcpp::SubscriptionOptions sub_opts;
-  sub_opts.callback_group = init_cb_group_;
+  RCLCPP_INFO(
+    this->get_logger(), "wmx_core_motion_node is unconfigured, waiting for configure...");
+}
+
+WmxCoreMotionNode::~WmxCoreMotionNode()
+{
+  releaseDevice();
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node stopped");
+}
+
+// Attach to the device the engine created. Returns false so the transition can
+// fail loudly instead of leaving the node inactive with no device.
+bool WmxCoreMotionNode::attachDevice()
+{
+  if (deviceAttached_) {
+    return true;
+  }
+
+  unsigned int timeout = 10000;
+  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
+
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    if (err_ == ErrorCode::StartProcessLockError) {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device (lock busy). Is the engine communicating?");
+    } else {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Failed to attach to device. Error=%d (%s)", err_, errString_);
+    }
+    return false;
+  }
+
+  wmx3Lib_.SetDeviceName("wmx_core_motion_node");
+  deviceAttached_ = true;
+  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
+  return true;
+}
+
+void WmxCoreMotionNode::releaseDevice()
+{
+  if (!deviceAttached_) {
+    return;
+  }
+
+  wmx3LibCm_.reset();
+  err_ = wmx3Lib_.CloseDevice();
+  if (err_ != ErrorCode::None) {
+    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+    RCLCPP_ERROR(this->get_logger(), "Failed to close device");
+  } else {
+    RCLCPP_INFO(this->get_logger(), "Device closed");
+  }
+  deviceAttached_ = false;
+}
+
+// Decelerate every axis that is still jogging and forget its dead-man deadline.
+void WmxCoreMotionNode::stopAllJogs()
+{
+  if (!wmx3LibCm_) {
+    return;
+  }
+
+  std::vector<int> jogging;
+  {
+    std::lock_guard<std::mutex> lock(jogMutex_);
+    for (const auto & entry : jogState_) {
+      jogging.push_back(entry.first);
+    }
+    jogState_.clear();
+  }
+
+  for (const int axis : jogging) {
+    stopAxis(axis);
+  }
+}
+
+std::string WmxCoreMotionNode::notActiveMessage() const
+{
+  return "wmx_core_motion_node is not active (state: " +
+         this->get_current_state().label() + ").";
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring wmx_core_motion_node...");
+
+  if (!attachDevice()) {
+    return CallbackReturn::FAILURE;
+  }
+
+  // get engineStatus to read # of axis (axisCount_)
+  wmx3Lib_.GetEngineStatus(&engineStatus_);
+  axisCount_ = 0;
+
+  // numOfInterrupts means # of cyclic handlers (max 2)
+  // numOfAxes means # of axes on that handler (not # of slaves)
+  for (int i = 0; i < engineStatus_.numOfInterrupts; ++i) {
+    axisCount_ += engineStatus_.interrupts[i].numOfAxes;
+  }
+  if (axisCount_ <= 0) {
+    RCLCPP_WARN(this->get_logger(), "Engine reported 0 axes; axis state will be empty.");
+  }
+
+  wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
 
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&WmxCoreMotionNode::onEngineReady, this, _1), sub_opts);
-
   coreMotionReadyPub_ = this->create_publisher<std_msgs::msg::Bool>(
     "wmx/core_motion/ready", ready_qos);
 
@@ -59,10 +163,6 @@ WmxCoreMotionNode::WmxCoreMotionNode()
     "wmx/axis/stop",
     std::bind(&WmxCoreMotionNode::stopAxes, this, _1, _2));
 
-  jogTimeoutMs_ = this->declare_parameter("jog_timeout_ms", 200.0);
-  jogRunTimeMs_ = this->declare_parameter("jog_run_time_ms", 2000.0);
-  jogJerkRatio_ = this->declare_parameter("jog_jerk_ratio", 0.75);
-
   loadParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
     "wmx/params/load",
     std::bind(&WmxCoreMotionNode::loadWmxParams, this, _1, _2));
@@ -70,79 +170,6 @@ WmxCoreMotionNode::WmxCoreMotionNode()
   getParamsService_ = this->create_service<wmx_r2_message::srv::GetWmxParams>(
     "wmx/params/get",
     std::bind(&WmxCoreMotionNode::getWmxParams, this, _1, _2));
-
-  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node waiting for engine...");
-}
-
-WmxCoreMotionNode::~WmxCoreMotionNode()
-{
-  if (axisStateTimer_) {
-    axisStateTimer_->cancel();
-  }
-  if (jogWatchdogTimer_) {
-    jogWatchdogTimer_->cancel();
-  }
-  if (initialized_) {
-    {
-      std::lock_guard<std::mutex> lock(jogMutex_);
-      for (const auto & entry : jogState_) {
-        wmx3LibCm_->motion->Stop(entry.first);
-      }
-      jogState_.clear();
-    }
-
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device");
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
-  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node stopped");
-}
-
-void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  if (!msg->data || initialized_) {
-    return;
-  }
-
-  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing CoreMotion...");
-
-  unsigned int timeout = 10000;
-  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
-
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Failed to attach to device (lock busy, will retry on next signal).");
-    } else {
-      RCLCPP_ERROR(
-        this->get_logger(),
-        "Failed to attach to device. Error=%d (%s)", err_, errString_);
-    }
-    return;
-  }
-
-  wmx3Lib_.SetDeviceName("wmx_core_motion_node");
-  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
-
-  // get engineStatus to read # of axis (axisCount_)
-  wmx3Lib_.GetEngineStatus(&engineStatus_);
-  axisCount_ = 0;
-
-  // numOfInterrupts means # of cyclic handlers (max 2)
-  // numOfAxes means # of axes on that handler (not # of slaves)
-  for (int i = 0; i < engineStatus_.numOfInterrupts; ++i) {
-    axisCount_ += engineStatus_.interrupts[i].numOfAxes;
-  }
-  if (axisCount_ <= 0) {
-    RCLCPP_WARN(this->get_logger(), "Engine reported 0 axes; axis state will be empty.");
-  }
-
-  wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
 
   axisStatePub_ = this->create_publisher<wmx_r2_message::msg::AxisState>(
     "wmx/axis/state", 1);
@@ -163,24 +190,100 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
     "wmx/axis/jog", 1,
     std::bind(&WmxCoreMotionNode::axisJogCallback, this, _1));
 
+  // Timers start running as soon as they are created, so hold them until
+  // on_activate(): an inactive node must not touch the axes.
   axisStateTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / rate_),
     std::bind(&WmxCoreMotionNode::axisStateStep, this));
+  axisStateTimer_->cancel();
 
   jogWatchdogTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(20),
     std::bind(&WmxCoreMotionNode::jogWatchdogStep, this));
+  jogWatchdogTimer_->cancel();
 
-  initialized_ = true;
+  RCLCPP_INFO(
+    this->get_logger(), "wmx_core_motion_node is configured (%d axes, %d Hz)",
+    axisCount_, rate_);
+  return CallbackReturn::SUCCESS;
+}
 
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  LifecycleNode::on_activate(previous_state);
+  active_ = true;
+
+  axisStateTimer_->reset();
+  jogWatchdogTimer_->reset();
+
+  // Latched gate for the nodes that only run once CoreMotion is serving axes
+  // (joint_state_broadcaster and friends).
   auto ready_msg = std_msgs::msg::Bool();
   ready_msg.data = true;
   coreMotionReadyPub_->publish(ready_msg);
 
-  engineReadySub_.reset();
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is active");
+  return CallbackReturn::SUCCESS;
+}
 
-  RCLCPP_INFO(
-    this->get_logger(), "wmx_core_motion_node is ready (%d axes, 100 Hz)", axisCount_);
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  active_ = false;
+
+  axisStateTimer_->cancel();
+  jogWatchdogTimer_->cancel();
+  stopAllJogs();
+
+  // Publish the gate before the publisher goes inactive, otherwise the sample
+  // is dropped and late joiners keep seeing the stale "true".
+  auto ready_msg = std_msgs::msg::Bool();
+  ready_msg.data = false;
+  coreMotionReadyPub_->publish(ready_msg);
+
+  LifecycleNode::on_deactivate(previous_state);
+
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_cleanup(const rclcpp_lifecycle::State &)
+{
+  active_ = false;
+
+  axisStateTimer_.reset();
+  jogWatchdogTimer_.reset();
+  stopAllJogs();
+
+  axisVelSub_.reset();
+  axisPoseSub_.reset();
+  axisPoseRelativeSub_.reset();
+  axisJogSub_.reset();
+
+  setAxisOnService_.reset();
+  clearAlarmService_.reset();
+  setAxisModeService_.reset();
+  setAxisPolarityService_.reset();
+  setAxisGearRatioService_.reset();
+  setHomingService_.reset();
+  stopAxisService_.reset();
+  loadParamsService_.reset();
+  getParamsService_.reset();
+
+  axisStatePub_.reset();
+  coreMotionReadyPub_.reset();
+
+  releaseDevice();
+
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void WmxCoreMotionNode::axisStateStep()
@@ -222,6 +325,13 @@ void WmxCoreMotionNode::axisStateStep()
 
 void WmxCoreMotionNode::axisPoseCallback(const wmx_r2_message::msg::AxisPose::SharedPtr msg)
 {
+  if (!active_) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Position command ignored: %s", notActiveMessage().c_str());
+    return;
+  }
+
   size_t axis_count = msg->index.size();
   for (size_t i = 0; i < axis_count; i++) {
     position_.axis = msg->index[i];
@@ -245,6 +355,13 @@ void WmxCoreMotionNode::axisPoseCallback(const wmx_r2_message::msg::AxisPose::Sh
 void WmxCoreMotionNode::axisPoseRelativeCallback(
   const wmx_r2_message::msg::AxisPose::SharedPtr msg)
 {
+  if (!active_) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Relative position command ignored: %s", notActiveMessage().c_str());
+    return;
+  }
+
   size_t axis_count = msg->index.size();
   for (size_t i = 0; i < axis_count; i++) {
     position_.axis = msg->index[i];
@@ -267,6 +384,13 @@ void WmxCoreMotionNode::axisPoseRelativeCallback(
 
 void WmxCoreMotionNode::axisVelCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg)
 {
+  if (!active_) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Velocity command ignored: %s", notActiveMessage().c_str());
+    return;
+  }
+
   size_t axis_count = msg->index.size();
   for (size_t i = 0; i < axis_count; i++) {
     velocity_.axis = msg->index[i];
@@ -291,10 +415,10 @@ void WmxCoreMotionNode::axisVelCallback(const wmx_r2_message::msg::AxisVelocity:
 // the axis once refreshes stop arriving. Velocity sign selects the direction.
 void WmxCoreMotionNode::axisJogCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg)
 {
-  if (!initialized_) {
+  if (!active_) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
-      "Jog ignored: CoreMotion not initialized.");
+      "Jog ignored: %s", notActiveMessage().c_str());
     return;
   }
 
@@ -387,7 +511,7 @@ void WmxCoreMotionNode::axisJogCallback(const wmx_r2_message::msg::AxisVelocity:
 // Dead-man: stop every axis whose jog refresh has expired.
 void WmxCoreMotionNode::jogWatchdogStep()
 {
-  if (!initialized_) {
+  if (!active_) {
     return;
   }
 
@@ -431,9 +555,9 @@ void WmxCoreMotionNode::stopAxes(
   const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -468,9 +592,9 @@ void WmxCoreMotionNode::setAxisOn(
   const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -507,9 +631,9 @@ void WmxCoreMotionNode::setAxisMode(
   const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -560,9 +684,9 @@ void WmxCoreMotionNode::clearAlarm(
   const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -594,9 +718,9 @@ void WmxCoreMotionNode::setAxisPolarity(
   const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -637,9 +761,9 @@ void WmxCoreMotionNode::setAxisGearRatio(
   const std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -671,9 +795,9 @@ void WmxCoreMotionNode::setHoming(
   const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -710,9 +834,9 @@ void WmxCoreMotionNode::loadWmxParams(
   const std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Request> request,
   std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -739,9 +863,9 @@ void WmxCoreMotionNode::getWmxParams(
   const std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Response> response)
 {
-  if (!initialized_) {
+  if (!active_) {
     response->success = false;
-    response->message = "CoreMotion not initialized. Engine not ready.";
+    response->message = notActiveMessage();
     return;
   }
 
@@ -825,7 +949,7 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   auto node = std::make_shared<WmxCoreMotionNode>();
   rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(node);
+  executor.add_node(node->get_node_base_interface());
   executor.spin();
   rclcpp::shutdown();
   return 0;

@@ -4,13 +4,14 @@
 #ifndef WMX_IO_NODE_HPP_
 #define WMX_IO_NODE_HPP_
 
+#include <atomic>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/bool.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 #include "wmx_r2_message/srv/get_io_bit.hpp"
 #include "wmx_r2_message/srv/get_io_bytes.hpp"
@@ -23,22 +24,35 @@
 using std::placeholders::_1;
 using std::placeholders::_2;
 
-class WmxIoNode : public rclcpp::Node
+// Managed node. wmx_engine_node drives the transitions:
+//   configure  attach to the WMX3 device and advertise the IO services
+//   activate   start serving IO requests
+//   deactivate reject IO requests, keep the device attached
+//   cleanup    drop the services and detach from the device
+class WmxIoNode : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   WmxIoNode();
-  ~WmxIoNode();
+  ~WmxIoNode() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
-  bool initialized_ = false;
+  std::atomic<bool> active_{false};
+  bool deviceAttached_ = false;
   int err_;
   char errString_[256];
   char buffer_[512];
 
   wmx3Api::WMX3Api wmx3Lib_;
   std::unique_ptr<wmx3Api::IO> wmxIo_;
-
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
   rclcpp::Service<wmx_r2_message::srv::GetIoBit>::SharedPtr getInputBitService_;
   rclcpp::Service<wmx_r2_message::srv::GetIoBit>::SharedPtr getOutputBitService_;
@@ -47,7 +61,9 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetIoBit>::SharedPtr setOutputBitService_;
   rclcpp::Service<wmx_r2_message::srv::SetIoBytes>::SharedPtr setOutputBytesService_;
 
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+  bool attachDevice();
+  void releaseDevice();
+  std::string notActiveMessage() const;
 
   void getInputBit(
     const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
