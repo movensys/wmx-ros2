@@ -23,7 +23,15 @@ joint_position_controller:
 
 wmx_engine_node:
   ros__parameters:
-    # Lifecycle nodes brought up when communication starts, in this order.
+    device_path: "/opt/wmx3/"
+    device_name: "wmx_r2"
+    engine_core: -1           # CPU core for the RT engine (-1 = SDK default)
+    engine_affinity_mask: 0   # CPU affinity bitmask (0 = SDK default)
+    wmx_param_file_path: ""   # full path to cr5a_wmx_parameters.xml
+
+wmx_lifecycle_manager_node:
+  ros__parameters:
+    # Brought up in this order once the engine reports Communicating.
     # Empty means every lifecycle node found on the graph.
     managed_nodes:
       - wmx_core_motion_node
@@ -32,8 +40,3 @@ wmx_engine_node:
       - joint_state_broadcaster
       - joint_trajectory_controller
       - joint_position_controller
-    device_path: "/opt/wmx3/"
-    device_name: "wmx_r2"
-    engine_core: -1           # CPU core for the RT engine (-1 = SDK default)
-    engine_affinity_mask: 0   # CPU affinity bitmask (0 = SDK default)
-    wmx_param_file_path: ""   # full path to cr5a_wmx_parameters.xml

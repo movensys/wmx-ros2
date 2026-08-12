@@ -17,6 +17,14 @@ def launch_general_nodes(context):
         output='screen',
     )
 
+    start_wmx_lifecycle_manager_node = Node(
+        package='wmx_r2_package',
+        executable='wmx_lifecycle_manager_node',
+        name='wmx_lifecycle_manager_node',
+        parameters=engine_config + [{'use_sim_time': use_sim_time}],
+        output='screen',
+    )
+
     start_wmx_core_motion_node = LifecycleNode(
         package='wmx_r2_package',
         executable='wmx_core_motion_node',
@@ -46,6 +54,7 @@ def launch_general_nodes(context):
 
     return [
         start_wmx_engine_node,
+        start_wmx_lifecycle_manager_node,
         start_wmx_core_motion_node,
         start_wmx_io_node,
         start_wmx_ethercat_node,
@@ -62,7 +71,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'config_file',
             default_value='',
-            description='YAML with the wmx_engine_node parameters. '
+            description='YAML with the wmx_engine_node and '
+                        'wmx_lifecycle_manager_node parameters. '
                         'Empty keeps the node defaults'
         ),
 
