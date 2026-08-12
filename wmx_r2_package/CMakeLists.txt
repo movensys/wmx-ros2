@@ -80,7 +80,11 @@ target_link_libraries(gripper_controller coremotionapi ioapi wmx3api imdll)
 target_link_directories(gripper_controller PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(gripper_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
-add_executable(wmx_engine_node src/wmx_engine_node.cpp)
+add_executable(wmx_engine_node
+  src/wmx_engine_node.cpp
+  src/wmx_engine_wmx_api.cpp
+  src/wmx_engine_ros2_callbacks.cpp
+  src/wmx_engine_node_lifecycles.cpp)
 ament_target_dependencies(wmx_engine_node
   rclcpp lifecycle_msgs std_msgs std_srvs wmx_r2_message)
 target_include_directories(wmx_engine_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
