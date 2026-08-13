@@ -261,6 +261,16 @@ ros2 service call /wmx/io/get_input_bit wmx_r2_message/srv/GetIoBit "{byte: 0, b
 ros2 service call /wmx/io/get_output_bit wmx_r2_message/srv/GetIoBit "{byte: 0, bit: 0}"
 ```
 
+### Read Input Byte
+```
+ros2 service call /wmx/io/get_input_byte wmx_r2_message/srv/GetIoByte "{byte: 0}"
+```
+
+### Read Output Byte
+```
+ros2 service call /wmx/io/get_output_byte wmx_r2_message/srv/GetIoByte "{byte: 0}"
+```
+
 ### Read Input Bytes
 ```
 ros2 service call /wmx/io/get_input_bytes wmx_r2_message/srv/GetIoBytes "{byte: 0, length: 4}"
@@ -278,6 +288,20 @@ ros2 service call /wmx/io/set_output_bit wmx_r2_message/srv/SetIoBit "{byte: 0, 
 
 # Clear bit
 ros2 service call /wmx/io/set_output_bit wmx_r2_message/srv/SetIoBit "{byte: 0, bit: 0, value: 0}"
+```
+
+### Set Output Bits
+```
+# Several scattered bits in one call: byte 0 bit 1 -> 1, byte 2 bit 5 -> 0.
+# They are written together in a single SDK call, not one cycle apart.
+ros2 service call /wmx/io/set_output_bits wmx_r2_message/srv/SetIoBits \
+  "{byte: [0, 2], bit: [1, 5], value: [1, 0]}"
+```
+
+### Set Output Byte
+```
+# Set output byte 2 to 0x0F
+ros2 service call /wmx/io/set_output_byte wmx_r2_message/srv/SetIoByte "{byte: 2, value: 15}"
 ```
 
 ### Set Output Bytes

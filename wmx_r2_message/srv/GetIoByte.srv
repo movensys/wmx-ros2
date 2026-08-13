@@ -1,0 +1,5 @@
+int32 byte      # IO byte address
+---
+bool success    # true if the read succeeded
+int32 value     # byte value: 0-255
+string message  # response or error description

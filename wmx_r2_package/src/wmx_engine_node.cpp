@@ -30,8 +30,9 @@ WmxEngineNodeApi::WmxEngineNodeApi(const rclcpp::Logger & logger, const Config &
 
 WmxEngineNodeApi::~WmxEngineNodeApi()
 {
-  stopCommunication();
-  stopEngine();
+  std::string message;
+  stopCommunication(message);
+  stopEngine(message);
 }
 
 std::string WmxEngineNodeApi::errorText(int err)
@@ -41,15 +42,18 @@ std::string WmxEngineNodeApi::errorText(int err)
   return errString;
 }
 
-int WmxEngineNodeApi::startEngine()
+int WmxEngineNodeApi::startEngine(std::string & message)
 {
   std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
 
-  const wmx3Api::EngineState::T state = engineState();
+  wmx3Api::EngineState::T state = wmx3Api::EngineState::Unknown;
+  engineState(state);
+
   if (state == wmx3Api::EngineState::Running ||
     state == wmx3Api::EngineState::Communicating)
   {
-    RCLCPP_WARN(logger_, "Engine is already started (state '%s')", engineStateLabel(state));
+    message = "Engine is already started (state '" + std::string(engineStateLabel(state)) + "')";
+    RCLCPP_WARN(logger_, "%s", message.c_str());
     return wmx3Api::ErrorCode::None;
   }
 
@@ -82,11 +86,11 @@ int WmxEngineNodeApi::startEngine()
         RCLCPP_INFO(logger_, "Device created (attempt %d)", attempt + 1);
 
         if (!config_.paramFilePath.empty()) {
-          std::string message;
-          loadWmxParams(config_.paramFilePath, message);
+          std::string paramMessage;
+          loadWmxParams(config_.paramFilePath, paramMessage);
         }
 
-        return startCommunication();
+        return startCommunication(message);
       }
 
       wmx3Lib_.CloseDevice();
@@ -106,13 +110,13 @@ int WmxEngineNodeApi::startEngine()
     }
   }
 
-  RCLCPP_ERROR(
-    logger_, "Failed to create device after %d attempts. Error=%d (%s)",
-    maxRetries_, err, errorText(err).c_str());
+  message = "Failed to create device after " + std::to_string(maxRetries_) +
+    " attempts. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+  RCLCPP_ERROR(logger_, "%s", message.c_str());
   return err;
 }
 
-int WmxEngineNodeApi::stopEngine()
+int WmxEngineNodeApi::stopEngine(std::string & message)
 {
   std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
 
@@ -121,16 +125,22 @@ int WmxEngineNodeApi::stopEngine()
 
   int err = wmx3Lib_.CloseDevice();
   if (err != wmx3Api::ErrorCode::None) {
-    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
+    message = "Failed to close device. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
   } else {
-    RCLCPP_INFO(logger_, "Device closed");
+    message = "Device closed";
+    RCLCPP_INFO(logger_, "%s", message.c_str());
   }
 
   err = wmx3Lib_.StopEngine(timeout_);
   if (err != wmx3Api::ErrorCode::None) {
-    RCLCPP_ERROR(logger_, "Failed to stop engine. Error=%d (%s)", err, errorText(err).c_str());
+    message = "Failed to stop engine. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
   } else {
-    RCLCPP_INFO(logger_, "Engine stopped");
+    message = "Engine stopped";
+    RCLCPP_INFO(logger_, "%s", message.c_str());
   }
 
   isCommStarted_ = false;
@@ -139,36 +149,41 @@ int WmxEngineNodeApi::stopEngine()
   return err;
 }
 
-int WmxEngineNodeApi::startCommunication()
+int WmxEngineNodeApi::startCommunication(std::string & message)
 {
   std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
 
   const int err = wmx3Lib_.StartCommunication(timeout_);
   if (err != wmx3Api::ErrorCode::None) {
-    RCLCPP_ERROR(
-      logger_, "Failed to start communication. Error=%d (%s)", err, errorText(err).c_str());
+    message = "Failed to start communication. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
   } else {
     isCommStarted_ = true;
-    RCLCPP_INFO(logger_, "Communication started");
+    message = "Communication started";
+    RCLCPP_INFO(logger_, "%s", message.c_str());
   }
 
   return err;
 }
 
-int WmxEngineNodeApi::stopCommunication()
+int WmxEngineNodeApi::stopCommunication(std::string & message)
 {
   std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
 
   if (!cm_) {
+    message = "Communication is not started";
     return wmx3Api::ErrorCode::None;
   }
 
   const int err = wmx3Lib_.StopCommunication(timeout_);
   if (err != wmx3Api::ErrorCode::None) {
-    RCLCPP_ERROR(
-      logger_, "Failed to stop communication. Error=%d (%s)", err, errorText(err).c_str());
+    message = "Failed to stop communication. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
   } else {
-    RCLCPP_INFO(logger_, "Communication stopped");
+    message = "Communication stopped";
+    RCLCPP_INFO(logger_, "%s", message.c_str());
   }
 
   isCommStarted_ = false;
@@ -257,16 +272,33 @@ int WmxEngineNodeApi::getWmxParams(
   return wmx3Api::ErrorCode::None;
 }
 
-std::string WmxEngineNodeApi::getEngineStatus()
+int WmxEngineNodeApi::getEngineStatus(std::string & message)
 {
-  return engineStateLabel(engineState());
+  wmx3Api::EngineState::T state = wmx3Api::EngineState::Unknown;
+
+  const int err = engineState(state);
+  if (err != wmx3Api::ErrorCode::None) {
+    message = "Failed to read engine status. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  message = engineStateLabel(state);
+  return wmx3Api::ErrorCode::None;
 }
 
-wmx3Api::EngineState::T WmxEngineNodeApi::engineState()
+int WmxEngineNodeApi::engineState(wmx3Api::EngineState::T & state)
 {
   wmx3Api::EngineStatus engineStatus;
-  wmx3Lib_.GetEngineStatus(&engineStatus);
-  return engineStatus.state;
+
+  const int err = wmx3Lib_.GetEngineStatus(&engineStatus);
+  if (err != wmx3Api::ErrorCode::None) {
+    return err;
+  }
+
+  state = engineStatus.state;
+  return wmx3Api::ErrorCode::None;
 }
 
 WmxEngineNode::WmxEngineNode()
@@ -305,7 +337,11 @@ WmxEngineNode::WmxEngineNode()
     std::bind(&WmxEngineNode::getWmxParamsCallback, this, _1, _2),
     rclcpp::ServicesQoS(), managerCbGroup_);
 
-  startThread_ = std::thread([this]() {api_->startEngine();});
+  startThread_ = std::thread(
+    [this]() {
+      std::string message;
+      api_->startEngine(message);
+    });
 
   RCLCPP_INFO(this->get_logger(), "wmx_engine_node is ready");
 }
@@ -330,14 +366,16 @@ void WmxEngineNode::getEngineStatusCallback(
     return;
   }
 
-  response->success = true;
-  response->message = api_->getEngineStatus();
+  std::string message;
+  response->success = api_->getEngineStatus(message) == wmx3Api::ErrorCode::None;
+  response->message = message;
 }
 
 void WmxEngineNode::setEngineCallback(
   const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
   std::shared_ptr<std_srvs::srv::SetBool::Response> response)
 {
+  std::string message;
   int err;
 
   if (request->data) {
@@ -346,21 +384,18 @@ void WmxEngineNode::setEngineCallback(
       response->message = "Engine is already started";
       return;
     }
-    err = api_->startEngine();
+    err = api_->startEngine(message);
   } else {
     if (!api_->isDeviceOpen()) {
       response->success = false;
       response->message = "Engine is not started";
       return;
     }
-    err = api_->stopEngine();
+    err = api_->stopEngine(message);
   }
 
   response->success = (err == wmx3Api::ErrorCode::None);
-  response->message = response->success ?
-    (request->data ? "Engine started" : "Engine stopped") :
-    (std::string("Failed to ") + (request->data ? "start" : "stop") +
-    " engine. Error=" + std::to_string(err));
+  response->message = message;
 }
 
 void WmxEngineNode::setCommCallback(
@@ -373,13 +408,12 @@ void WmxEngineNode::setCommCallback(
     return;
   }
 
-  const int err = request->data ? api_->startCommunication() : api_->stopCommunication();
+  std::string message;
+  const int err = request->data ?
+    api_->startCommunication(message) : api_->stopCommunication(message);
 
   response->success = (err == wmx3Api::ErrorCode::None);
-  response->message = response->success ?
-    (request->data ? "Communication started" : "Communication stopped") :
-    (std::string("Failed to ") + (request->data ? "start" : "stop") +
-    " communication. Error=" + std::to_string(err));
+  response->message = message;
 }
 
 void WmxEngineNode::loadWmxParamsCallback(

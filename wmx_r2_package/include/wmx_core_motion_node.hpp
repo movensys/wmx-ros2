@@ -5,21 +5,16 @@
 #define WMX_CORE_MOTION_NODE_HPP_
 
 #include <atomic>
-#include <cmath>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <sstream>
-#include <chrono>
-#include <thread>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
-#include "std_srvs/srv/set_bool.hpp"
 
 #include "wmx_r2_message/srv/set_axis.hpp"
 #include "wmx_r2_message/srv/set_axis_gear_ratio.hpp"
@@ -30,8 +25,71 @@
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 
-using std::placeholders::_1;
-using std::placeholders::_2;
+// Everything that talks to the WMX3 SDK. No ROS entities, only a logger.
+//
+// deviceMutex_ guards only the cm_ handle itself, never the SDK calls made
+// through it: setHoming() blocks in motion->Wait() for the whole homing move,
+// and holding a lock across that would stall the axis-state timer and the jog
+// dead-man watchdog. Callers take a shared_ptr copy under the lock and then
+// work outside it, so a concurrent releaseDevice() cannot pull the object out
+// from under an in-flight call.
+class WmxCoreMotionNodeApi
+{
+public:
+  explicit WmxCoreMotionNodeApi(const rclcpp::Logger & logger);
+  ~WmxCoreMotionNodeApi();
+
+  int attachDevice(std::string & message);
+  void releaseDevice();
+
+  // Number of axes the engine reports across its cyclic handlers.
+  int readAxisCount();
+
+  int getStatus(wmx3Api::CoreMotionStatus & status);
+
+  // Motion. Each returns a WMX3 error code; message carries the outcome.
+  int startPos(
+    int axis, double target, double velocity, double acc, double dec, std::string & message);
+  int startMov(
+    int axis, double target, double velocity, double acc, double dec, std::string & message);
+  int startVel(int axis, double velocity, double acc, double dec, std::string & message);
+  int startJog(
+    int axis, double velocity, double accTimeMs, double decTimeMs, double jerkRatio,
+    double runTimeMs, std::string & message);
+
+  // Stopping an already idle axis is expected (the jog run time may have
+  // elapsed before the operator released), so this one only logs at DEBUG.
+  int stopAxis(int axis);
+
+  // Axis configuration and state.
+  int setServoOn(int axis, int on, std::string & message);
+  int setAxisCommandMode(int axis, int mode, std::string & message);
+  int clearAmpAlarm(int axis, std::string & message);
+  int setAxisPolarity(int axis, int polarity, std::string & message);
+  int setGearRatio(int axis, int numerator, int denominator, std::string & message);
+  int homeAxis(int axis, std::string & message);
+
+  bool isDeviceOpen() const {return deviceOpen_;}
+
+private:
+  // A handle that stays valid for the duration of the call, or null.
+  std::shared_ptr<wmx3Api::CoreMotion> device();
+
+  std::string errorText(int err);
+
+  rclcpp::Logger logger_;
+
+  const char * deviceName_ = "wmx_core_motion_node";
+  unsigned int timeout_ = 10000;
+  unsigned int servoOnTimeout_ = 1000;
+
+  mutable std::mutex deviceMutex_;
+
+  wmx3Api::WMX3Api wmx3Lib_;
+  std::shared_ptr<wmx3Api::CoreMotion> cm_;
+
+  std::atomic<bool> deviceOpen_{false};
+};
 
 class WmxCoreMotionNode : public rclcpp_lifecycle::LifecycleNode
 {
@@ -49,23 +107,10 @@ public:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
-  std::atomic<bool> isActive_{false};
-  bool isDeviceAttached_ = false;
+  std::unique_ptr<WmxCoreMotionNodeApi> api_;
+
   int axisCount_ = 0;
-  int err_;
-  char errString_[256];
-  char buffer_[512];
   const int rate_ = 100;
-
-  wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::CoreMotion> wmx3LibCm_;
-  wmx3Api::CoreMotionStatus cmStatus_;
-  // For getting axisCount_, we use this api.
-  wmx3Api::EngineStatus engineStatus_;
-
-  wmx3Api::Velocity::VelCommand velocity_;
-  wmx3Api::Motion::PosCommand position_;
-  wmx3Api::Config::HomeParam homeParam_;
 
   // Jog is a dead-man command: the publisher must keep refreshing wmx/axis/jog,
   // and the axis is stopped once refreshes stop arriving (cmd_vel pattern).
@@ -100,40 +145,39 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetAxis>::SharedPtr setHomingService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxis>::SharedPtr stopAxisService_;
 
-  bool attachDevice();
-  void releaseDevice();
   void stopAllJogs();
+  // Read straight off the lifecycle state machine: a mirrored flag can drift
+  // from it when a transition fails.
+  bool isNodeActive() const;
   std::string notActiveMessage() const;
 
   void axisStateStep();
+  void jogWatchdogStep();
 
   void axisPoseCallback(const wmx_r2_message::msg::AxisPose::SharedPtr msg);
   void axisPoseRelativeCallback(const wmx_r2_message::msg::AxisPose::SharedPtr msg);
   void axisVelCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg);
   void axisJogCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg);
 
-  void jogWatchdogStep();
-  int stopAxis(int axis);
-
-  void setAxisOn(
+  void setAxisOnCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
-  void setAxisMode(
+  void setAxisModeCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
-  void clearAlarm(
+  void clearAlarmCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
-  void setAxisPolarity(
+  void setAxisPolarityCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
-  void setAxisGearRatio(
+  void setAxisGearRatioCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Response> response);
-  void setHoming(
+  void setHomingCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
-  void stopAxes(
+  void stopAxesCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response);
 };

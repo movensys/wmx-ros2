@@ -34,12 +34,12 @@ public:
   WmxEngineNodeApi(const rclcpp::Logger & logger, const Config & config);
   ~WmxEngineNodeApi();
 
-  int startEngine();
-  int stopEngine();
-  std::string getEngineStatus();
+  int startEngine(std::string & message);
+  int stopEngine(std::string & message);
+  int getEngineStatus(std::string & message);
 
-  int startCommunication();
-  int stopCommunication();
+  int startCommunication(std::string & message);
+  int stopCommunication(std::string & message);
 
   int loadWmxParams(const std::string & path, std::string & message);
   int getWmxParams(
@@ -53,7 +53,7 @@ public:
 private:
   std::string errorText(int err);
 
-  wmx3Api::EngineState::T engineState();
+  int engineState(wmx3Api::EngineState::T & state);
 
   rclcpp::Logger logger_;
   Config config_;
