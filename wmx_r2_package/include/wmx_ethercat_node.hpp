@@ -21,13 +21,6 @@
 #include "WMX3Api.h"
 #include "EcApi.h"
 
-// Everything that talks to the WMX3 SDK. No ROS entities, only a logger.
-//
-// Not synchronised: wmx_ethercat_node spins on a single-threaded executor (see
-// main()), so every callback and lifecycle transition runs one at a time.
-// Adding a timer, a std::thread or a MultiThreadedExecutor breaks that
-// assumption -- guard wmxEcat_ and the wmx3Lib_ calls with a mutex if you do,
-// as wmx_engine_node and wmx_core_motion_node have to.
 class WmxEtherCatNodeApi
 {
 public:
@@ -37,9 +30,6 @@ public:
   int attachDevice(std::string & message);
   void releaseDevice();
 
-  // Each returns a WMX3 error code. message carries the human-readable outcome
-  // back to the caller; it is an out-parameter rather than a member so that
-  // concurrent callers cannot overwrite each other's result.
   int getMasterInfo(
     int32_t masterId, wmx3Api::ecApi::EcMasterInfo & info, std::string & message);
   int registerRead(
@@ -49,7 +39,7 @@ public:
   int scanNetwork(int32_t masterId, std::string & message);
   int startHotconnect(int32_t masterId, std::string & message);
 
-  bool isDeviceOpen() const {return deviceOpen_;}
+  bool isDeviceOpen() const {return wmxEcat_ != nullptr;}
 
 private:
   rclcpp::Logger logger_;
@@ -58,10 +48,7 @@ private:
   unsigned int timeout_ = 10000;
 
   wmx3Api::WMX3Api wmx3Lib_;
-  wmx3Api::ecApi::Ecat wmxEcat_;
-
-  // wmxEcat_ is a value, not a handle, so attachment needs its own flag.
-  bool deviceOpen_ = false;
+  std::unique_ptr<wmx3Api::ecApi::Ecat> wmxEcat_;
 };
 
 class WmxEtherCatNode : public rclcpp_lifecycle::LifecycleNode
@@ -88,8 +75,6 @@ private:
   rclcpp::Service<wmx_r2_message::srv::EcatScanNetwork>::SharedPtr scanNetworkService_;
   rclcpp::Service<wmx_r2_message::srv::EcatStartHotconnect>::SharedPtr startHotconnectService_;
 
-  // Read straight off the lifecycle state machine: a mirrored flag can drift
-  // from it when a transition fails.
   bool isNodeActive() const;
   std::string notActiveMessage() const;
 
