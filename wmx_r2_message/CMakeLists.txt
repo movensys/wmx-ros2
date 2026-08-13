@@ -20,6 +20,7 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetEngine.srv"
   "srv/SetNodeState.srv"
+  "srv/GetNodeStates.srv"
   "srv/SetAxes.srv"
   "srv/SetAxesGearRatio.srv"
   "srv/GetIoBit.srv"

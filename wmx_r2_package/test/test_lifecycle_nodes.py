@@ -10,9 +10,8 @@ from lifecycle_msgs.srv import GetState
 import pytest
 import rclpy
 from rclpy.node import Node
-from std_srvs.srv import Trigger
 
-from wmx_r2_message.srv import SetNodeState
+from wmx_r2_message.srv import GetNodeStates, SetNodeState
 
 LIFECYCLE_NODES = ['wmx_core_motion_node', 'wmx_io_node', 'wmx_ethercat_node']
 
@@ -92,18 +91,22 @@ class TestLifecycleNodes(unittest.TestCase):
             )
 
     def test_engine_reports_node_states(self):
-        """wmx/lifecycle/get_node_states should list the lifecycle nodes it finds."""
-        client = self.node.create_client(Trigger, 'wmx/lifecycle/get_node_states')
+        """wmx/lifecycle/get_node_states should list every lifecycle node it finds."""
+        client = self.node.create_client(GetNodeStates, 'wmx/lifecycle/get_node_states')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
             'wmx/lifecycle/get_node_states service not available',
         )
 
-        result = self.call(client, Trigger.Request())
+        result = self.call(client, GetNodeStates.Request())
         self.assertIsNotNone(result, 'Service call returned no result')
         self.assertTrue(result.success)
+        self.assertEqual(
+            len(result.node_names), len(result.states),
+            'node_names and states should be index aligned',
+        )
         for name in LIFECYCLE_NODES:
-            self.assertIn(name, result.message)
+            self.assertIn(f'/{name}', list(result.node_names))
 
     def test_engine_rejects_unknown_transition(self):
         """An unknown transition name should fail instead of doing something."""
@@ -121,8 +124,8 @@ class TestLifecycleNodes(unittest.TestCase):
         self.assertIsNotNone(result, 'Service call returned no result')
         self.assertFalse(result.success)
 
-    def test_engine_rejects_missing_node_name(self):
-        """An empty node_name should be rejected: transitions are per node."""
+    def test_empty_node_name_targets_every_node(self):
+        """An empty node_name should apply the transition to all nodes at once."""
         client = self.node.create_client(SetNodeState, 'wmx/lifecycle/set_node_state')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
@@ -135,7 +138,14 @@ class TestLifecycleNodes(unittest.TestCase):
         result = self.call(client, req)
 
         self.assertIsNotNone(result, 'Service call returned no result')
-        self.assertFalse(result.success)
+        self.assertEqual(
+            len(result.node_names), len(result.states),
+            'node_names and states should be index aligned',
+        )
+        # Without a communicating engine the transitions fail, but every
+        # discovered node must still be reported back.
+        for name in LIFECYCLE_NODES:
+            self.assertIn(f'/{name}', list(result.node_names))
 
     def test_engine_can_deactivate_and_reactivate_io_node(self):
         """The engine should be able to drive a managed node's state."""

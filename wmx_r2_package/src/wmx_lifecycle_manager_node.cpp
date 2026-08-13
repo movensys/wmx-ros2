@@ -37,7 +37,7 @@ const char * transitionLabel(uint8_t transition)
     default:                                           return "unknown transition";
   }
 }
-}  // namespace
+} 
 
 LifecycleManager::LifecycleManager(
   rclcpp::Node * node, const std::vector<std::string> & managedNodes)
@@ -91,7 +91,6 @@ std::vector<std::string> LifecycleManager::discover()
     try {
       services = node_->get_service_names_and_types_by_node(name, ns);
     } catch (const std::runtime_error &) {
-      // The node left the graph between listing and querying it.
       continue;
     }
 
@@ -109,7 +108,6 @@ std::vector<std::string> LifecycleManager::discover()
     found.push_back(fullName);
   }
 
-  // managed_nodes given: keep only those, in the order they are listed.
   if (!managedNodes_.empty()) {
     std::vector<std::string> managed;
     for (const std::string & name : managedNodes_) {
@@ -257,6 +255,88 @@ bool LifecycleManager::shutdown(const std::string & node, std::string & message)
   return changeState(node, transition, message);
 }
 
+bool LifecycleManager::isKnownTransition(const std::string & transition)
+{
+  return transition == "configure" || transition == "activate" ||
+         transition == "deactivate" || transition == "cleanup" ||
+         transition == "shutdown" || transition == "bringup" ||
+         transition == "bringdown";
+}
+
+std::string LifecycleManager::knownTransitions()
+{
+  return "configure, activate, deactivate, cleanup, shutdown, bringup or bringdown";
+}
+
+bool LifecycleManager::applyTransition(
+  const std::string & node, const std::string & transition, std::string & message)
+{
+  if (transition == "configure") {
+    return changeState(node, Transition::TRANSITION_CONFIGURE, message);
+  }
+  if (transition == "activate") {
+    return changeState(node, Transition::TRANSITION_ACTIVATE, message);
+  }
+  if (transition == "deactivate") {
+    return changeState(node, Transition::TRANSITION_DEACTIVATE, message);
+  }
+  if (transition == "cleanup") {
+    return changeState(node, Transition::TRANSITION_CLEANUP, message);
+  }
+  if (transition == "shutdown") {
+    return shutdown(node, message);
+  }
+  if (transition == "bringup") {
+    return bringUp(node, message);
+  }
+  if (transition == "bringdown") {
+    return bringDown(node, message);
+  }
+
+  message = node + ": unknown transition '" + transition + "'";
+  return false;
+}
+
+// Every discovered node in one call. Transitions that take a node down run in
+// reverse order, so the controllers stop before the device-level nodes whose
+// axes they command.
+
+bool LifecycleManager::applyTransitionToAll(
+  const std::string & transition, std::vector<std::string> & nodes, std::string & message)
+{
+  nodes = discover();
+
+  const bool goingDown = transition == "deactivate" || transition == "cleanup" ||
+    transition == "shutdown" || transition == "bringdown";
+  if (goingDown) {
+    std::reverse(nodes.begin(), nodes.end());
+  }
+
+  bool allSucceeded = true;
+  message.clear();
+
+  for (const std::string & node : nodes) {
+    std::string nodeMessage;
+
+    if (applyTransition(node, transition, nodeMessage)) {
+      RCLCPP_INFO(logger_, "%s", nodeMessage.c_str());
+      // Whatever the operator set stands: the discovery sweep leaves it alone.
+      markHandled(node);
+    } else {
+      RCLCPP_ERROR(logger_, "%s", nodeMessage.c_str());
+      allSucceeded = false;
+    }
+
+    message += nodeMessage + "; ";
+  }
+
+  if (nodes.empty()) {
+    message = "No lifecycle nodes found.";
+  }
+
+  return allSucceeded;
+}
+
 // Take the lifecycle nodes off the device before the engine pulls it away from
 // under them. With cleanup they also release their device handle.
 // Reverse of the bring-up order: the controllers stop before the device-level
@@ -346,19 +426,9 @@ WmxLifecycleManagerNode::WmxLifecycleManagerNode()
     std::bind(&WmxLifecycleManagerNode::setNodeStateCallback, this, _1, _2),
     rclcpp::ServicesQoS(), managerCbGroup_);
 
-  getNodeStatesService_ = this->create_service<std_srvs::srv::Trigger>(
+  getNodeStatesService_ = this->create_service<wmx_r2_message::srv::GetNodeStates>(
     "wmx/lifecycle/get_node_states",
     std::bind(&WmxLifecycleManagerNode::getNodeStatesCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
-
-  bringUpAllService_ = this->create_service<std_srvs::srv::Trigger>(
-    "wmx/lifecycle/bring_up_all",
-    std::bind(&WmxLifecycleManagerNode::bringUpAllCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
-
-  bringDownAllService_ = this->create_service<std_srvs::srv::SetBool>(
-    "wmx/lifecycle/bring_down_all",
-    std::bind(&WmxLifecycleManagerNode::bringDownAllCallback, this, _1, _2),
     rclcpp::ServicesQoS(), managerCbGroup_);
 
   discoveryTimer_ = this->create_wall_timer(
@@ -410,101 +480,62 @@ void WmxLifecycleManagerNode::discoveryStep()
   }
 }
 
-// ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState
-//   "{node_name: 'wmx_io_node', transition: 'deactivate'}"
+// One node:
+//   ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState
+//     "{node_name: 'wmx_io_node', transition: 'deactivate'}"
+// Every node: leave node_name empty.
 void WmxLifecycleManagerNode::setNodeStateCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetNodeState::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetNodeState::Response> response)
 {
-  if (request->node_name.empty()) {
-    response->success = false;
-    response->message =
-      "node_name is required. Call wmx/lifecycle/get_node_states to list the nodes.";
-    return;
-  }
-
-  const std::string node = lifecycle_->resolveNodeName(request->node_name);
   const std::string & transition = request->transition;
-  std::string message;
-  bool success;
 
-  if (transition == "configure") {
-    success = lifecycle_->changeState(
-      node, lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE, message);
-  } else if (transition == "activate") {
-    success = lifecycle_->changeState(
-      node, lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE, message);
-  } else if (transition == "deactivate") {
-    success = lifecycle_->changeState(
-      node, lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE, message);
-  } else if (transition == "cleanup") {
-    success = lifecycle_->changeState(
-      node, lifecycle_msgs::msg::Transition::TRANSITION_CLEANUP, message);
-  } else if (transition == "shutdown") {
-    success = lifecycle_->shutdown(node, message);
-  } else if (transition == "bringup") {
-    success = lifecycle_->bringUp(node, message);
-  } else if (transition == "bringdown") {
-    success = lifecycle_->bringDown(node, message);
-  } else {
+  if (!LifecycleManager::isKnownTransition(transition)) {
     response->success = false;
-    response->message = "Unknown transition '" + transition +
-      "'. Use configure, activate, deactivate, cleanup, shutdown, bringup or bringdown.";
+    response->message = "Unknown transition '" + transition + "'. Use " +
+      LifecycleManager::knownTransitions() + ".";
     return;
   }
 
-  if (success) {
-    RCLCPP_INFO(this->get_logger(), "%s", message.c_str());
-    // Whatever the operator set stands: the discovery sweep leaves it alone.
-    lifecycle_->markHandled(node);
+  std::string message;
+
+  if (request->node_name.empty()) {
+    std::vector<std::string> nodes;
+    response->success = lifecycle_->applyTransitionToAll(transition, nodes, message);
+    response->node_names = nodes;
   } else {
-    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+    const std::string node = lifecycle_->resolveNodeName(request->node_name);
+    response->success = lifecycle_->applyTransition(node, transition, message);
+
+    if (response->success) {
+      RCLCPP_INFO(this->get_logger(), "%s", message.c_str());
+      // Whatever the operator set stands: the discovery sweep leaves it alone.
+      lifecycle_->markHandled(node);
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+    }
+
+    response->node_names.push_back(node);
   }
 
-  response->success = success;
   response->message = message;
-  response->node_names.push_back(node);
-  response->states.push_back(lifecycle_->state(node));
+  for (const std::string & node : response->node_names) {
+    response->states.push_back(lifecycle_->state(node));
+  }
 }
 
+// Every lifecycle node on the graph, in bring-up order, with its state.
 void WmxLifecycleManagerNode::getNodeStatesCallback(
-  const std::shared_ptr<std_srvs::srv::Trigger::Request>,
-  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+  const std::shared_ptr<wmx_r2_message::srv::GetNodeStates::Request>,
+  std::shared_ptr<wmx_r2_message::srv::GetNodeStates::Response> response)
 {
   std::string message;
+
   for (const std::string & node : lifecycle_->discover()) {
-    message += node + ": " + lifecycle_->state(node) + "; ";
-  }
-
-  response->success = true;
-  response->message = message.empty() ? "No lifecycle nodes found." : message;
-}
-
-void WmxLifecycleManagerNode::bringUpAllCallback(
-  const std::shared_ptr<std_srvs::srv::Trigger::Request>,
-  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-{
-  lifecycle_->bringUpDiscovered();
-
-  std::string message;
-  for (const std::string & node : lifecycle_->discover()) {
-    message += node + ": " + lifecycle_->state(node) + "; ";
-  }
-
-  response->success = true;
-  response->message = message.empty() ? "No lifecycle nodes found." : message;
-}
-
-// data: true also cleans the nodes up, releasing their WMX device handle.
-void WmxLifecycleManagerNode::bringDownAllCallback(
-  const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-  std::shared_ptr<std_srvs::srv::SetBool::Response> response)
-{
-  lifecycle_->bringDownDiscovered(request->data);
-
-  std::string message;
-  for (const std::string & node : lifecycle_->discover()) {
-    message += node + ": " + lifecycle_->state(node) + "; ";
+    const std::string label = lifecycle_->state(node);
+    response->node_names.push_back(node);
+    response->states.push_back(label);
+    message += node + ": " + label + "; ";
   }
 
   response->success = true;

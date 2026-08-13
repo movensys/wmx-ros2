@@ -85,16 +85,21 @@ limited to WMX nodes: any managed node in the same namespace (a lifecycle
 Individual nodes are driven by name:
 
 ```bash
-# Lifecycle nodes the engine can see, and their states
-ros2 service call /wmx/lifecycle/get_node_states std_srvs/srv/Trigger "{}"
+# Lifecycle nodes the manager can see, and their states
+ros2 service call /wmx/lifecycle/get_node_states wmx_r2_message/srv/GetNodeStates "{}"
 
 # Drive one node by name
 ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
   "{node_name: 'wmx_io_node', transition: 'deactivate'}"
+
+# Drive every node at once: leave node_name empty
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: '', transition: 'bringdown'}"
 ```
 
 `transition` is one of `configure`, `activate`, `deactivate`, `cleanup`,
-`shutdown`, `bringup` (configure + activate) or `bringdown` (deactivate). The
+`shutdown`, `bringup` (configure + activate) or `bringdown` (deactivate).
+Transitions that take nodes down are applied in reverse bring-up order. The
 standard `ros2 lifecycle` CLI works on the nodes directly as well.
 
 ### Trajectory Control ([wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py))

@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "std_srvs/srv/set_bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
 #include "lifecycle_msgs/msg/state.hpp"
@@ -19,15 +18,12 @@
 #include "lifecycle_msgs/srv/change_state.hpp"
 #include "lifecycle_msgs/srv/get_state.hpp"
 
+#include "wmx_r2_message/srv/get_node_states.hpp"
 #include "wmx_r2_message/srv/set_node_state.hpp"
 
-// Drives the lifecycle nodes on the graph on behalf of an owning node. Knows
-// nothing about WMX.
 class LifecycleManager
 {
 public:
-  // managedNodes: nodes to bring up automatically, in that order. Empty means
-  // every lifecycle node found on the graph.
   LifecycleManager(rclcpp::Node * node, const std::vector<std::string> & managedNodes);
 
   // Lifecycle nodes currently on the graph, in bring-up order.
@@ -38,6 +34,17 @@ public:
   bool bringUp(const std::string & node, std::string & message);
   bool bringDown(const std::string & node, std::string & message);
   bool shutdown(const std::string & node, std::string & message);
+
+  // Transition names the two services accept.
+  static bool isKnownTransition(const std::string & transition);
+  static std::string knownTransitions();
+
+  // Drives one node by transition name.
+  bool applyTransition(
+    const std::string & node, const std::string & transition, std::string & message);
+  // Same over every discovered node; down transitions run in reverse order.
+  bool applyTransitionToAll(
+    const std::string & transition, std::vector<std::string> & nodes, std::string & message);
 
   // Bring up every discovered node not handled yet.
   void bringUpDiscovered();
@@ -92,9 +99,7 @@ private:
   rclcpp::TimerBase::SharedPtr discoveryTimer_;
 
   rclcpp::Service<wmx_r2_message::srv::SetNodeState>::SharedPtr setNodeStateService_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr getNodeStatesService_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr bringUpAllService_;
-  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr bringDownAllService_;
+  rclcpp::Service<wmx_r2_message::srv::GetNodeStates>::SharedPtr getNodeStatesService_;
 
   bool isEngineCommunicating();
   void discoveryStep();
@@ -103,14 +108,8 @@ private:
     const std::shared_ptr<wmx_r2_message::srv::SetNodeState::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetNodeState::Response> response);
   void getNodeStatesCallback(
-    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  void bringUpAllCallback(
-    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  void bringDownAllCallback(
-    const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-    std::shared_ptr<std_srvs::srv::SetBool::Response> response);
+    const std::shared_ptr<wmx_r2_message::srv::GetNodeStates::Request> request,
+    std::shared_ptr<wmx_r2_message::srv::GetNodeStates::Response> response);
 };
 
 #endif  // WMX_LIFECYCLE_MANAGER_NODE_HPP_

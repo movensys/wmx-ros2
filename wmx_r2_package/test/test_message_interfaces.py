@@ -13,6 +13,7 @@ from wmx_r2_message.srv import EcatResetStatistics
 from wmx_r2_message.srv import EcatStartHotconnect
 from wmx_r2_message.srv import GetIoBit
 from wmx_r2_message.srv import GetIoBytes
+from wmx_r2_message.srv import GetNodeStates
 from wmx_r2_message.srv import GetWmxParams
 from wmx_r2_message.srv import LoadWmxParams
 from wmx_r2_message.srv import SetAxes
@@ -129,6 +130,27 @@ class TestSetNodeStateSrv(unittest.TestCase):
     def test_response_arrays_are_index_aligned(self):
         res = SetNodeState.Response()
         res.node_names = ['wmx_io_node', 'wmx_ethercat_node']
+        res.states = ['active', 'inactive']
+        self.assertEqual(len(res.node_names), len(res.states))
+
+
+class TestGetNodeStatesSrv(unittest.TestCase):
+    """Verify GetNodeStates.srv fields."""
+
+    def test_request_is_empty(self):
+        req = GetNodeStates.Request()
+        self.assertFalse(hasattr(req, 'node_name'))
+
+    def test_response_fields(self):
+        res = GetNodeStates.Response()
+        self.assertTrue(hasattr(res, 'success'))
+        self.assertTrue(hasattr(res, 'message'))
+        self.assertTrue(hasattr(res, 'node_names'))
+        self.assertTrue(hasattr(res, 'states'))
+
+    def test_response_arrays_are_index_aligned(self):
+        res = GetNodeStates.Response()
+        res.node_names = ['/wmx_io_node', '/wmx_ethercat_node']
         res.states = ['active', 'inactive']
         self.assertEqual(len(res.node_names), len(res.states))
 

@@ -11,6 +11,8 @@ import rclpy
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 
+from wmx_r2_message.srv import GetNodeStates
+
 
 @pytest.mark.launch_test
 def generate_test_description():
@@ -55,23 +57,24 @@ class TestEngineLifecycle(unittest.TestCase):
 
     def test_engine_reports_node_states(self):
         """wmx/lifecycle/get_node_states should answer once the engine node is up."""
-        client = self.node.create_client(Trigger, 'wmx/lifecycle/get_node_states')
+        client = self.node.create_client(GetNodeStates, 'wmx/lifecycle/get_node_states')
 
         self.assertTrue(
             client.wait_for_service(timeout_sec=15),
             'get_node_states service not available within 15 seconds',
         )
 
-        future = client.call_async(Trigger.Request())
+        future = client.call_async(GetNodeStates.Request())
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=30)
 
         self.assertIsNotNone(future.result(), 'Service call returned no result')
         result = future.result()
         self.assertTrue(result.success)
-        # The engine discovers lifecycle nodes on the graph. None is launched
+        # The manager discovers lifecycle nodes on the graph. None is launched
         # here, so it reports an empty set rather than failing.
         self.assertTrue(result.message)
-        self.assertNotIn('wmx_engine_node', result.message)
+        self.assertEqual(len(result.node_names), len(result.states))
+        self.assertNotIn('/wmx_engine_node', list(result.node_names))
 
     def test_get_engine_status_service(self):
         """wmx/engine/get_engine_status service should return a valid engine state."""

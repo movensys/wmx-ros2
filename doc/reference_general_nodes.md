@@ -77,42 +77,6 @@ ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
     "{indices: [0], velocities: [-10000], accelerations: [100000], decelerations: [100000]}"
 ```
 
-#### Jog with keyboard teleop
-`a` = negative, `d` = positive, `q` = quit. Run it from a terminal, not a launch file.
-```
-ros2 run wmx_r2_package jog_keyboard_node --ros-args \
-    -p axis:=0 -p velocity:=10000.0 -p acc:=100000.0 -p dec:=100000.0
-```
-
-A terminal reports characters, not key releases, so the node treats a key as held
-while auto-repeat characters keep arriving and stops the axis once they stop. How
-quickly a release is noticed therefore equals the keyboard repeat delay, which the
-node measures on the first press and prints:
-
-```
-[INFO] Measured a 150 ms key repeat delay, so a released key now stops the axis within 0.21 s.
-```
-
-That delay belongs to the machine you type on, which over ssh is **not** the WMX
-machine, so shorten it there:
-```
-xset r rate 150 30    # on your own PC (660 ms -> 150 ms)
-xset r rate           # restore the default
-```
-macOS and Windows expose the same setting in their keyboard control panel.
-
-If the jog stutters right after a key is pressed, lower the repeat delay further
-or raise `hold_grace_s`.
-
-`jog_keyboard_node` parameters:
-```
-axis velocity acc dec        # what to command
-publish_rate      20.0       # refresh rate while a key is held
-hold_grace_s      0.1        # release detection once auto-repeat is flowing
-initial_grace_s   0.8        # release detection before it is, replaced by the measurement
-grace_margin_s    0.06       # headroom added to the measured repeat delay
-```
-
 #### Stop
 ```
 ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{indices: [0], data: [0]}"
@@ -177,22 +141,42 @@ ones in this package — a lifecycle `joint_state_publisher`, a nav2 node or you
 own managed node is configured and activated the same way, after the WMX
 device-level nodes it may depend on.
 
+There are two services, and both answer for **all** nodes: one reads the states,
+one drives a transition.
+
 ### Read the states
-Lists every lifecycle node currently on the graph, with its state.
+Lists every lifecycle node currently on the graph, with its state. `node_names`
+and `states` are index aligned, in bring-up order; `message` is the same list as
+one human-readable string.
 ```
-ros2 service call /wmx/lifecycle/get_node_states std_srvs/srv/Trigger "{}"
+ros2 service call /wmx/lifecycle/get_node_states wmx_r2_message/srv/GetNodeStates "{}"
 ```
 
 ### Drive a transition
-Always one node, by name. `transition` is one of `configure`, `activate`,
-`deactivate`, `cleanup`, `shutdown`, `bringup` (configure + activate),
-`bringdown` (deactivate).
+`transition` is one of `configure`, `activate`, `deactivate`, `cleanup`,
+`shutdown`, `bringup` (configure + activate), `bringdown` (deactivate).
+
+One node, by name:
 ```
 ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
   "{node_name: 'wmx_io_node', transition: 'deactivate'}"
 ```
-A plain name is resolved against `wmx_engine_node`'s namespace; an absolute name
-(`/robot1/wmx_io_node`) is used as given.
+Every node found on the graph — leave `node_name` empty:
+```
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: '', transition: 'bringup'}"
+```
+Bring-up transitions (`configure`, `activate`, `bringup`) run in `managed_nodes`
+order; transitions that take nodes down (`deactivate`, `cleanup`, `shutdown`,
+`bringdown`) run in reverse, so the controllers stop before the device-level
+nodes whose axes they command. The response reports every node it touched and
+the state each ended in; `success` is true only if all of them succeeded.
+
+A plain name is resolved against `wmx_lifecycle_manager_node`'s namespace; an
+absolute name (`/robot1/wmx_io_node`) is used as given.
+
+Whatever an operator sets through this service stands: those nodes are marked
+handled, so the discovery sweep leaves them alone until they leave the graph.
 
 The standard CLI works too, and bypasses the engine:
 ```
