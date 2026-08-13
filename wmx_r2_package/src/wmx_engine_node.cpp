@@ -444,7 +444,8 @@ void WmxEngineNode::getWmxParamsCallback(
 
   std::string message;
   response->success =
-    api_->getWmxParams(request->index, response->params_dump, message) == wmx3Api::ErrorCode::None;
+    api_->getWmxParams(request->indices, response->params_dump, message) ==
+    wmx3Api::ErrorCode::None;
   response->message = message;
 }
 

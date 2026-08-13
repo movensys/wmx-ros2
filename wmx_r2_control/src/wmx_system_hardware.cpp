@@ -360,12 +360,12 @@ hardware_interface::return_type WmxSystemHardware::write(
       continue;
     }
     // Skip (don't spam StartVel errors) while the servo is off or alarmed.
-    const auto & axis_status = cm_status_.axesStatus[joint.axis];
-    if (!axis_status.servoOn || axis_status.ampAlarm) {
+    const auto & axes_status = cm_status_.axesStatus[joint.axis];
+    if (!axes_status.servoOn || axes_status.ampAlarm) {
       RCLCPP_WARN_THROTTLE(
         logger_, clock_, 2000,
         "Axis %d not ready (servoOn=%d, ampAlarm=%d); skipping velocity command",
-        joint.axis, axis_status.servoOn, axis_status.ampAlarm);
+        joint.axis, axes_status.servoOn, axes_status.ampAlarm);
       joint.last_cmd = std::numeric_limits<double>::quiet_NaN();
       continue;
     }

@@ -37,7 +37,7 @@ def launch_general_nodes(context):
         executable='wmx_core_motion_node',
         name='wmx_core_motion_node',
         namespace='',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=engine_config + [{'use_sim_time': use_sim_time}],
         output='screen',
     )
 

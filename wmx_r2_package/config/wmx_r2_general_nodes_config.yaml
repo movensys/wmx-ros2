@@ -13,3 +13,10 @@ wmx_lifecycle_manager_node:
     engine_status_service: "wmx/engine/get_engine_status"
     require_engine: true
     discovery_period: 2.0
+
+wmx_core_motion_node:
+  ros__parameters:
+    axis_state_rate: 100
+    jog_timeout_ms: 200.0
+    jog_run_time_ms: 2000.0
+    jog_jerk_ratio: 0.75

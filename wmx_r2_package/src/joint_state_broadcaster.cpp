@@ -15,7 +15,7 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 
-#include "wmx_r2_message/srv/set_axis.hpp"
+#include "wmx_r2_message/srv/set_axes.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
@@ -70,8 +70,8 @@ private:
   std::unique_ptr<IO> wmx3Lib_Io_;
 
   rclcpp::CallbackGroup::SharedPtr axisClientCbGroup_;
-  rclcpp::Client<wmx_r2_message::srv::SetAxis>::SharedPtr clearAlarmClient_;
-  rclcpp::Client<wmx_r2_message::srv::SetAxis>::SharedPtr setAxisOnClient_;
+  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr clearAlarmClient_;
+  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr setAxisOnClient_;
 
   rclcpp::TimerBase::SharedPtr encoderJointTimer_;
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
@@ -81,7 +81,7 @@ private:
   bool attachDevice();
   void releaseDevice();
   void servoOff();
-  bool callSetAxisService(rclcpp::Client<wmx_r2_message::srv::SetAxis>::SharedPtr client,
+  bool callSetAxesService(rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
                           const std::string & service_name,
                           const std::vector<int64_t> & index,
                           const std::vector<int64_t> & data);
@@ -98,11 +98,11 @@ JointStateBroadcaster::JointStateBroadcaster()
 
   axisClientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
-  clearAlarmClient_ = this->create_client<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/clear_alarm", rclcpp::ServicesQoS(), axisClientCbGroup_);
+  clearAlarmClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/clear_amp_alarm", rclcpp::ServicesQoS(), axisClientCbGroup_);
 
-  setAxisOnClient_ = this->create_client<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/set_on", rclcpp::ServicesQoS(), axisClientCbGroup_);
+  setAxisOnClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/set_servo_on", rclcpp::ServicesQoS(), axisClientCbGroup_);
 
   RCLCPP_INFO(
     this->get_logger(), "joint_state_broadcaster is unconfigured, waiting for configure...");
@@ -214,12 +214,12 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_activate(
   std::vector<int64_t> zeroData(jointAxes_.size(), 0);
   std::vector<int64_t> onData(jointAxes_.size(), 1);
 
-  if (!callSetAxisService(clearAlarmClient_, "wmx/axis/clear_alarm", jointAxes_, zeroData)) {
+  if (!callSetAxesService(clearAlarmClient_, "wmx/axes/clear_amp_alarm", jointAxes_, zeroData)) {
     RCLCPP_ERROR(this->get_logger(), "Activation failed at clear_alarm");
     return CallbackReturn::FAILURE;
   }
 
-  if (!callSetAxisService(setAxisOnClient_, "wmx/axis/set_on", jointAxes_, onData)) {
+  if (!callSetAxesService(setAxisOnClient_, "wmx/axes/set_servo_on", jointAxes_, onData)) {
     RCLCPP_ERROR(this->get_logger(), "Activation failed at set_on");
     return CallbackReturn::FAILURE;
   }
@@ -266,8 +266,8 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_shutdown(
   return on_cleanup(previous_state);
 }
 
-bool JointStateBroadcaster::callSetAxisService(
-              rclcpp::Client<wmx_r2_message::srv::SetAxis>::SharedPtr client,
+bool JointStateBroadcaster::callSetAxesService(
+              rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
               const std::string & service_name,
               const std::vector<int64_t> & index,
               const std::vector<int64_t> & data)
@@ -282,8 +282,8 @@ bool JointStateBroadcaster::callSetAxisService(
   }
 
   for (int attempt = 1; attempt <= max_retries; attempt++) {
-    auto request = std::make_shared<wmx_r2_message::srv::SetAxis::Request>();
-    request->index.assign(index.begin(), index.end());
+    auto request = std::make_shared<wmx_r2_message::srv::SetAxes::Request>();
+    request->indices.assign(index.begin(), index.end());
     request->data.assign(data.begin(), data.end());
 
     RCLCPP_INFO(

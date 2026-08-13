@@ -115,7 +115,7 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 - **Long-uptime precision:** pose uses `actualPos` (a `double` user-unit); over very
   long uptime `actualPos` grows large and `actualPos − prev` loses low-order bits
   (catastrophic cancellation of two large near-equal doubles). The exact-integer
-  alternative is `CoreMotionAxisStatus.accumulatedEncoderFeedback` (`long long`)
+  alternative is `CoreMotionAxesStatus.accumulatedEncoderFeedback` (`long long`)
   differenced as integers then scaled — switch to it if this ever surfaces.
 - **`/odom_deltas` during engine downtime:** motion that happens while
   `engineState != Communicating` is not accumulated (the baseline re-anchors on

@@ -35,17 +35,17 @@ Full environment setup, dependencies, and `~/.bashrc` configuration are in [doc/
 ```bash
 # 1. Build (messages first, then the rest)
 cd ~/workspaces/movensys_ws
-colcon build --packages-select wmx_ros2_message
+colcon build --packages-select wmx_r2_message
 source install/setup.bash
 colcon build && source install/setup.bash
 
 # 2. Launch the low-level nodes (engine, core motion, IO, EtherCAT)
-ros2 launch wmx_ros2_package wmx_ros2_general_nodes.launch.py
+ros2 launch wmx_r2_package wmx_r2_general_nodes.launch.py
 
 # 3. Bring axes online and command a move
-ros2 service call /wmx/axis/set_on wmx_ros2_message/srv/SetAxis "{index: [0,1], data: [1,1]}"
-ros2 topic pub --once /wmx/axis/position wmx_ros2_message/msg/AxisPose \
-  "{index: [0,1], target: [8388608, 10000], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"
+ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
+ros2 topic pub --once /wmx/axes/start_pos wmx_r2_message/msg/AxesPose \
+  "{indices: [0,1], positions: [8388608, 10000], velocities: [1000000, 5000], accelerations: [100000, 1000], decelerations: [100000, 1000]}"
 ```
 
 The full startup sequence and the complete service/topic catalog are documented in
@@ -150,9 +150,9 @@ flowchart LR;
 
 | Robot | Type | Launch file | WMX parameters | Guide |
 |-------|------|-------------|----------------|-------|
-| Dobot CR3A | 6-axis manipulator | `wmx_ros2_cr3a_manipulator.launch.py` | `config/cr3a_wmx_parameters.xml` | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) |
-| Dobot CR5A | 6-axis manipulator | `wmx_ros2_cr5a_manipulator.launch.py` | `config/cr5a_wmx_parameters.xml` | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) |
-| Diffbot | Differential-drive base | `wmx_ros2_general_nodes.launch.py` | `config/diffbot_wmx_parameters.xml` | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) |
+| Dobot CR3A | 6-axis manipulator | `wmx_r2_cr3a_manipulator.launch.py` | `config/cr3a_wmx_parameters.xml` | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) |
+| Dobot CR5A | 6-axis manipulator | `wmx_r2_cr5a_manipulator.launch.py` | `config/cr5a_wmx_parameters.xml` | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) |
+| Diffbot | Differential-drive base | `wmx_r2_general_nodes.launch.py` | `config/diffbot_wmx_parameters.xml` | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) |
 
 ## MoveIt2 Integration
 
