@@ -97,7 +97,7 @@ the node in a ROS namespace does **not** namespace them — override the topic
 parameters explicitly for multi-robot/namespaced deployments. The lifecycle
 services (`~/change_state`, `~/get_state`) do follow the namespace; the engine
 discovers the controller under its fully-qualified name, and
-`wmx/engine/set_node_state` takes that same name.
+`wmx/lifecycle/set_node_state` takes that same name.
 
 ### `/odom_enc` covariance (fixed, not parameterized)
 
@@ -157,7 +157,7 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 
 **Startup.** This is a managed (lifecycle) node. It starts `unconfigured` and
 does nothing until `wmx_engine_node` drives it — automatically once the engine
-communicates, or on demand through `wmx/engine/set_node_state` /
+communicates, or on demand through `wmx/lifecycle/set_node_state` /
 `ros2 lifecycle set`.
 
 `on_configure`:

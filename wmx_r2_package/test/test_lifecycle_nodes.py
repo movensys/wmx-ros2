@@ -25,6 +25,13 @@ def generate_test_description():
         name='wmx_engine_node',
         output='screen',
     )
+    # Owns wmx/lifecycle/*, which the node-state tests below call.
+    manager_node = launch_ros.actions.Node(
+        package='wmx_r2_package',
+        executable='wmx_lifecycle_manager_node',
+        name='wmx_lifecycle_manager_node',
+        output='screen',
+    )
     managed = [
         launch_ros.actions.LifecycleNode(
             package='wmx_r2_package',
@@ -38,6 +45,7 @@ def generate_test_description():
 
     return launch.LaunchDescription([
         engine_node,
+        manager_node,
         *managed,
         launch_testing.actions.ReadyToTest(),
     ]), {'engine_node': engine_node}
@@ -84,11 +92,11 @@ class TestLifecycleNodes(unittest.TestCase):
             )
 
     def test_engine_reports_node_states(self):
-        """wmx/engine/get_node_states should list the lifecycle nodes it finds."""
-        client = self.node.create_client(Trigger, 'wmx/engine/get_node_states')
+        """wmx/lifecycle/get_node_states should list the lifecycle nodes it finds."""
+        client = self.node.create_client(Trigger, 'wmx/lifecycle/get_node_states')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/engine/get_node_states service not available',
+            'wmx/lifecycle/get_node_states service not available',
         )
 
         result = self.call(client, Trigger.Request())
@@ -99,10 +107,10 @@ class TestLifecycleNodes(unittest.TestCase):
 
     def test_engine_rejects_unknown_transition(self):
         """An unknown transition name should fail instead of doing something."""
-        client = self.node.create_client(SetNodeState, 'wmx/engine/set_node_state')
+        client = self.node.create_client(SetNodeState, 'wmx/lifecycle/set_node_state')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/engine/set_node_state service not available',
+            'wmx/lifecycle/set_node_state service not available',
         )
 
         req = SetNodeState.Request()
@@ -115,10 +123,10 @@ class TestLifecycleNodes(unittest.TestCase):
 
     def test_engine_rejects_missing_node_name(self):
         """An empty node_name should be rejected: transitions are per node."""
-        client = self.node.create_client(SetNodeState, 'wmx/engine/set_node_state')
+        client = self.node.create_client(SetNodeState, 'wmx/lifecycle/set_node_state')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/engine/set_node_state service not available',
+            'wmx/lifecycle/set_node_state service not available',
         )
 
         req = SetNodeState.Request()
@@ -137,10 +145,10 @@ class TestLifecycleNodes(unittest.TestCase):
             'wmx_io_node/get_state service not available',
         )
 
-        set_client = self.node.create_client(SetNodeState, 'wmx/engine/set_node_state')
+        set_client = self.node.create_client(SetNodeState, 'wmx/lifecycle/set_node_state')
         self.assertTrue(
             set_client.wait_for_service(timeout_sec=20),
-            'wmx/engine/set_node_state service not available',
+            'wmx/lifecycle/set_node_state service not available',
         )
 
         # The engine discovers the node and brings it up on its own once it is

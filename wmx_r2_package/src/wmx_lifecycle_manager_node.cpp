@@ -329,7 +329,7 @@ WmxLifecycleManagerNode::WmxLifecycleManagerNode()
   const auto managedNodes = this->declare_parameter<std::vector<std::string>>(
     "managed_nodes", std::vector<std::string>{});
   engineStatusService_ = this->declare_parameter<std::string>(
-    "engine_status_service", "wmx/engine/get_status");
+    "engine_status_service", "wmx/engine/get_engine_status");
   requireEngine_ = this->declare_parameter<bool>("require_engine", true);
   const double period = this->declare_parameter<double>("discovery_period", 2.0);
 

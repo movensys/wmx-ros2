@@ -5,15 +5,15 @@
 
 ```
 # 1. Verify engine is communicating
-ros2 service call /wmx/engine/get_status std_srvs/srv/Trigger "{}"
+ros2 service call /wmx/engine/get_engine_status std_srvs/srv/Trigger "{}"
 
 # 2. Load axis parameters from file
 ## 2-1. Predefined robot case
 ## Dobot CR3a, CR5a, Diffbot AMR
-ros2 service call /wmx/params/load wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
 ## 2-2. User's own robot or arbitary motors
-ros2 service call /wmx/params/load wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/default_wmx_parameters.xml'}"
 
 ## 3. Set Gear Ratio (2-1 stage can skip this stage)
@@ -93,7 +93,7 @@ xset r rate 660 25
 ## Engine Services
 ### Get Status
 ```
-ros2 service call /wmx/engine/get_status std_srvs/srv/Trigger "{}"
+ros2 service call /wmx/engine/get_engine_status std_srvs/srv/Trigger "{}"
 ```
 
 ### Set Communication (start/stop EtherCAT comms)
@@ -146,7 +146,7 @@ device-level nodes it may depend on.
 ### Read the states
 Lists every lifecycle node currently on the graph, with its state.
 ```
-ros2 service call /wmx/engine/get_node_states std_srvs/srv/Trigger "{}"
+ros2 service call /wmx/lifecycle/get_node_states std_srvs/srv/Trigger "{}"
 ```
 
 ### Drive a transition
@@ -154,7 +154,7 @@ Always one node, by name. `transition` is one of `configure`, `activate`,
 `deactivate`, `cleanup`, `shutdown`, `bringup` (configure + activate),
 `bringdown` (deactivate).
 ```
-ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
   "{node_name: 'wmx_io_node', transition: 'deactivate'}"
 ```
 A plain name is resolved against `wmx_engine_node`'s namespace; an absolute name
@@ -176,21 +176,21 @@ automatically once communication starts.
 ### Load Parameters from File
 ```
 # Dobot CR3A
-ros2 service call /wmx/params/load wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
 
 # Diffbot
-ros2 service call /wmx/params/load wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/diffbot_wmx_parameters.xml'}"
 ```
 
 ### Get Parameters (inspect active axis config)
 ```
 # Single axis
-ros2 service call /wmx/params/get wmx_r2_message/srv/GetWmxParams "{index: [0]}"
+ros2 service call /wmx/engine/get_wmx_params wmx_r2_message/srv/GetWmxParams "{index: [0]}"
 
 # Multiple axes
-ros2 service call /wmx/params/get wmx_r2_message/srv/GetWmxParams "{index: [0,1,2,3,4,5]}"
+ros2 service call /wmx/engine/get_wmx_params wmx_r2_message/srv/GetWmxParams "{index: [0,1,2,3,4,5]}"
 ```
 
 ---

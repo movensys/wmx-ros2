@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -20,56 +21,54 @@
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 
-// Everything that talks to the WMX3 SDK. No ROS entities, only a logger.
-class WmxEngineApi
+class WmxEngineNodeApi
 {
 public:
   struct Config
   {
-    std::string devicePath = "/opt/wmx3/";
-    std::string deviceName = "wmx_r2";
     std::string paramFilePath;
     int core = -1;
     int64_t affinityMask = 0;
   };
 
-  WmxEngineApi(const rclcpp::Logger & logger, const Config & config);
-  ~WmxEngineApi();
+  WmxEngineNodeApi(const rclcpp::Logger & logger, const Config & config);
+  ~WmxEngineNodeApi();
 
-  // Create the device, import the parameter file and start communication.
   int startEngine();
   int stopEngine();
+  std::string getEngineStatus();
+
   int startCommunication();
   int stopCommunication();
 
-  bool loadParam(const std::string & path);
-  void getParam(const std::vector<int32_t> & axes, std::vector<std::string> & dump);
+  int loadWmxParams(const std::string & path, std::string & message);
+  int getWmxParams(
+    const std::vector<int32_t> & axes, std::vector<std::string> & dump,
+    std::string & message);
 
-  std::string engineState();
-
-  bool isDeviceOpen() const {return cm_ != nullptr;}
+  bool isDeviceOpen() const {return deviceOpen_;}
   bool isEngineStarted() const {return isEngineStarted_;}
   bool isCommStarted() const {return isCommStarted_;}
 
-  // Result of the last call, ready to put in a service response.
-  const char * message() const {return buffer_;}
-
 private:
+  std::string errorText(int err);
+
+  wmx3Api::EngineState::T engineState();
+
   rclcpp::Logger logger_;
   Config config_;
 
+  const char * deviceName_ = "wmx_engine_node";
   unsigned int timeout_ = 10000;
   int maxRetries_ = 5;
   int retryDelay_ = 2000;
-  const int createDeviceLockError_ = 297;
-  int err_ = 0;
-  char errString_[256] = {};
-  char buffer_[512] = {};
+
+  std::recursive_mutex deviceMutex_;
 
   wmx3Api::WMX3Api wmx3Lib_;
   std::unique_ptr<wmx3Api::CoreMotion> cm_;
-  wmx3Api::EngineStatus engineStatus_;
 
+  std::atomic<bool> deviceOpen_{false};
   std::atomic<bool> isEngineStarted_{false};
   std::atomic<bool> isCommStarted_{false};
 };
@@ -81,7 +80,7 @@ public:
   ~WmxEngineNode();
 
 private:
-  std::unique_ptr<WmxEngineApi> api_;
+  std::unique_ptr<WmxEngineNodeApi> api_;
   std::thread startThread_;
 
   rclcpp::CallbackGroup::SharedPtr managerCbGroup_;
@@ -89,8 +88,8 @@ private:
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setEngineService_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr getEngineStatusService_;
-  rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadParamsService_;
-  rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getParamsService_;
+  rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadWmxParamsService_;
+  rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getWmxParamsService_;
 
   void setEngineCallback(
     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,

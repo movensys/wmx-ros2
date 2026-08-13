@@ -1,13 +1,20 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 
+EXAMPLE_CONFIG = os.path.join(
+    get_package_share_directory('wmx_r2_package'),
+    'config',
+    'wmx_r2_general_nodes_config.yaml',
+)
 
 def launch_general_nodes(context):
     use_sim_time = LaunchConfiguration('use_sim_time')
-    config_file = LaunchConfiguration('config_file').perform(context)
-    engine_config = [config_file] if config_file else []
+    engine_config = [LaunchConfiguration('config_file').perform(context)]
 
     start_wmx_engine_node = Node(
         package='wmx_r2_package',
@@ -70,10 +77,11 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'config_file',
-            default_value='',
+            default_value=EXAMPLE_CONFIG,
             description='YAML with the wmx_engine_node and '
-                        'wmx_lifecycle_manager_node parameters. '
-                        'Empty keeps the node defaults'
+                        'wmx_lifecycle_manager_node parameters. Defaults to '
+                        'config/wmx_r2_general_nodes_config.yaml, an example '
+                        'holding the node defaults'
         ),
 
         OpaqueFunction(function=launch_general_nodes),

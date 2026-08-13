@@ -21,8 +21,17 @@ def generate_test_description():
         output='screen',
     )
 
+    # Owns wmx/lifecycle/*, which the node-state test below calls.
+    manager_node = launch_ros.actions.Node(
+        package='wmx_r2_package',
+        executable='wmx_lifecycle_manager_node',
+        name='wmx_lifecycle_manager_node',
+        output='screen',
+    )
+
     return launch.LaunchDescription([
         engine_node,
+        manager_node,
         launch_testing.actions.ReadyToTest(),
     ]), {'engine_node': engine_node}
 
@@ -45,8 +54,8 @@ class TestEngineLifecycle(unittest.TestCase):
         self.node.destroy_node()
 
     def test_engine_reports_node_states(self):
-        """wmx/engine/get_node_states should answer once the engine node is up."""
-        client = self.node.create_client(Trigger, 'wmx/engine/get_node_states')
+        """wmx/lifecycle/get_node_states should answer once the engine node is up."""
+        client = self.node.create_client(Trigger, 'wmx/lifecycle/get_node_states')
 
         self.assertTrue(
             client.wait_for_service(timeout_sec=15),
@@ -65,12 +74,12 @@ class TestEngineLifecycle(unittest.TestCase):
         self.assertNotIn('wmx_engine_node', result.message)
 
     def test_get_engine_status_service(self):
-        """wmx/engine/get_status service should return a valid engine state."""
-        client = self.node.create_client(Trigger, 'wmx/engine/get_status')
+        """wmx/engine/get_engine_status service should return a valid engine state."""
+        client = self.node.create_client(Trigger, 'wmx/engine/get_engine_status')
 
         self.assertTrue(
             client.wait_for_service(timeout_sec=15),
-            'get_status service not available within 15 seconds',
+            'get_engine_status service not available within 15 seconds',
         )
 
         future = client.call_async(Trigger.Request())

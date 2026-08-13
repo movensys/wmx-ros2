@@ -166,10 +166,10 @@ class TestCoreMotionNode(unittest.TestCase):
 
     def test_get_params_service_call(self):
         """Get params service should respond with axis parameters."""
-        client = self.node.create_client(GetWmxParams, 'wmx/params/get')
+        client = self.node.create_client(GetWmxParams, 'wmx/engine/get_wmx_params')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/params/get service not available',
+            'wmx/engine/get_wmx_params service not available',
         )
 
         req = GetWmxParams.Request()

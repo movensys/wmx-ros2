@@ -1,0 +1,15 @@
+wmx_engine_node:
+  ros__parameters:
+    engine_core: -1
+    engine_affinity_mask: 0
+    wmx_param_file_path: ""
+
+wmx_lifecycle_manager_node:
+  ros__parameters:
+    managed_nodes:
+      - wmx_core_motion_node
+      - wmx_io_node
+      - wmx_ethercat_node
+    engine_status_service: "wmx/engine/get_engine_status"
+    require_engine: true
+    discovery_period: 2.0

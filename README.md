@@ -86,10 +86,10 @@ Individual nodes are driven by name:
 
 ```bash
 # Lifecycle nodes the engine can see, and their states
-ros2 service call /wmx/engine/get_node_states std_srvs/srv/Trigger "{}"
+ros2 service call /wmx/lifecycle/get_node_states std_srvs/srv/Trigger "{}"
 
 # Drive one node by name
-ros2 service call /wmx/engine/set_node_state wmx_r2_message/srv/SetNodeState \
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
   "{node_name: 'wmx_io_node', transition: 'deactivate'}"
 ```
 
