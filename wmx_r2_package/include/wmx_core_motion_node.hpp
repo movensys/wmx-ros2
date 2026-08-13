@@ -64,16 +64,12 @@ public:
   int setGearRatio(int axis, int numerator, int denominator, std::string & message);
   int startHome(int axis, std::string & message);
 
-  bool isDeviceOpen() const;
-
 private:
   struct JogState
   {
     double velocity;
     rclcpp::Time deadline;
   };
-
-  std::shared_ptr<wmx3Api::CoreMotion> device();
 
   std::string errorText(int err);
 

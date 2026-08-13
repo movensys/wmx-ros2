@@ -34,18 +34,6 @@ std::string WmxCoreMotionNodeApi::errorText(int err)
   return errString;
 }
 
-bool WmxCoreMotionNodeApi::isDeviceOpen() const
-{
-  std::lock_guard<std::mutex> lock(deviceMutex_);
-  return cm_ != nullptr;
-}
-
-std::shared_ptr<CoreMotion> WmxCoreMotionNodeApi::device()
-{
-  std::lock_guard<std::mutex> lock(deviceMutex_);
-  return cm_;
-}
-
 int WmxCoreMotionNodeApi::attachDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
@@ -86,12 +74,6 @@ int WmxCoreMotionNodeApi::attachDevice(std::string & message)
 
 void WmxCoreMotionNodeApi::releaseDevice()
 {
-  std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!cm_) {
-    return;
-  }
-
   cm_.reset();
 
   const int err = wmx3Lib_.CloseDevice();
@@ -102,8 +84,6 @@ void WmxCoreMotionNodeApi::releaseDevice()
   }
 }
 
-// numOfInterrupts is the number of cyclic handlers (max 2); numOfAxes is the
-// number of axes on that handler, not the number of slaves.
 int WmxCoreMotionNodeApi::readAxisCount()
 {
   wmx3Api::EngineStatus engineStatus;
@@ -118,18 +98,20 @@ int WmxCoreMotionNodeApi::readAxisCount()
 
 int WmxCoreMotionNodeApi::getStatus(wmx3Api::CoreMotionStatus & status)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     return ErrorCode::DeviceIsNull;
   }
-  return cm->GetStatus(&status);
+  return cm_->GetStatus(&status);
 }
 
 int WmxCoreMotionNodeApi::startPos(
   int axis, double target, double velocity, double acc, double dec, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot move axis " + std::to_string(axis) + ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -142,7 +124,7 @@ int WmxCoreMotionNodeApi::startPos(
   position.profile.acc = acc;
   position.profile.dec = dec;
 
-  const int err = cm->motion->StartPos(&position);
+  const int err = cm_->motion->StartPos(&position);
   if (err != ErrorCode::None) {
     message = "Failed to move position motor " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -157,8 +139,9 @@ int WmxCoreMotionNodeApi::startPos(
 int WmxCoreMotionNodeApi::startMov(
   int axis, double target, double velocity, double acc, double dec, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot move axis " + std::to_string(axis) + ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -171,7 +154,7 @@ int WmxCoreMotionNodeApi::startMov(
   position.profile.acc = acc;
   position.profile.dec = dec;
 
-  const int err = cm->motion->StartMov(&position);
+  const int err = cm_->motion->StartMov(&position);
   if (err != ErrorCode::None) {
     message = "Failed to move relative motor " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -186,8 +169,9 @@ int WmxCoreMotionNodeApi::startMov(
 int WmxCoreMotionNodeApi::startVel(
   int axis, double velocity, double acc, double dec, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot move axis " + std::to_string(axis) + ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -199,7 +183,7 @@ int WmxCoreMotionNodeApi::startVel(
   command.profile.acc = acc;
   command.profile.dec = dec;
 
-  const int err = cm->velocity->StartVel(&command);
+  const int err = cm_->velocity->StartVel(&command);
   if (err != ErrorCode::None) {
     message = "Failed to move velocity motor " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -211,9 +195,6 @@ int WmxCoreMotionNodeApi::startVel(
   return ErrorCode::None;
 }
 
-// Handles one jog request for one axis. Jog is a dead-man command: the caller
-// keeps calling this while the operator holds the control, and stopExpiredJogs()
-// stops the axis once the refreshes lapse.
 int WmxCoreMotionNodeApi::startJog(
   int axis, double velocity, double acc, double dec, const rclcpp::Time & now,
   std::string & message)
@@ -222,23 +203,21 @@ int WmxCoreMotionNodeApi::startJog(
     now + rclcpp::Duration::from_nanoseconds(
     static_cast<int64_t>(config_.jogTimeoutMs * 1e6));
 
-  // Released: stop the axis and forget it.
   if (velocity == 0.0) {
-    std::lock_guard<std::mutex> lock(jogMutex_);
-    if (jogState_.erase(axis) > 0) {
+    bool wasJogging = false;
+    {
+      std::lock_guard<std::mutex> jogLock(jogMutex_);
+      wasJogging = jogState_.erase(axis) > 0;
+    }
+    if (wasJogging) {
       stopAxis(axis);
     }
     message = "Stopped jog on axis " + std::to_string(axis);
     return ErrorCode::None;
   }
 
-  // Still held at the same speed and direction: only push the dead-man deadline
-  // out. Re-issuing StartJog here would override a jog with a jog, which the
-  // WMX3 manual does not define. It also means that once jog_run_time_ms
-  // elapses the axis stays stopped until the operator releases and presses
-  // again, which is the intended behavior.
   {
-    std::lock_guard<std::mutex> lock(jogMutex_);
+    std::lock_guard<std::mutex> jogLock(jogMutex_);
     auto it = jogState_.find(axis);
     if (it != jogState_.end() && it->second.velocity == velocity) {
       it->second.deadline = deadline;
@@ -247,48 +226,45 @@ int WmxCoreMotionNodeApi::startJog(
     }
   }
 
-  // New or changed command: issue it.
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
-    message = "Cannot jog axis " + std::to_string(axis) + ". Core motion is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
-  // acc/dec stay accelerations on the wire and are converted to ramp times
-  // here, so AxesVelocity keeps the same meaning as on wmx/axes/start_vel.
   const double accTimeMs = (acc > 0.0) ? std::abs(velocity) / acc * 1000.0 : 0.0;
   const double decTimeMs = (dec > 0.0) ? std::abs(velocity) / dec * 1000.0 : 0.0;
 
-  // Same profile WOS uses for its jog buttons. A run time requires a time-based
-  // profile: Trapezoidal is rejected with ProfileTypeNotSupported.
-  wmx3Api::Motion::JogCommand jogCommand = wmx3Api::Motion::JogCommand();
-  jogCommand.axis = axis;
-  jogCommand.profile.type = ProfileType::T::TimeAccJerkRatio;
-  jogCommand.profile.velocity = velocity;
-  jogCommand.profile.acc = 0;
-  jogCommand.profile.dec = 0;
-  jogCommand.profile.jerkAcc = 0;
-  jogCommand.profile.jerkDec = 0;
-  jogCommand.profile.jerkAccRatio = config_.jogJerkRatio;
-  jogCommand.profile.jerkDecRatio = config_.jogJerkRatio;
-  jogCommand.profile.accTimeMilliseconds = accTimeMs;
-  jogCommand.profile.decTimeMilliseconds = decTimeMs;
-  jogCommand.profile.startingVelocity = 0;
-  jogCommand.profile.endVelocity = 0;
-  jogCommand.profile.secondVelocity = 0;
-  jogCommand.profile.movingAverageTimeMilliseconds = 0;
-  // Backstop: if this node dies mid-jog the engine still decelerates the axis.
-  jogCommand.SetRunTime(config_.jogRunTimeMs);
+  {
+    std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  const int err = cm->motion->StartJog(&jogCommand);
-  if (err != ErrorCode::None) {
-    message = "Failed to jog motor " + std::to_string(axis) + ". Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
-    RCLCPP_ERROR(logger_, "%s", message.c_str());
-    return err;
+    if (!cm_) {
+      message = "Cannot jog axis " + std::to_string(axis) + ". Core motion is not attached.";
+      return ErrorCode::DeviceIsNull;
+    }
+
+    wmx3Api::Motion::JogCommand jogCommand = wmx3Api::Motion::JogCommand();
+    jogCommand.axis = axis;
+    jogCommand.profile.type = ProfileType::T::TimeAccJerkRatio;
+    jogCommand.profile.velocity = velocity;
+    jogCommand.profile.acc = 0;
+    jogCommand.profile.dec = 0;
+    jogCommand.profile.jerkAcc = 0;
+    jogCommand.profile.jerkDec = 0;
+    jogCommand.profile.jerkAccRatio = config_.jogJerkRatio;
+    jogCommand.profile.jerkDecRatio = config_.jogJerkRatio;
+    jogCommand.profile.accTimeMilliseconds = accTimeMs;
+    jogCommand.profile.decTimeMilliseconds = decTimeMs;
+    jogCommand.profile.startingVelocity = 0;
+    jogCommand.profile.endVelocity = 0;
+    jogCommand.profile.secondVelocity = 0;
+    jogCommand.profile.movingAverageTimeMilliseconds = 0;
+    jogCommand.SetRunTime(config_.jogRunTimeMs);
+
+    const int err = cm_->motion->StartJog(&jogCommand);
+    if (err != ErrorCode::None) {
+      message = "Failed to jog motor " + std::to_string(axis) + ". Error=" +
+        std::to_string(err) + " (" + errorText(err) + ")";
+      RCLCPP_ERROR(logger_, "%s", message.c_str());
+      return err;
+    }
   }
 
-  std::lock_guard<std::mutex> lock(jogMutex_);
+  std::lock_guard<std::mutex> jogLock(jogMutex_);
   jogState_.insert_or_assign(axis, JogState{velocity, deadline});
   message = "Jogging axis " + std::to_string(axis);
   return ErrorCode::None;
@@ -340,12 +316,13 @@ void WmxCoreMotionNodeApi::stopAllJogs()
 
 int WmxCoreMotionNodeApi::stopAxis(int axis)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     return ErrorCode::DeviceIsNull;
   }
 
-  const int err = cm->motion->Stop(axis);
+  const int err = cm_->motion->Stop(axis);
   if (err != ErrorCode::None) {
     RCLCPP_DEBUG(
       logger_, "Stop on axis %d returned %d (%s)", axis, err, errorText(err).c_str());
@@ -355,13 +332,14 @@ int WmxCoreMotionNodeApi::stopAxis(int axis)
 
 int WmxCoreMotionNodeApi::setServoOn(int axis, int on, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot set axis " + std::to_string(axis) + ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  const int err = cm->axisControl->SetServoOn(axis, on, servoOnTimeout_);
+  const int err = cm_->axisControl->SetServoOn(axis, on, servoOnTimeout_);
   const std::string onOff = on ? "on" : "off";
 
   if (err != ErrorCode::None) {
@@ -378,8 +356,9 @@ int WmxCoreMotionNodeApi::setServoOn(int axis, int on, std::string & message)
 
 int WmxCoreMotionNodeApi::setAxisCommandMode(int axis, int mode, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot set axis " + std::to_string(axis) + ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -393,7 +372,7 @@ int WmxCoreMotionNodeApi::setAxisCommandMode(int axis, int mode, std::string & m
   const AxisCommandMode::T commandMode =
     (mode == 0) ? AxisCommandMode::Position : AxisCommandMode::Velocity;
 
-  const int err = cm->axisControl->SetAxisCommandMode(axis, commandMode);
+  const int err = cm_->axisControl->SetAxisCommandMode(axis, commandMode);
   if (err != ErrorCode::None) {
     message = "Failed to set axis " + std::to_string(axis) + " mode " + std::to_string(mode) +
       ". Error=" + std::to_string(err) + " (" + errorText(err) + ")";
@@ -409,14 +388,15 @@ int WmxCoreMotionNodeApi::setAxisCommandMode(int axis, int mode, std::string & m
 
 int WmxCoreMotionNodeApi::clearAmpAlarm(int axis, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot clear alarm on axis " + std::to_string(axis) +
       ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  const int err = cm->axisControl->ClearAmpAlarm(axis);
+  const int err = cm_->axisControl->ClearAmpAlarm(axis);
   if (err != ErrorCode::None) {
     message = "Failed to clear alarm axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -431,8 +411,9 @@ int WmxCoreMotionNodeApi::clearAmpAlarm(int axis, std::string & message)
 
 int WmxCoreMotionNodeApi::setAxisPolarity(int axis, int polarity, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot set polarity on axis " + std::to_string(axis) +
       ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
@@ -445,7 +426,7 @@ int WmxCoreMotionNodeApi::setAxisPolarity(int axis, int polarity, std::string & 
     return ErrorCode::ArgumentOutOfRange;
   }
 
-  const int err = cm->config->SetAxisPolarity(axis, polarity);
+  const int err = cm_->config->SetAxisPolarity(axis, polarity);
   if (err != ErrorCode::None) {
     message = "Failed to set polarity on axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -461,14 +442,15 @@ int WmxCoreMotionNodeApi::setAxisPolarity(int axis, int polarity, std::string & 
 int WmxCoreMotionNodeApi::setGearRatio(
   int axis, int numerator, int denominator, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot set gear ratio on axis " + std::to_string(axis) +
       ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  const int err = cm->config->SetGearRatio(axis, numerator, denominator);
+  const int err = cm_->config->SetGearRatio(axis, numerator, denominator);
   if (err != ErrorCode::None) {
     message = "Failed to set gear ratio on axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -481,19 +463,18 @@ int WmxCoreMotionNodeApi::setGearRatio(
   return ErrorCode::None;
 }
 
-// Blocks in motion->Wait() until the axis finishes homing. Runs without
-// deviceMutex_ held, so the state timer and the jog watchdog keep running.
 int WmxCoreMotionNodeApi::startHome(int axis, std::string & message)
 {
-  const std::shared_ptr<CoreMotion> cm = device();
-  if (!cm) {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
     message = "Cannot home axis " + std::to_string(axis) + ". Core motion is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
   wmx3Api::Config::HomeParam homeParam;
 
-  int err = cm->config->GetHomeParam(axis, &homeParam);
+  int err = cm_->config->GetHomeParam(axis, &homeParam);
   if (err != ErrorCode::None) {
     message = "Failed to read home param for axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -503,7 +484,7 @@ int WmxCoreMotionNodeApi::startHome(int axis, std::string & message)
 
   homeParam.homeType = wmx3Api::Config::HomeType::CurrentPos;
 
-  err = cm->config->SetHomeParam(axis, &homeParam);
+  err = cm_->config->SetHomeParam(axis, &homeParam);
   if (err != ErrorCode::None) {
     message = "Failed to set home param for axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -511,7 +492,7 @@ int WmxCoreMotionNodeApi::startHome(int axis, std::string & message)
     return err;
   }
 
-  err = cm->home->StartHome(axis);
+  err = cm_->home->StartHome(axis);
   if (err != ErrorCode::None) {
     message = "Failed to start homing axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -519,15 +500,7 @@ int WmxCoreMotionNodeApi::startHome(int axis, std::string & message)
     return err;
   }
 
-  err = cm->motion->Wait(axis);
-  if (err != ErrorCode::None) {
-    message = "Failed to home axis " + std::to_string(axis) + ". Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
-    RCLCPP_ERROR(logger_, "%s", message.c_str());
-    return err;
-  }
-
-  message = "Homed axis " + std::to_string(axis);
+  message = "Homing started on axis " + std::to_string(axis);
   RCLCPP_INFO(logger_, "%s", message.c_str());
   return ErrorCode::None;
 }
@@ -1008,8 +981,6 @@ void WmxCoreMotionNode::setGearRatioCallback(
   response->message = msg_stream.str();
 }
 
-/* ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes \
-     "{index: [0, 1], data: [0, 0]}" */
 void WmxCoreMotionNode::startHomeCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
