@@ -133,9 +133,6 @@ std::vector<std::string> LifecycleManager::discover()
   return found;
 }
 
-// Current lifecycle state of a node, or "unavailable"/"unknown" when it cannot
-// be reached.
-
 std::string LifecycleManager::state(const std::string & node)
 {
   const Clients & clients = clientsFor(node);
@@ -186,8 +183,6 @@ bool LifecycleManager::changeState(
   return true;
 }
 
-// configure (when unconfigured) then activate.
-
 bool LifecycleManager::bringUp(const std::string & node, std::string & message)
 {
   std::string label = state(node);
@@ -212,8 +207,6 @@ bool LifecycleManager::bringUp(const std::string & node, std::string & message)
   return false;
 }
 
-// deactivate, when the node is active.
-
 bool LifecycleManager::bringDown(const std::string & node, std::string & message)
 {
   const std::string label = state(node);
@@ -230,8 +223,6 @@ bool LifecycleManager::bringDown(const std::string & node, std::string & message
   message = node + ": cannot be brought down from state '" + label + "'";
   return false;
 }
-
-// The shutdown transition id depends on the state the node is shut down from.
 
 bool LifecycleManager::shutdown(const std::string & node, std::string & message)
 {
@@ -297,10 +288,6 @@ bool LifecycleManager::applyTransition(
   return false;
 }
 
-// Every discovered node in one call. Transitions that take a node down run in
-// reverse order, so the controllers stop before the device-level nodes whose
-// axes they command.
-
 bool LifecycleManager::applyTransitionToAll(
   const std::string & transition, std::vector<std::string> & nodes, std::string & message)
 {
@@ -337,11 +324,6 @@ bool LifecycleManager::applyTransitionToAll(
   return allSucceeded;
 }
 
-// Take the lifecycle nodes off the device before the engine pulls it away from
-// under them. With cleanup they also release their device handle.
-// Reverse of the bring-up order: the controllers stop before the device-level
-// nodes whose axes they command.
-
 void LifecycleManager::bringDownDiscovered(bool cleanup)
 {
   const std::vector<std::string> nodes = discover();
@@ -367,15 +349,10 @@ void LifecycleManager::bringDownDiscovered(bool cleanup)
   }
 }
 
-// Bring up every lifecycle node the engine has not handled yet. Runs while the
-// engine is communicating, so a node that joins late (or respawns) is picked up
-// without anyone having to list it anywhere.
-
 void LifecycleManager::bringUpDiscovered()
 {
   const std::vector<std::string> discovered = discover();
 
-  // Forget nodes that left the graph, so a respawned one is brought up again.
   for (auto it = handledNodes_.begin(); it != handledNodes_.end(); ) {
     if (std::find(discovered.begin(), discovered.end(), *it) == discovered.end()) {
       RCLCPP_INFO(logger_, "%s left the graph", it->c_str());
@@ -395,8 +372,6 @@ void LifecycleManager::bringUpDiscovered()
       RCLCPP_INFO(logger_, "%s", message.c_str());
       handledNodes_.insert(node);
     } else {
-      // Left out of handledNodes_ so a transient failure (device lock, node
-      // still starting) is retried on the next sweep.
       RCLCPP_ERROR_THROTTLE(
         logger_, *node_->get_clock(), 10000, "%s", message.c_str());
     }
@@ -457,8 +432,6 @@ bool WmxLifecycleManagerNode::isEngineCommunicating()
   return result->success && result->message == "Communicating";
 }
 
-// The lifecycle nodes attach to the device the engine owns, so they follow the
-// engine: up while it communicates, down as soon as it stops.
 void WmxLifecycleManagerNode::discoveryStep()
 {
   if (!requireEngine_) {
@@ -474,16 +447,13 @@ void WmxLifecycleManagerNode::discoveryStep()
 
   if (nodesAreUp_) {
     RCLCPP_WARN(
-      this->get_logger(), "Engine stopped communicating; taking the lifecycle nodes down");
-    lifecycle_->bringDownDiscovered(false);
+      this->get_logger(), "Engine stopped; taking the lifecycle nodes down");
+    lifecycle_->bringDownDiscovered(true);
+    lifecycle_->clearHandled();
     nodesAreUp_ = false;
   }
 }
 
-// One node:
-//   ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState
-//     "{node_name: 'wmx_io_node', transition: 'deactivate'}"
-// Every node: leave node_name empty.
 void WmxLifecycleManagerNode::setNodeStateCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetNodeState::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetNodeState::Response> response)
@@ -509,7 +479,6 @@ void WmxLifecycleManagerNode::setNodeStateCallback(
 
     if (response->success) {
       RCLCPP_INFO(this->get_logger(), "%s", message.c_str());
-      // Whatever the operator set stands: the discovery sweep leaves it alone.
       lifecycle_->markHandled(node);
     } else {
       RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
@@ -524,7 +493,6 @@ void WmxLifecycleManagerNode::setNodeStateCallback(
   }
 }
 
-// Every lifecycle node on the graph, in bring-up order, with its state.
 void WmxLifecycleManagerNode::getNodeStatesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetNodeStates::Request>,
   std::shared_ptr<wmx_r2_message::srv::GetNodeStates::Response> response)

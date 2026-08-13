@@ -61,12 +61,14 @@ title: Low-level Control
 ---
 flowchart LR;
     A[ROS2 Services/Topics] --> B[wmx_engine_node];
+    A --> M[wmx_lifecycle_manager_node];
     A --> C["wmx_core_motion_node (lifecycle)"];
     A --> D["wmx_io_node (lifecycle)"];
     A --> E["wmx_ethercat_node (lifecycle)"];
-    B -->|configure / activate| C;
-    B -->|configure / activate| D;
-    B -->|configure / activate| E;
+    B -->|engine status| M;
+    M -->|configure / activate| C;
+    M -->|configure / activate| D;
+    M -->|configure / activate| E;
     B --> F[WMX3 API];
     C --> F;
     D --> F;
@@ -74,15 +76,19 @@ flowchart LR;
     F --> G[WMX Engine];
 ```
 
-`wmx_engine_node` owns the WMX3 engine. Every other WMX node is a
-[managed (lifecycle) node](https://design.ros2.org/articles/node_lifecycle.html):
-it starts `unconfigured` and only attaches to the device when the engine drives
-it to `configure`, then `activate`. Nothing lists those nodes anywhere — the
-engine finds them on the ROS graph and brings up each one it has not seen
-before, so a node that joins late or respawns is picked up too. This is not
+`wmx_engine_node` owns the WMX3 engine and nothing else.
+`wmx_lifecycle_manager_node` watches it and drives every other WMX node, each a
+[managed (lifecycle) node](https://design.ros2.org/articles/node_lifecycle.html)
+that starts `unconfigured` and only attaches to the device at `configure`.
+
+**The managed nodes follow the engine.** While the engine is communicating, every
+node found on the graph is brought up to `active` — a node that joins late or
+respawns is picked up on a later sweep. When the engine stops or its device is
+closed, they are all deactivated and cleaned back to `unconfigured` (their device
+handles are dead), and brought up again when the engine returns. This is not
 limited to WMX nodes: any managed node in the same namespace (a lifecycle
-`joint_state_publisher`, a nav2 node, your own) is brought up the same way.
-Individual nodes are driven by name:
+`joint_state_publisher`, a nav2 node, your own) is driven the same way. Order it
+with the manager's `managed_nodes` parameter, or drive nodes by hand:
 
 ```bash
 # Lifecycle nodes the manager can see, and their states
@@ -133,7 +139,8 @@ flowchart LR;
 
 | Node | Role |
 |------|------|
-| `wmx_engine_node` | Engine and device initialization; manages the lifecycle of every node below |
+| `wmx_engine_node` | Engine and device initialization; owns the WMX3 engine and reports its status |
+| `wmx_lifecycle_manager_node` | Drives every lifecycle node below, following the engine's status |
 | `wmx_core_motion_node` | Core motion control and trajectory execution (lifecycle) |
 | `wmx_io_node` | IO control for input/output bits and bytes (lifecycle) |
 | `wmx_ethercat_node` | EtherCAT master operations, network scan and slave management (lifecycle) |
@@ -147,7 +154,7 @@ flowchart LR;
 
 | Launch file | Purpose | Nodes started |
 |-------------|---------|---------------|
-| [wmx_r2_general_nodes.launch.py](wmx_r2_package/launch/wmx_r2_general_nodes.launch.py) | Low-level axis / IO / EtherCAT control | `wmx_engine_node`, `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` |
+| [wmx_r2_general_nodes.launch.py](wmx_r2_package/launch/wmx_r2_general_nodes.launch.py) | Low-level axis / IO / EtherCAT control | `wmx_engine_node`, `wmx_lifecycle_manager_node`, `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` |
 | [wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py) | Dobot CR3A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller`, `joint_position_controller`, `gripper_controller` |
 | [wmx_r2_cr5a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr5a_manipulator.launch.py) | Dobot CR5A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller` |
 

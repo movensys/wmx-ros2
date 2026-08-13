@@ -12,7 +12,7 @@ wmx_lifecycle_manager_node:
       - wmx_ethercat_node
     engine_status_service: "wmx/engine/get_engine_status"
     require_engine: true
-    discovery_period: 2.0
+    discovery_period: 1.0
 
 wmx_core_motion_node:
   ros__parameters:

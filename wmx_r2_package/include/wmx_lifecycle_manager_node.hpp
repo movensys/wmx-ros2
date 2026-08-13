@@ -26,7 +26,6 @@ class LifecycleManager
 public:
   LifecycleManager(rclcpp::Node * node, const std::vector<std::string> & managedNodes);
 
-  // Lifecycle nodes currently on the graph, in bring-up order.
   std::vector<std::string> discover();
 
   std::string state(const std::string & node);
@@ -35,27 +34,22 @@ public:
   bool bringDown(const std::string & node, std::string & message);
   bool shutdown(const std::string & node, std::string & message);
 
-  // Transition names the two services accept.
   static bool isKnownTransition(const std::string & transition);
   static std::string knownTransitions();
 
-  // Drives one node by transition name.
   bool applyTransition(
     const std::string & node, const std::string & transition, std::string & message);
-  // Same over every discovered node; down transitions run in reverse order.
   bool applyTransitionToAll(
     const std::string & transition, std::vector<std::string> & nodes, std::string & message);
 
-  // Bring up every discovered node not handled yet.
   void bringUpDiscovered();
-  // Take the discovered nodes down, in reverse order.
   void bringDownDiscovered(bool cleanup);
 
-  // A plain node name is resolved against the owning node's namespace.
   std::string resolveNodeName(const std::string & name) const;
 
-  // Marks a node as handled, so bringUpDiscovered() leaves it alone.
   void markHandled(const std::string & node) {handledNodes_.insert(node);}
+
+  void clearHandled() {handledNodes_.clear();}
 
 private:
   struct Clients
@@ -72,14 +66,9 @@ private:
 
   std::vector<std::string> managedNodes_;
   std::unordered_map<std::string, Clients> clients_;
-  // Nodes already brought up once. An entry is dropped when the node leaves the
-  // graph, so a respawned node is brought up again.
   std::set<std::string> handledNodes_;
 };
 
-// Brings the lifecycle nodes up once wmx_engine_node reports Communicating, and
-// takes them down when it stops. Runs as its own node so the engine only deals
-// with the WMX3 device.
 class WmxLifecycleManagerNode : public rclcpp::Node
 {
 public:

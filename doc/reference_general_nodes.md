@@ -110,7 +110,8 @@ The path and device name are fixed in `wmx_engine_node.hpp` (`/opt/wmx3/`, named
 # Create device
 ros2 service call /wmx/engine/set_engine std_srvs/srv/SetBool "{data: true}"
 
-# Close device (takes the lifecycle nodes down to unconfigured first)
+# Close device (wmx_lifecycle_manager_node follows: every managed node goes to
+# unconfigured within one discovery_period)
 ros2 service call /wmx/engine/set_engine std_srvs/srv/SetBool "{data: false}"
 ```
 
@@ -127,19 +128,31 @@ ros2 service call /wmx/ecat/scan_network wmx_r2_message/srv/EcatScanNetwork \
 ## Lifecycle Node Services (wmx_engine_node)
 `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` and the robot
 controllers are lifecycle nodes. They start `unconfigured` and only attach to the
-WMX3 device once `wmx_engine_node` drives them through `configure` and
+WMX3 device once `wmx_lifecycle_manager_node` drives them through `configure` and
 `activate`.
 
-There is nothing to configure: the engine scans the ROS graph every 2 s for
-nodes offering `<node>/change_state` and brings up each one it has not handled
-yet, as long as the engine is communicating. A node that joins late or respawns
-is picked up on a later sweep; a node an operator deactivated on purpose is left
-alone.
+**The managed nodes follow the engine.** Every `discovery_period` (2 s by
+default) the manager asks `wmx/engine/get_engine_status`:
 
-This applies to **every** lifecycle node in the engine's namespace, not only the
+- **Engine `Communicating`** — it scans the ROS graph for nodes offering
+  `<node>/change_state` and brings up every one it has not handled yet, so all
+  managed nodes end up `active`. A node that joins late or respawns is picked up
+  on a later sweep; a node an operator deactivated on purpose is left alone.
+- **Engine stopped, or its device closed** — every managed node is deactivated
+  **and cleaned up**, back to `unconfigured`, in reverse bring-up order. Cleanup
+  matters: the engine closed the device out from under them, so the handles they
+  hold are dead and must be re-created. The manager then forgets them, so the
+  next time the engine comes back they are configured and activated again.
+
+The down sweep is edge-triggered on the engine going away, so it lands within one
+`discovery_period` of the engine stopping — not instantly. Lower
+`discovery_period` if you need a tighter window.
+
+This applies to **every** lifecycle node in the manager's namespace, not only the
 ones in this package — a lifecycle `joint_state_publisher`, a nav2 node or your
 own managed node is configured and activated the same way, after the WMX
-device-level nodes it may depend on.
+device-level nodes it may depend on. List them in `managed_nodes` to fix the
+order; leave it empty to take every lifecycle node on the graph.
 
 There are two services, and both answer for **all** nodes: one reads the states,
 one drives a transition.
