@@ -6,6 +6,8 @@
 #include <chrono>
 #include <thread>
 
+#include "wmx_qos_compat.hpp"
+
 using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionAxisStatus;
 using wmx3Api::CoreMotionStatus;
@@ -180,13 +182,13 @@ JointStateBroadcaster::JointStateBroadcaster()
   axisClientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   clearAlarmClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/clear_amp_alarm", rclcpp::ServicesQoS(), axisClientCbGroup_);
+    "wmx/axes/clear_amp_alarm", servicesQos(), axisClientCbGroup_);
 
   setAxisOnClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/set_servo_on", rclcpp::ServicesQoS(), axisClientCbGroup_);
+    "wmx/axes/set_servo_on", servicesQos(), axisClientCbGroup_);
 
   getWmxParamsClient_ = this->create_client<wmx_r2_message::srv::GetWmxParams>(
-    "wmx/engine/get_wmx_params", rclcpp::ServicesQoS(), axisClientCbGroup_);
+    "wmx/engine/get_wmx_params", servicesQos(), axisClientCbGroup_);
 
   RCLCPP_INFO(
     this->get_logger(), "joint_state_broadcaster is unconfigured, waiting for configure...");
@@ -205,7 +207,7 @@ bool JointStateBroadcaster::isNodeActive() const
   return isNodeActive_.load();
 }
 
-std::string JointStateBroadcaster::notActiveMessage() const
+std::string JointStateBroadcaster::notActiveMessage()
 {
   return "joint_state_broadcaster is not active (state: " +
          this->get_current_state().label() + ").";

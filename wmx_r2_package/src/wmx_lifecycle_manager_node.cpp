@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "wmx_qos_compat.hpp"
+
 using std::placeholders::_1;
 using std::placeholders::_2;
 using lifecycle_msgs::msg::Transition;
@@ -65,9 +67,9 @@ const LifecycleManager::Clients & LifecycleManager::clientsFor(const std::string
 
   Clients clients;
   clients.changeState = node_->create_client<lifecycle_msgs::srv::ChangeState>(
-    node + "/change_state", rclcpp::ServicesQoS(), clientCbGroup_);
+    node + "/change_state", servicesQos(), clientCbGroup_);
   clients.getState = node_->create_client<lifecycle_msgs::srv::GetState>(
-    node + "/get_state", rclcpp::ServicesQoS(), clientCbGroup_);
+    node + "/get_state", servicesQos(), clientCbGroup_);
 
   return clients_.emplace(node, std::move(clients)).first->second;
 }
@@ -394,17 +396,17 @@ WmxLifecycleManagerNode::WmxLifecycleManagerNode()
   clientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   engineStatusClient_ = this->create_client<std_srvs::srv::Trigger>(
-    engineStatusService_, rclcpp::ServicesQoS(), clientCbGroup_);
+    engineStatusService_, servicesQos(), clientCbGroup_);
 
   setNodeStateService_ = this->create_service<wmx_r2_message::srv::SetNodeState>(
     "wmx/lifecycle/set_node_state",
     std::bind(&WmxLifecycleManagerNode::setNodeStateCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
+    servicesQos(), managerCbGroup_);
 
   getNodeStatesService_ = this->create_service<wmx_r2_message::srv::GetNodeStates>(
     "wmx/lifecycle/get_node_states",
     std::bind(&WmxLifecycleManagerNode::getNodeStatesCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
+    servicesQos(), managerCbGroup_);
 
   discoveryTimer_ = this->create_wall_timer(
     std::chrono::duration<double>(period),

@@ -5,6 +5,8 @@
 
 #include <cinttypes>
 
+#include "wmx_qos_compat.hpp"
+
 using std::placeholders::_1;
 using std::placeholders::_2;
 
@@ -316,12 +318,12 @@ WmxEngineNode::WmxEngineNode()
   setEngineService_ = this->create_service<std_srvs::srv::SetBool>(
     "wmx/engine/set_engine",
     std::bind(&WmxEngineNode::setEngineCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
+    servicesQos(), managerCbGroup_);
 
   setCommService_ = this->create_service<std_srvs::srv::SetBool>(
     "wmx/engine/set_comm",
     std::bind(&WmxEngineNode::setCommCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
+    servicesQos(), managerCbGroup_);
 
   getEngineStatusService_ = this->create_service<std_srvs::srv::Trigger>(
     "wmx/engine/get_engine_status",
@@ -330,12 +332,12 @@ WmxEngineNode::WmxEngineNode()
   loadWmxParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
     "wmx/engine/load_wmx_params",
     std::bind(&WmxEngineNode::loadWmxParamsCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
+    servicesQos(), managerCbGroup_);
 
   getWmxParamsService_ = this->create_service<wmx_r2_message::srv::GetWmxParams>(
     "wmx/engine/get_wmx_params",
     std::bind(&WmxEngineNode::getWmxParamsCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), managerCbGroup_);
+    servicesQos(), managerCbGroup_);
 
   startThread_ = std::thread(
     [this]() {

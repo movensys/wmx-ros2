@@ -193,7 +193,7 @@ bool DifferentialDriveController::isNodeActive() const
   return isNodeActive_.load();
 }
 
-std::string DifferentialDriveController::notActiveMessage() const
+std::string DifferentialDriveController::notActiveMessage()
 {
   return "differential_drive_controller is not active (state: " +
          this->get_current_state().label() + ").";

@@ -361,13 +361,13 @@ WmxIoNode::~WmxIoNode()
   RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
 }
 
-bool WmxIoNode::isNodeActive() const
+bool WmxIoNode::isNodeActive()
 {
   return this->get_current_state().id() ==
          lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
 }
 
-std::string WmxIoNode::notActiveMessage() const
+std::string WmxIoNode::notActiveMessage()
 {
   return "wmx_io_node is not active (state: " +
          this->get_current_state().label() + ").";

@@ -89,8 +89,8 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetIoByte>::SharedPtr setOutputByteService_;
   rclcpp::Service<wmx_r2_message::srv::SetIoBytes>::SharedPtr setOutputBytesService_;
 
-  bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  bool isNodeActive();
+  std::string notActiveMessage();
 
   void getInputBitCallback(
     const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,

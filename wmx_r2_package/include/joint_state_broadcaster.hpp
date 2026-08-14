@@ -107,7 +107,7 @@ private:
     gazeboJointPub_;
 
   bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  std::string notActiveMessage();
 
   void setRosParameter();
 

@@ -92,7 +92,7 @@ private:
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr jointTrajectorySub_;
 
   bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  std::string notActiveMessage();
 
   void setRosParameter();
 

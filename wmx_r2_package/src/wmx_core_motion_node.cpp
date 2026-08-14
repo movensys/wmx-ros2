@@ -6,6 +6,8 @@
 #include <cmath>
 #include <sstream>
 
+#include "wmx_qos_compat.hpp"
+
 using std::placeholders::_1;
 using std::placeholders::_2;
 
@@ -552,13 +554,13 @@ WmxCoreMotionNode::~WmxCoreMotionNode()
   RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node stopped");
 }
 
-bool WmxCoreMotionNode::isNodeActive() const
+bool WmxCoreMotionNode::isNodeActive()
 {
   return this->get_current_state().id() ==
          lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
 }
 
-std::string WmxCoreMotionNode::notActiveMessage() const
+std::string WmxCoreMotionNode::notActiveMessage()
 {
   return "wmx_core_motion_node is not active (state: " +
          this->get_current_state().label() + ").";
@@ -673,7 +675,7 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_l
   startHomeService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
     "wmx/axes/start_home",
     std::bind(&WmxCoreMotionNode::startHomeCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), homing_cb_group_);
+    servicesQos(), homing_cb_group_);
 
   stopAxisService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
     "wmx/axes/stop",
@@ -716,7 +718,7 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_l
     setControllerActive(controller, false);
 
     getStateClients_[controller] = this->create_client<lifecycle_msgs::srv::GetState>(
-      "/" + controller + "/get_state", rclcpp::ServicesQoS(), clientCbGroup_);
+      "/" + controller + "/get_state", servicesQos(), clientCbGroup_);
 
     transitionEventSubs_.push_back(
       this->create_subscription<lifecycle_msgs::msg::TransitionEvent>(

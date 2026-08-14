@@ -74,7 +74,7 @@ private:
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
 
   bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  std::string notActiveMessage();
 
   void setRosParameter();
 

@@ -238,13 +238,13 @@ WmxEtherCatNode::~WmxEtherCatNode()
   RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node stopped");
 }
 
-bool WmxEtherCatNode::isNodeActive() const
+bool WmxEtherCatNode::isNodeActive()
 {
   return this->get_current_state().id() ==
          lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
 }
 
-std::string WmxEtherCatNode::notActiveMessage() const
+std::string WmxEtherCatNode::notActiveMessage()
 {
   return "wmx_ethercat_node is not active (state: " +
          this->get_current_state().label() + ").";
