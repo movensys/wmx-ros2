@@ -26,6 +26,35 @@ joint_position_controller:
     default_velocity: 0.5
     min_step: 0.001
 
+# Buffered alternative to joint_position_controller: MoveIt Servo setpoints are
+# recorded into the WMX3 API buffer and replayed under the RT OS at cycle
+# boundaries. Selected with `use_api_buffer:=true`; only one of the two nodes
+# may run, since they subscribe to the same topic.
+servo_stream_controller:
+  ros__parameters:
+    joint_axes: [0, 1, 2, 3, 4, 5]
+    # Order matters: axis[0] determines LinearIntplProfileCalcMode for the
+    # whole interpolation.
+    joint_name: ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    joint_trajectory_topic: /movensys_manipulator_arm_controller/joint_trajectory
+
+    api_buffer_channel: 0
+    estop_buffer_channel: 1      # watch trigger routine; must differ from the above
+    api_buffer_size_mb: 5        # revise from api_buffer_probe's bytes/setpoint figure
+
+    # Queue depth is the latency/robustness dial. At a 1 kHz cycle and Servo's
+    # 25 ms publish period, depth 2 costs ~50 ms of deliberate latency.
+    target_queue_depth: 2
+    nominal_period_cycles: 25    # = Servo publish_period 0.025 s at 1 kHz
+    period_clamp_lo_cycles: 20   # pacing authority, +/-20%
+    period_clamp_hi_cycles: 30
+    pacing_kp: 0.15
+
+    ros_queue_depth: 8           # drop-oldest above this; stale teleop is worthless
+    starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
+    accel_ratio: 0.3             # blend spans ~30% of each segment
+    stop_on_error: true          # stop rather than skip a rejected setpoint
+
 gripper_controller:
   ros__parameters:
     wmx_gripper_topic: /wmx/set_gripper
