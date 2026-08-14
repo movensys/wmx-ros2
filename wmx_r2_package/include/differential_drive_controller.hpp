@@ -64,7 +64,8 @@ struct DiffDriveModel
 
   BodyVel forwardDelta(double d_phi_left, double d_phi_right) const
   {
-    return forward({d_phi_left, d_phi_right});
+    // DiffDriveModel::forward, not std::forward (cpplint IWYU false positive):
+    return forward({d_phi_left, d_phi_right});  // NOLINT(build/include_what_you_use)
   }
 };
 
@@ -212,7 +213,7 @@ private:
   BodyAccel filtered_;
 };
 
-}
+}  // namespace diff_drive
 
 class DifferentialDriveControllerApi
 {

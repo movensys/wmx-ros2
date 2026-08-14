@@ -25,7 +25,7 @@ std::string errorText(int err)
   IO::ErrorToString(err, errString, sizeof(errString));
   return errString;
 }
-}
+}  // namespace
 
 GripperControllerApi::GripperControllerApi(const rclcpp::Logger & logger)
 : logger_(logger)

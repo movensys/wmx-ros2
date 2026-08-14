@@ -30,7 +30,7 @@ std::string masterIdText(int32_t masterId)
   return "masterId=" + std::to_string(masterId);
 }
 
-}
+}  // namespace
 
 WmxEtherCatNodeApi::WmxEtherCatNodeApi(const rclcpp::Logger & logger)
 : logger_(logger)
@@ -301,7 +301,6 @@ WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_deactivate(
 
 WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
-
   getNetworkStateService_.reset();
   registerReadService_.reset();
   resetStatisticsService_.reset();

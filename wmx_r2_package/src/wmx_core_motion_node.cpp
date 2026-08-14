@@ -754,7 +754,6 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_activate(
 WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-
   axesStatusTimer_->cancel();
   jogWatchdogTimer_->cancel();
   api_->stopAllJogs();
@@ -767,7 +766,6 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_deactivate(
 
 WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
-
   axesStatusTimer_.reset();
   jogWatchdogTimer_.reset();
   controllerResyncTimer_.reset();

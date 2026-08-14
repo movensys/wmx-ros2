@@ -26,7 +26,7 @@ std::string errorText(int err)
   CoreMotion::ErrorToString(err, errString, sizeof(errString));
   return errString;
 }
-}
+}  // namespace
 
 JointStateBroadcasterApi::JointStateBroadcasterApi(const rclcpp::Logger & logger)
 : logger_(logger)

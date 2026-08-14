@@ -24,7 +24,7 @@ std::string failureText(const std::string & call, const std::string & where, int
   return call + " failed " + where + ". Error=" + std::to_string(err) +
          " (" + ioErrorText(err) + ")";
 }
-}
+}  // namespace
 
 WmxIoNodeApi::WmxIoNodeApi(const rclcpp::Logger & logger)
 : logger_(logger)
@@ -442,7 +442,6 @@ WmxIoNode::CallbackReturn WmxIoNode::on_deactivate(const rclcpp_lifecycle::State
 
 WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
-
   getInputBitService_.reset();
   getOutputBitService_.reset();
   getInputBytesService_.reset();

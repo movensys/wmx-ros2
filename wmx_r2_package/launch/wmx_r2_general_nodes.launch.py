@@ -12,6 +12,7 @@ EXAMPLE_CONFIG = os.path.join(
     'wmx_r2_general_nodes_config.yaml',
 )
 
+
 def launch_general_nodes(context):
     use_sim_time = LaunchConfiguration('use_sim_time')
     engine_config = [LaunchConfiguration('config_file').perform(context)]

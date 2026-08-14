@@ -11,15 +11,16 @@ import os
 import sys
 import tempfile
 
-# Importing the launch files must not litter __pycache__ into the source tree:
-# those directories end up installed by install(DIRECTORY launch ...) and break
-# a later install step when the destination is not writable.
-sys.dont_write_bytecode = True
-
 from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import LifecycleNode
+
+# Importing the launch files must not litter __pycache__ into the source tree:
+# those directories end up installed by install(DIRECTORY launch ...) and break
+# a later install step when the destination is not writable. Set before load()
+# imports anything.
+sys.dont_write_bytecode = True
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LAUNCH_PACKAGES = ('wmx_r2_package', 'wmx_r2_control')

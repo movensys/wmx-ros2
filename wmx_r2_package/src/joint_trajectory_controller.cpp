@@ -31,7 +31,7 @@ std::string errorText(int err)
   AdvancedMotion::ErrorToString(err, errString, sizeof(errString));
   return errString;
 }
-}
+}  // namespace
 
 JointTrajectoryControllerApi::JointTrajectoryControllerApi(const rclcpp::Logger & logger)
 : logger_(logger)
