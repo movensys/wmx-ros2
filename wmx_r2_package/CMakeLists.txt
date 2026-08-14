@@ -160,8 +160,6 @@ if(BUILD_TESTING)
     TIMEOUT 120
   )
 
-  # C++ unit tests for the diff-drive logic (header-only, WMX/ROS-free) declared
-  # in include/differential_drive_controller.hpp.
   find_package(ament_cmake_gtest REQUIRED)
   foreach(_t
       test_diff_drive_kinematics
@@ -169,7 +167,10 @@ if(BUILD_TESTING)
       test_odom_delta_accumulator
       test_accel_estimator)
     ament_add_gtest(${_t} test/${_t}.cpp)
-    target_include_directories(${_t} PRIVATE include)
+    ament_target_dependencies(${_t}
+      rclcpp rclcpp_lifecycle std_msgs geometry_msgs nav_msgs tf2 tf2_ros)
+    target_include_directories(${_t} PRIVATE
+      include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
   endforeach()
 endif()
 
