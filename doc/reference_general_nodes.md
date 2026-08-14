@@ -397,6 +397,25 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
 - Republishing the same velocities only refreshes the dead-man; it does not re-issue
   `StartJog` (jog-over-jog override is undefined in WMX3)
 
+**Motion arbitration**
+- While any node in `motion_controllers` is ACTIVE it owns the axes, and this node
+  rejects every motion command: `start_pos`, `start_mov`, `start_vel`, `start_jog`
+  (topics, dropped with a throttled warning) and `start_home` (service, answers
+  `success: false`). This stops manual commands from fighting a running controller
+- **`stop` is never blocked** — `wmx/axes/stop` stays available at all times, so the
+  axes can always be brought to rest
+- The config/servo services (`set_servo_on`, `clear_amp_alarm`, `set_axis_command_mode`,
+  `set_axis_polarity`, `set_gear_ratio`) are **not** arbitrated; `joint_state_broadcaster`
+  needs `set_servo_on` while it activates
+- `motion_controllers` (default `joint_trajectory_controller`,
+  `differential_drive_controller`, `joint_position_controller`) — a name that is not on
+  the graph is simply never active, so listing a controller a robot does not run costs
+  nothing. An empty list turns arbitration off
+- `controller_resync_period` (seconds) — how often each controller's `/<node>/get_state`
+  is re-queried. State changes arrive over `/<node>/transition_event`; the resync seeds
+  the initial states (those events are volatile, so a late subscriber sees no history)
+  and releases the latch if a controller dies while active without announcing it
+
 **WMX Parameters**
 - `params/load` requires an absolute path to a valid WMX3 XML file; engine must be ready first
 - `params/get` returns a structured dump in `params_dump` per requested axis

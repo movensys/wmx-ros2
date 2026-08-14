@@ -385,6 +385,8 @@ void DifferentialDriveController::commandWheels(double omegaLeft, double omegaRi
 {
   if (lastSentValid_ && omegaLeft == lastSentLeft_ && omegaRight == lastSentRight_) {
     return;
+  }
+
   const bool okLeft = setVelocity(leftAxis_, omegaLeft);
   const bool okRight = setVelocity(rightAxis_, omegaRight);
   if (okLeft && okRight) {

@@ -31,6 +31,7 @@ jobs:
             ros-${{ matrix.ros_distro }}-ament-cpplint \
             ros-${{ matrix.ros_distro }}-ament-flake8 \
             ros-${{ matrix.ros_distro }}-ament-pep257 \
+            ros-${{ matrix.ros_distro }}-ament-uncrustify \
             ros-${{ matrix.ros_distro }}-ament-xmllint \
             cppcheck
 
@@ -39,6 +40,12 @@ jobs:
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           ament_cpplint wmx_r2_package/src wmx_r2_package/include
           ament_cpplint wmx_r2_control/src wmx_r2_control/include
+
+      - name: ament_uncrustify
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          ament_uncrustify wmx_r2_package/src wmx_r2_package/include
+          ament_uncrustify wmx_r2_control/src wmx_r2_control/include
 
       - name: ament_flake8 (launch + tests)
         run: |

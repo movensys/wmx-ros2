@@ -183,6 +183,12 @@ The node does **not** start communication, clear alarms, or switch servos on —
 that is owned by the engine/general nodes (see
 `reference_wmx_r2_general_nodes.md` for the service sequence).
 
+**Manual vs. controller arbitration.** While this node is ACTIVE it owns the wheel
+axes: `wmx_core_motion_node` rejects `start_pos`, `start_mov`, `start_vel`, `start_jog`
+and `start_home` for as long as it stays active (it is listed in that node's
+`motion_controllers`). `wmx/axes/stop` is never blocked. See
+`reference_general_nodes.md`.
+
 **Control loop** (every `1/rate`, single `GetStatus` per cycle):
 
 1. *Engine gate* — if `engineState != Communicating`: warn (1 s throttle), publish

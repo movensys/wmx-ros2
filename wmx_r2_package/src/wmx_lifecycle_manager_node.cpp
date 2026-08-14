@@ -37,7 +37,7 @@ const char * transitionLabel(uint8_t transition)
     default:                                           return "unknown transition";
   }
 }
-} 
+}
 
 LifecycleManager::LifecycleManager(
   rclcpp::Node * node, const std::vector<std::string> & managedNodes)

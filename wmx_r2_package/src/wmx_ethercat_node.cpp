@@ -30,7 +30,7 @@ std::string masterIdText(int32_t masterId)
   return "masterId=" + std::to_string(masterId);
 }
 
-}  
+}
 
 WmxEtherCatNodeApi::WmxEtherCatNodeApi(const rclcpp::Logger & logger)
 : logger_(logger)

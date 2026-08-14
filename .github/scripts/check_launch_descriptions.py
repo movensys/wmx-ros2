@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate the wmx_r2_package launch descriptions without launching anything.
+"""Evaluate the repository launch descriptions without launching anything.
 
 The WMX3 SDK is absent in CI, so the nodes themselves cannot be built there.
 Building the LaunchDescription objects still catches broken substitutions, a
@@ -11,13 +11,18 @@ import os
 import sys
 import tempfile
 
+# Importing the launch files must not litter __pycache__ into the source tree:
+# those directories end up installed by install(DIRECTORY launch ...) and break
+# a later install step when the destination is not writable.
+sys.dont_write_bytecode = True
+
 from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import LifecycleNode
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LAUNCH_DIR = os.path.join(REPO_ROOT, 'wmx_r2_package', 'launch')
+LAUNCH_PACKAGES = ('wmx_r2_package', 'wmx_r2_control')
 
 # Every lifecycle node these launch files start, so a rename or a dropped node
 # does not go unnoticed.
@@ -26,6 +31,12 @@ EXPECTED_LIFECYCLE_NODES = {
     'wmx_r2_cr3a_manipulator.launch.py': 4,
     'wmx_r2_cr5a_manipulator.launch.py': 3,
     'wmx_r2_diffbot_navigation.launch.py': 2,
+    # wmx_r2_control drives ros2_control_node plus spawners, so it declares no
+    # lifecycle nodes of its own; the count still guards against one appearing
+    # unnoticed.
+    'wmx_r2_control_cr3a_manipulator.launch.py': 0,
+    'wmx_r2_control_cr5a_manipulator.launch.py': 0,
+    'wmx_r2_control_diffbot_navigation.launch.py': 0,
 }
 
 
@@ -83,13 +94,20 @@ def entities_of(description):
 def main():
     failures = []
 
-    ensure_package_share('wmx_r2_package')
+    for package in LAUNCH_PACKAGES:
+        ensure_package_share(package)
 
-    for name in sorted(os.listdir(LAUNCH_DIR)):
-        if not name.endswith('.launch.py'):
+    launch_files = []
+    for package in LAUNCH_PACKAGES:
+        launch_dir = os.path.join(REPO_ROOT, package, 'launch')
+        if not os.path.isdir(launch_dir):
+            failures.append(f'{package}: no launch directory at {launch_dir}')
             continue
+        for name in sorted(os.listdir(launch_dir)):
+            if name.endswith('.launch.py'):
+                launch_files.append((name, os.path.join(launch_dir, name)))
 
-        path = os.path.join(LAUNCH_DIR, name)
+    for name, path in launch_files:
         try:
             description = load(path)
         except Exception as exc:  # noqa: BLE001 - report, do not abort the sweep

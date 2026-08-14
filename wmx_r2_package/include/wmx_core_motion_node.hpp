@@ -118,7 +118,7 @@ private:
   wmx_r2_message::msg::AxesStatus axesStatusMsg_;
 
   std::vector<std::string> motionControllers_;
-  double controllerResyncPeriod_ = 0.1;
+  double controllerResyncPeriod_ = 2.0;
 
   mutable std::mutex controllerMutex_;
   std::map<std::string, bool> controllerActive_;
@@ -126,7 +126,7 @@ private:
   rclcpp::CallbackGroup::SharedPtr clientCbGroup_;
   std::map<std::string, rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr> getStateClients_;
   std::vector<rclcpp::Subscription<lifecycle_msgs::msg::TransitionEvent>::SharedPtr>
-    transitionEventSubs_;
+  transitionEventSubs_;
   rclcpp::TimerBase::SharedPtr controllerResyncTimer_;
 
   void setControllerActive(const std::string & controller, bool active);

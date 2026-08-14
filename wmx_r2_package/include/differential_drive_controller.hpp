@@ -56,7 +56,7 @@ struct DiffDriveModel
 
   BodyVel forward(const WheelOmega & omega) const
   {
-    assert(wheel_radius > 0.0 && wheel_separation > 0.0);  
+    assert(wheel_radius > 0.0 && wheel_separation > 0.0);
     return {
       (omega.right * wheel_radius + omega.left * wheel_radius) / 2.0,
       (omega.right * wheel_radius - omega.left * wheel_radius) / wheel_separation};
@@ -64,7 +64,7 @@ struct DiffDriveModel
 
   BodyVel forwardDelta(double d_phi_left, double d_phi_right) const
   {
-    return forward({d_phi_left, d_phi_right});  
+    return forward({d_phi_left, d_phi_right});
   }
 };
 
@@ -83,7 +83,7 @@ public:
 
   void odometryPoseCalculation(const BodyVel & vel, double dt)
   {
-    if (!std::isfinite(dt) || dt <= 0.0) {return;}  
+    if (!std::isfinite(dt) || dt <= 0.0) {return;}
     const double next_theta = pose_.theta + vel.angular * dt;
     if (std::abs(vel.angular) < straight_eps_) {
       const double dist = vel.linear * dt;
@@ -212,7 +212,7 @@ private:
   BodyAccel filtered_;
 };
 
-}  
+}
 
 class DifferentialDriveControllerApi
 {
@@ -292,8 +292,8 @@ private:
   bool publishTf_ = false;
   std::string odomFrame_;
   std::string baseFrame_;
-  double posUnitScale_ = 1.0;   
-  double jumpGuardTol_ = 0.5; 
+  double posUnitScale_ = 1.0;
+  double jumpGuardTol_ = 0.5;
 
   std::string cmdVelTopic_;
   std::string encoderOmegaTopic_;

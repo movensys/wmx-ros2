@@ -113,6 +113,7 @@ output byte 28 and input bit 0.1). Any other value skips it with an INFO log.
 | `/gazebo_position_controller/commands` | pub | `std_msgs/Float64MultiArray` | default, depth 1 | `joint_feedback_rate` | `data` = the position vector above (joints then gripper). |
 | `/wmx/set_gripper` | service | `std_srvs/SetBool` | services QoS | on call | Name from `wmx_gripper_topic`. `data: true` = close (bit 1), `false` = open (bit 0). Returns `success: false` when the node is not `active`. |
 | `wmx/axes/clear_amp_alarm`, `wmx/axes/set_servo_on` | client (broadcaster) | `wmx_r2_message/SetAxes` | services QoS | at activate | Served by `wmx_core_motion_node`. See the lifecycle section. |
+| `wmx/engine/get_wmx_params` | client (broadcaster) | `wmx_r2_message/GetWmxParams` | services QoS | at configure | Served by `wmx_engine_node`. The dump for `joint_axes` is logged at INFO so the axis setup is captured in the startup log; a missing engine service only warns, configuration still succeeds. |
 
 **Namespaces.** The data-topic defaults resolve to *absolute* names in the shipped
 configs, so launching in a ROS namespace does **not** namespace them — override the
@@ -174,8 +175,9 @@ broadcaster activates and calls it.
 
 Per-node activation:
 
-- **`joint_state_broadcaster`** — `on_activate` is the only place in the stack that
-  touches servo power. It calls `wmx/axes/clear_amp_alarm` then
+- **`joint_state_broadcaster`** — `on_configure` reads `wmx/engine/get_wmx_params`
+  for its `joint_axes` and logs the dump (informational: a failure only warns).
+  `on_activate` is the only place in the stack that touches servo power. It calls `wmx/axes/clear_amp_alarm` then
   `wmx/axes/set_servo_on` for every `joint_axes` entry, with up to 5 attempts
   (10 s service wait, 15 s per call, 2 s backoff when the server answers "not
   active" / "not initialized"); a hard failure fails the transition and leaves the
@@ -198,6 +200,12 @@ node stays alive and `unconfigured`, and the transition is retried on the next
 sweep. No node exits with an error code on init failure — supervise via logs,
 lifecycle state, or topic liveness (`/joint_states` at `joint_feedback_rate`), not
 exit codes.
+
+**Manual vs. controller arbitration.** `wmx_core_motion_node` refuses its own motion
+commands (`start_pos`, `start_mov`, `start_vel`, `start_jog`, `start_home`) while any
+node in its `motion_controllers` list is ACTIVE, so a manual jog cannot fight a running
+controller. `wmx/axes/stop` is never blocked, and the servo/config services stay open —
+the broadcaster needs `set_servo_on` to activate. See `reference_general_nodes.md`.
 
 **Planned vs. streamed arbitration.** Both motion controllers can command the same
 axes, so they interlock over `/moveit2_trajectory/execution_active`:
