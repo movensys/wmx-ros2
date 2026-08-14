@@ -182,7 +182,7 @@ bool GripperController::isNodeActive() const
   return isNodeActive_.load();
 }
 
-std::string GripperController::notActiveMessage() const
+std::string GripperController::notActiveMessage()
 {
   return "gripper_controller is not active (state: " +
          this->get_current_state().label() + ").";

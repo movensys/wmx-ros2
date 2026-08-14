@@ -334,7 +334,7 @@ private:
   std::unique_ptr<tf2_ros::TransformBroadcaster> tfBroadcaster_;
 
   bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  std::string notActiveMessage();
 
   void setRosParameter();
 

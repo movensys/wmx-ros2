@@ -255,7 +255,7 @@ bool JointPositionController::isNodeActive() const
   return isNodeActive_.load();
 }
 
-std::string JointPositionController::notActiveMessage() const
+std::string JointPositionController::notActiveMessage()
 {
   return "joint_position_controller is not active (state: " +
          this->get_current_state().label() + ").";

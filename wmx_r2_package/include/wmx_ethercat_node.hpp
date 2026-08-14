@@ -75,8 +75,8 @@ private:
   rclcpp::Service<wmx_r2_message::srv::EcatScanNetwork>::SharedPtr scanNetworkService_;
   rclcpp::Service<wmx_r2_message::srv::EcatStartHotconnect>::SharedPtr startHotconnectService_;
 
-  bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  bool isNodeActive();
+  std::string notActiveMessage();
 
   void getNetworkStateCallback(
     const std::shared_ptr<wmx_r2_message::srv::EcatGetNetworkState::Request> request,

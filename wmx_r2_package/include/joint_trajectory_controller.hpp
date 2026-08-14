@@ -103,7 +103,7 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<control_msgs::msg::JointJog>::SharedPtr servoNodeResetPub_;
 
   bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  std::string notActiveMessage();
 
   void setRosParameter();
 

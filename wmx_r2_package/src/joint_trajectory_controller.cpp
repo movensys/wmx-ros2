@@ -297,7 +297,7 @@ bool JointTrajectoryController::isNodeActive() const
   return isNodeActive_.load();
 }
 
-std::string JointTrajectoryController::notActiveMessage() const
+std::string JointTrajectoryController::notActiveMessage()
 {
   return "joint_trajectory_controller is not active (state: " +
          this->get_current_state().label() + ").";

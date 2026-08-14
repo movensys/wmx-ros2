@@ -152,8 +152,8 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr startHomeService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr stopAxisService_;
 
-  bool isNodeActive() const;
-  std::string notActiveMessage() const;
+  bool isNodeActive();
+  std::string notActiveMessage();
 
   void axesStatusStep();
   void jogWatchdogStep();
