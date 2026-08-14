@@ -13,6 +13,7 @@ def generate_launch_description():
 
     pkg_share = get_package_share_directory('wmx_r2_package')
     diffbot_config = os.path.join(pkg_share, 'config', 'diffbot_navigation_config.yaml')
+    wmx_param_file = os.path.join(pkg_share, 'config', 'diffbot_wmx_parameters.xml')
 
     start_wmx_r2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -21,6 +22,7 @@ def generate_launch_description():
         launch_arguments={
             'use_sim_time': use_sim_time,
             'config_file': diffbot_config,
+            'wmx_param_file': wmx_param_file,
         }.items(),
     )
 

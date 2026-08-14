@@ -411,8 +411,9 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
   `differential_drive_controller`, `joint_position_controller`) — a name that is not on
   the graph is simply never active, so listing a controller a robot does not run costs
   nothing. An empty list turns arbitration off
-- `controller_resync_period` (seconds) — how often each controller's `/<node>/get_state`
-  is re-queried. State changes arrive over `/<node>/transition_event`; the resync seeds
+- `controller_resync_period` (default `0.2`) — seconds between re-queries of each
+  controller's `/<node>/get_state`;
+  state changes arrive over `/<node>/transition_event`, and the resync seeds
   the initial states (those events are volatile, so a late subscriber sees no history)
   and releases the latch if a controller dies while active without announcing it
 

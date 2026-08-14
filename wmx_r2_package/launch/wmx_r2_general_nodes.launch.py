@@ -17,11 +17,16 @@ def launch_general_nodes(context):
     use_sim_time = LaunchConfiguration('use_sim_time')
     engine_config = [LaunchConfiguration('config_file').perform(context)]
 
+    engine_params = [{'use_sim_time': use_sim_time}]
+    wmx_param_file = LaunchConfiguration('wmx_param_file').perform(context)
+    if wmx_param_file:
+        engine_params.append({'wmx_param_file_path': wmx_param_file})
+
     start_wmx_engine_node = Node(
         package='wmx_r2_package',
         executable='wmx_engine_node',
         name='wmx_engine_node',
-        parameters=engine_config + [{'use_sim_time': use_sim_time}],
+        parameters=engine_config + engine_params,
         output='screen',
         emulate_tty=True,
     )
@@ -88,6 +93,14 @@ def generate_launch_description():
                         'wmx_lifecycle_manager_node parameters. Defaults to '
                         'config/wmx_r2_general_nodes_config.yaml, an example '
                         'holding the node defaults'
+        ),
+        DeclareLaunchArgument(
+            'wmx_param_file',
+            default_value='',
+            description='Absolute path to the WMX3 parameter XML imported at '
+                        'engine start. Overrides wmx_param_file_path from '
+                        'config_file. The robot launch files pass their own '
+                        'config/<robot>_wmx_parameters.xml; empty imports nothing'
         ),
 
         OpaqueFunction(function=launch_general_nodes),

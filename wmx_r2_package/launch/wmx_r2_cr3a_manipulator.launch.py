@@ -13,6 +13,7 @@ def generate_launch_description():
 
     pkg_share = get_package_share_directory('wmx_r2_package')
     manipulator_config = os.path.join(pkg_share, 'config', 'cr3a_manipulator_config.yaml')
+    wmx_param_file = os.path.join(pkg_share, 'config', 'cr3a_wmx_parameters.xml')
 
     start_wmx_r2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -21,6 +22,7 @@ def generate_launch_description():
         launch_arguments={
             'use_sim_time': use_sim_time,
             'config_file': manipulator_config,
+            'wmx_param_file': wmx_param_file,
         }.items(),
     )
 

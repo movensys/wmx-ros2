@@ -530,13 +530,13 @@ WmxCoreMotionNode::WmxCoreMotionNode()
     "differential_drive_controller",
     "joint_position_controller"});
 
-  controllerResyncPeriod_ = this->declare_parameter("controller_resync_period", 2.0);
+  controllerResyncPeriod_ = this->declare_parameter("controller_resync_period", 0.2);
   if (controllerResyncPeriod_ <= 0.0) {
     RCLCPP_WARN(
       this->get_logger(),
-      "controller_resync_period must be > 0, got %f. Falling back to 2.0 s.",
+      "controller_resync_period must be > 0, got %f. Falling back to 0.2 s.",
       controllerResyncPeriod_);
-    controllerResyncPeriod_ = 2.0;
+    controllerResyncPeriod_ = 0.2;
   }
 
   homing_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);

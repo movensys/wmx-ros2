@@ -118,7 +118,7 @@ private:
   wmx_r2_message::msg::AxesStatus axesStatusMsg_;
 
   std::vector<std::string> motionControllers_;
-  double controllerResyncPeriod_ = 2.0;
+  double controllerResyncPeriod_ = 0.2;
 
   mutable std::mutex controllerMutex_;
   std::map<std::string, bool> controllerActive_;

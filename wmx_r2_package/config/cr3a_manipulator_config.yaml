@@ -34,7 +34,7 @@ wmx_engine_node:
   ros__parameters:
     engine_core: -1           
     engine_affinity_mask: 0  
-    wmx_param_file_path: "" 
+    wmx_param_file_path: ""
 
 wmx_core_motion_node:
   ros__parameters:
