@@ -4,6 +4,7 @@
 #ifndef WMX_CORE_MOTION_NODE_HPP_
 #define WMX_CORE_MOTION_NODE_HPP_
 
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -13,6 +14,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
+#include "lifecycle_msgs/msg/transition_event.hpp"
+#include "lifecycle_msgs/srv/get_state.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
 #include "wmx_r2_message/srv/set_axes.hpp"
@@ -113,6 +116,26 @@ private:
   rclcpp::TimerBase::SharedPtr axesStatusTimer_;
   rclcpp::TimerBase::SharedPtr jogWatchdogTimer_;
   wmx_r2_message::msg::AxesStatus axesStatusMsg_;
+
+  std::vector<std::string> motionControllers_;
+  double controllerResyncPeriod_ = 0.1;
+
+  mutable std::mutex controllerMutex_;
+  std::map<std::string, bool> controllerActive_;
+
+  rclcpp::CallbackGroup::SharedPtr clientCbGroup_;
+  std::map<std::string, rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr> getStateClients_;
+  std::vector<rclcpp::Subscription<lifecycle_msgs::msg::TransitionEvent>::SharedPtr>
+    transitionEventSubs_;
+  rclcpp::TimerBase::SharedPtr controllerResyncTimer_;
+
+  void setControllerActive(const std::string & controller, bool active);
+  void transitionEventCallback(
+    const std::string & controller,
+    const lifecycle_msgs::msg::TransitionEvent::SharedPtr msg);
+  void resyncControllerStates();
+
+  bool isMotionBlocked() const;
 
   rclcpp::CallbackGroup::SharedPtr homing_cb_group_;
   rclcpp_lifecycle::LifecyclePublisher<wmx_r2_message::msg::AxesStatus>::SharedPtr axesStatusPub_;

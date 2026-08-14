@@ -1,34 +1,22 @@
 # WMX R2 General Nodes Reference
 
 ## Typical Startup Sequence
-- Note that user can reduce the axis dimension for their purpose.
-
-```
+```bash
 # 1. Verify engine is communicating
 ros2 service call /wmx/engine/get_engine_status std_srvs/srv/Trigger "{}"
 
-# 2. Load axis parameters from file
-## 2-1. Predefined robot case
-## Dobot CR3a, CR5a, Diffbot AMR
-ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
-  "{file_path: '/home/$USER/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
-## 2-2. User's own robot or arbitary motors
-ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
-  "{file_path: '/home/$USER/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/default_wmx_parameters.xml'}"
-
-## 3. Set Gear Ratio (2-1 stage can skip this stage)
-## Panasonic MADLNO5BE servo driver
+# 2. Set Gear Ratio 
 ros2 service call /wmx/axes/set_gear_ratio wmx_r2_message/srv/SetAxesGearRatio \
-  "{indices: [0], numerators: [8388608.0], denominators: [360.0]}"
+  "{indices: [0, 1], numerators: [8388608.0, 8388608.0], denominators: [360.0, 360.0]}"
 
-# 4. Clear any amp alarms
-ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{indices: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
+# 3. Clear any amp alarms
+ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
 
-# 5. Enable servos
-ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1,2,3,4,5], data: [1,1,1,1,1,1]}"
+# 4. Enable servos
+ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1}"
 
-# 6. Home all axes (sets current position as home)
-ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{indices: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
+# 5. Home all axes (sets current position as home)
+ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
 ```
 ---
 
@@ -36,20 +24,20 @@ ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{indices: [0,
 ### Send Axis Absolute Position
 ```
 ros2 topic pub --once /wmx/axes/start_pos wmx_r2_message/msg/AxesPose \
-    "{indices: [0,1], positions: [8388608, 10000 ], velocities: [1000000, 5000], accelerations: [100000, 1000], decelerations: [100000, 1000]}" 
+    "{indices: [0,1], positions: [45, -90 ], velocities: [10, 20], accelerations: [10, 20], decelerations: [10, 20]}" 
 ```
 
 ### Send Axis Relative Position
 ```
 ros2 topic pub --once /wmx/axes/start_mov wmx_r2_message/msg/AxesPose \
-    "{indices: [0, 1], positions: [8388608, 10000], velocities: [1000000, 5000], accelerations: [100000, 1000], decelerations: [100000, 1000]}"
-```i
+    "{indices: [0, 1], positions: [10, -10], velocities: [10, 20], accelerations: [10, 10], decelerations: [10, 20]}"
+```
 
 
 ### Send Axis Velocity
 ```
 ros2 topic pub --once /wmx/axes/start_vel wmx_r2_message/msg/AxesVelocity \
-    "{indices: [0, 1], velocities: [1000000, 5000], accelerations: [100000, 1000], decelerations: [100000, 1000]}"  
+    "{indices: [0, 1], velocities: [10, -10], accelerations: [10, 20], decelerations: [10, 20]}"  
 ```
 
 

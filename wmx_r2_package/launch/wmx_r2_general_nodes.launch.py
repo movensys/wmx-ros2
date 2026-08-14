@@ -22,6 +22,7 @@ def launch_general_nodes(context):
         name='wmx_engine_node',
         parameters=engine_config + [{'use_sim_time': use_sim_time}],
         output='screen',
+        emulate_tty=True,
     )
 
     start_wmx_lifecycle_manager_node = Node(
@@ -30,6 +31,7 @@ def launch_general_nodes(context):
         name='wmx_lifecycle_manager_node',
         parameters=engine_config + [{'use_sim_time': use_sim_time}],
         output='screen',
+        emulate_tty=True,
     )
 
     start_wmx_core_motion_node = LifecycleNode(
@@ -39,6 +41,7 @@ def launch_general_nodes(context):
         namespace='',
         parameters=engine_config + [{'use_sim_time': use_sim_time}],
         output='screen',
+        emulate_tty=True,
     )
 
     start_wmx_io_node = LifecycleNode(
@@ -48,6 +51,7 @@ def launch_general_nodes(context):
         namespace='',
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
+        emulate_tty=True,
     )
 
     start_wmx_ethercat_node = LifecycleNode(
@@ -57,6 +61,7 @@ def launch_general_nodes(context):
         namespace='',
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
+        emulate_tty=True,
     )
 
     return [

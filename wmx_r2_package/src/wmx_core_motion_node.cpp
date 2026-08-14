@@ -523,7 +523,24 @@ WmxCoreMotionNode::WmxCoreMotionNode()
     rate_ = 100;
   }
 
+  motionControllers_ = this->declare_parameter<std::vector<std::string>>(
+    "motion_controllers",
+    std::vector<std::string>{
+    "joint_trajectory_controller",
+    "differential_drive_controller",
+    "joint_position_controller"});
+
+  controllerResyncPeriod_ = this->declare_parameter("controller_resync_period", 2.0);
+  if (controllerResyncPeriod_ <= 0.0) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "controller_resync_period must be > 0, got %f. Falling back to 2.0 s.",
+      controllerResyncPeriod_);
+    controllerResyncPeriod_ = 2.0;
+  }
+
   homing_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  clientCbGroup_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   RCLCPP_INFO(
     this->get_logger(), "wmx_core_motion_node is unconfigured, waiting for configure...");
@@ -545,6 +562,78 @@ std::string WmxCoreMotionNode::notActiveMessage() const
 {
   return "wmx_core_motion_node is not active (state: " +
          this->get_current_state().label() + ").";
+}
+
+bool WmxCoreMotionNode::isMotionBlocked() const
+{
+  std::lock_guard<std::mutex> lock(controllerMutex_);
+
+  for (const auto & entry : controllerActive_) {
+    if (entry.second) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void WmxCoreMotionNode::setControllerActive(const std::string & controller, bool active)
+{
+  bool changed = false;
+  {
+    std::lock_guard<std::mutex> lock(controllerMutex_);
+    changed = controllerActive_[controller] != active;
+    controllerActive_[controller] = active;
+  }
+
+  if (!changed) {
+    return;
+  }
+
+  RCLCPP_INFO(
+    this->get_logger(), "%s is now %s. Motion commands are %s.",
+    controller.c_str(), active ? "active" : "inactive",
+    isMotionBlocked() ? "blocked" : "allowed");
+}
+
+void WmxCoreMotionNode::transitionEventCallback(
+  const std::string & controller,
+  const lifecycle_msgs::msg::TransitionEvent::SharedPtr msg)
+{
+  switch (msg->goal_state.id) {
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE:
+      setControllerActive(controller, true);
+      break;
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE:
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED:
+    case lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED:
+      setControllerActive(controller, false);
+      break;
+    default:
+      break;
+  }
+}
+
+void WmxCoreMotionNode::resyncControllerStates()
+{
+  for (const auto & entry : getStateClients_) {
+    const std::string controller = entry.first;
+    const auto & client = entry.second;
+
+    if (!client->service_is_ready()) {
+      setControllerActive(controller, false);
+      continue;
+    }
+
+    client->prune_pending_requests();
+
+    client->async_send_request(
+      std::make_shared<lifecycle_msgs::srv::GetState::Request>(),
+      [this, controller](rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedFuture future) {
+        setControllerActive(
+          controller,
+          future.get()->current_state.id == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+      });
+  }
 }
 
 WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_lifecycle::State &)
@@ -619,6 +708,31 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_l
     std::bind(&WmxCoreMotionNode::jogWatchdogStep, this));
   jogWatchdogTimer_->cancel();
 
+  for (const std::string & controller : motionControllers_) {
+    if (controller.empty() || controller == this->get_name()) {
+      continue;
+    }
+
+    setControllerActive(controller, false);
+
+    getStateClients_[controller] = this->create_client<lifecycle_msgs::srv::GetState>(
+      "/" + controller + "/get_state", rclcpp::ServicesQoS(), clientCbGroup_);
+
+    transitionEventSubs_.push_back(
+      this->create_subscription<lifecycle_msgs::msg::TransitionEvent>(
+        "/" + controller + "/transition_event", 10,
+        [this, controller](const lifecycle_msgs::msg::TransitionEvent::SharedPtr msg) {
+          this->transitionEventCallback(controller, msg);
+        }));
+
+    RCLCPP_INFO(this->get_logger(), "Watching '%s' for motion arbitration", controller.c_str());
+  }
+
+  controllerResyncTimer_ = this->create_wall_timer(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(controllerResyncPeriod_)),
+    std::bind(&WmxCoreMotionNode::resyncControllerStates, this));
+
   RCLCPP_INFO(
     this->get_logger(), "wmx_core_motion_node is configured (%d axes, %d Hz)",
     axisCount_, rate_);
@@ -656,7 +770,15 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_cleanup(const rclcpp_lif
 
   axesStatusTimer_.reset();
   jogWatchdogTimer_.reset();
+  controllerResyncTimer_.reset();
   api_->stopAllJogs();
+
+  transitionEventSubs_.clear();
+  getStateClients_.clear();
+  {
+    std::lock_guard<std::mutex> lock(controllerMutex_);
+    controllerActive_.clear();
+  }
 
   startVelSub_.reset();
   startPosSub_.reset();
@@ -734,6 +856,13 @@ void WmxCoreMotionNode::startPosCallback(const wmx_r2_message::msg::AxesPose::Sh
     return;
   }
 
+  if (isMotionBlocked()) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Position command ignored: a controller is active and owns the axes.");
+    return;
+  }
+
   std::string message;
   for (size_t i = 0; i < msg->indices.size(); i++) {
     api_->startPos(
@@ -749,6 +878,13 @@ void WmxCoreMotionNode::startMovCallback(
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
       "Relative position command ignored: %s", notActiveMessage().c_str());
+    return;
+  }
+
+  if (isMotionBlocked()) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Move command ignored: a controller is active and owns the axes.");
     return;
   }
 
@@ -769,6 +905,13 @@ void WmxCoreMotionNode::startVelCallback(const wmx_r2_message::msg::AxesVelocity
     return;
   }
 
+  if (isMotionBlocked()) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Velocity command ignored: a controller is active and owns the axes.");
+    return;
+  }
+
   std::string message;
   for (size_t i = 0; i < msg->indices.size(); i++) {
     api_->startVel(
@@ -786,6 +929,13 @@ void WmxCoreMotionNode::startJogCallback(const wmx_r2_message::msg::AxesVelocity
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
       "Jog ignored: %s", notActiveMessage().c_str());
+    return;
+  }
+
+  if (isMotionBlocked()) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Jog command ignored: a controller is active and owns the axes.");
     return;
   }
 
@@ -988,6 +1138,12 @@ void WmxCoreMotionNode::startHomeCallback(
   if (!isNodeActive()) {
     response->success = false;
     response->message = notActiveMessage();
+    return;
+  }
+
+  if (isMotionBlocked()) {
+    response->success = false;
+    response->message = "Homing rejected: a controller is active and owns the axes.";
     return;
   }
 
