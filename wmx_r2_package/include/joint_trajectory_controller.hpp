@@ -21,9 +21,6 @@
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "std_msgs/msg/bool.hpp"
 
-#include "wmx_r2_message/srv/get_wmx_params.hpp"
-#include "wmx_r2_message/srv/set_axes.hpp"
-
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 #include "AdvancedMotionApi.h"
@@ -101,10 +98,6 @@ private:
 
   std::atomic<bool> isNodeActive_{false};
 
-  rclcpp::CallbackGroup::SharedPtr clientCbGroup_;
-  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr setServoOnClient_;
-  rclcpp::Client<wmx_r2_message::srv::GetWmxParams>::SharedPtr getWmxParamsClient_;
-
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr actionServer_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
   rclcpp_lifecycle::LifecyclePublisher<control_msgs::msg::JointJog>::SharedPtr servoNodeResetPub_;
@@ -113,9 +106,6 @@ private:
   std::string notActiveMessage() const;
 
   void setRosParameter();
-
-  bool setServoOn(int32_t state, std::string & message);
-  bool getWmxParams(std::string & message);
 
   rclcpp_action::GoalResponse handleGoal(
     const rclcpp_action::GoalUUID & uuid,

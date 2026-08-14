@@ -19,9 +19,6 @@ using wmx3Api::ErrorCode;
 
 namespace
 {
-constexpr std::chrono::seconds kServiceWaitTimeout{5};
-constexpr std::chrono::seconds kServiceCallTimeout{10};
-
 struct ScopeExit
 {
   std::function<void()> fn;
@@ -285,8 +282,6 @@ JointTrajectoryController::JointTrajectoryController()
 
   api_ = std::make_unique<JointTrajectoryControllerApi>(this->get_logger());
 
-  clientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
-
   RCLCPP_INFO(
     this->get_logger(), "joint_trajectory_controller is unconfigured, waiting for configure...");
 }
@@ -326,56 +321,6 @@ void JointTrajectoryController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
-bool JointTrajectoryController::setServoOn(int32_t state, std::string & message)
-{
-  if (!setServoOnClient_->wait_for_service(kServiceWaitTimeout)) {
-    message = std::string(setServoOnClient_->get_service_name()) + " is not available";
-    return false;
-  }
-
-  auto request = std::make_shared<wmx_r2_message::srv::SetAxes::Request>();
-  request->indices.assign(jointAxes_.begin(), jointAxes_.end());
-  request->data.assign(jointAxes_.size(), state);
-
-  auto future = setServoOnClient_->async_send_request(request);
-  if (future.wait_for(kServiceCallTimeout) != std::future_status::ready) {
-    setServoOnClient_->remove_pending_request(future);
-    message = std::string(setServoOnClient_->get_service_name()) + " timed out";
-    return false;
-  }
-
-  const auto response = future.get();
-  message = response->message;
-  return response->success;
-}
-
-bool JointTrajectoryController::getWmxParams(std::string & message)
-{
-  if (!getWmxParamsClient_->wait_for_service(kServiceWaitTimeout)) {
-    message = std::string(getWmxParamsClient_->get_service_name()) + " is not available";
-    return false;
-  }
-
-  auto request = std::make_shared<wmx_r2_message::srv::GetWmxParams::Request>();
-  request->indices.assign(jointAxes_.begin(), jointAxes_.end());
-
-  auto future = getWmxParamsClient_->async_send_request(request);
-  if (future.wait_for(kServiceCallTimeout) != std::future_status::ready) {
-    getWmxParamsClient_->remove_pending_request(future);
-    message = std::string(getWmxParamsClient_->get_service_name()) + " timed out";
-    return false;
-  }
-
-  const auto response = future.get();
-  message = response->message;
-
-  for (const std::string & line : response->params_dump) {
-    RCLCPP_INFO(this->get_logger(), "%s", line.c_str());
-  }
-
-  return response->success;
-}
-
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configure(
   const rclcpp_lifecycle::State &)
 {
@@ -389,18 +334,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
   if (api_->setAxes(jointAxes_, message) != ErrorCode::None) {
     api_->releaseDevice();
     return CallbackReturn::FAILURE;
-  }
-
-  setServoOnClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/set_servo_on", rclcpp::ServicesQoS(), clientCbGroup_);
-
-  getWmxParamsClient_ = this->create_client<wmx_r2_message::srv::GetWmxParams>(
-    "wmx/engine/get_wmx_params", rclcpp::ServicesQoS(), clientCbGroup_);
-
-  if (getWmxParams(message)) {
-    RCLCPP_INFO(this->get_logger(), "WMX parameters read: %s", message.c_str());
-  } else {
-    RCLCPP_WARN(this->get_logger(), "Could not read WMX parameters: %s", message.c_str());
   }
 
   servoNodeResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
@@ -423,13 +356,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  std::string message;
-  if (!setServoOn(1, message)) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to servo on the joint axes: %s", message.c_str());
-    return CallbackReturn::FAILURE;
-  }
-  RCLCPP_INFO(this->get_logger(), "Joint axes servo on: %s", message.c_str());
-
   LifecycleNode::on_activate(previous_state);
   isNodeActive_ = true;
 
@@ -446,13 +372,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactiva
 
   publishExecActive(false);
 
-  std::string message;
-  if (!setServoOn(0, message)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to servo off the joint axes: %s", message.c_str());
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Joint axes servo off: %s", message.c_str());
-  }
-
   LifecycleNode::on_deactivate(previous_state);
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is inactive");
   return CallbackReturn::SUCCESS;
@@ -466,8 +385,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_cleanup(
   actionServer_.reset();
   execActivePub_.reset();
   servoNodeResetPub_.reset();
-  setServoOnClient_.reset();
-  getWmxParamsClient_.reset();
 
   api_->releaseDevice();
 
@@ -711,9 +628,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<JointTrajectoryController>();
-  rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(node->get_node_base_interface());
-  executor.spin();
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

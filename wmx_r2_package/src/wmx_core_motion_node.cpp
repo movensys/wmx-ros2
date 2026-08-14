@@ -920,9 +920,6 @@ void WmxCoreMotionNode::startVelCallback(const wmx_r2_message::msg::AxesVelocity
   }
 }
 
-// Jog command. The publisher (keyboard/joystick teleop, CLI, ...) must keep
-// republishing while the operator holds the control; jogWatchdogStep() stops
-// the axis once refreshes stop arriving. Velocity sign selects the direction.
 void WmxCoreMotionNode::startJogCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg)
 {
   if (!isNodeActive()) {
