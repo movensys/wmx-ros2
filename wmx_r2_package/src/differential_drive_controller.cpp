@@ -68,7 +68,6 @@ int DifferentialDriveControllerApi::attachDevice(std::string & message)
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
-    // The device exists but is unnamed: close it so the next attempt starts clean.
     wmx3Lib_.CloseDevice();
     return err;
   }
@@ -222,9 +221,6 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
     tfBroadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
   }
 
-  // Command input is TwistStamped (mandatory): the staleness timeout keys off the
-  // publisher's stamp, which stops the robot on crash/disconnect. A zero/unset stamp
-  // falls back to arrival time so a stampless publisher does not look infinitely stale.
   cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
 
@@ -297,11 +293,6 @@ void DifferentialDriveController::cmdStampedCallback(
   const geometry_msgs::msg::TwistStamped::SharedPtr msg)
 {
   cmdVelMsg_ = msg->twist;
-  // Key the staleness timeout off the publisher's stamp when present: this rejects
-  // stale or buffered commands (not just gaps in receipt), the safety property the
-  // stamped contract is for. A zero/unset stamp falls back to arrival time so a
-  // stampless publisher does not look infinitely stale and brick the robot. The stamp
-  // shares the control loop's clock domain (RCL_ROS_TIME / sim time when use_sim_time).
   const rclcpp::Time stamp(msg->header.stamp, RCL_ROS_TIME);
   lastCmdTime_ = (stamp.nanoseconds() > 0) ? stamp : this->get_clock()->now();
   haveCmd_ = true;
@@ -311,7 +302,6 @@ void DifferentialDriveController::controlStep()
 {
   const rclcpp::Time now = this->get_clock()->now();
 
-  // Single status read for this cycle.
   DifferentialDriveControllerApi::AxisFeedback left;
   DifferentialDriveControllerApi::AxisFeedback right;
   bool communicating = false;
@@ -327,11 +317,6 @@ void DifferentialDriveController::controlStep()
     return;
   }
 
-  // If the engine isn't communicating the status is not trustworthy: don't
-  // publish odometry or command. Drop our caches so the position baseline, the
-  // jump-guard clock, and the StartVel resend re-baseline cleanly on recovery
-  // (re-anchoring to the current absolute encoder position, which may have moved
-  // or homed while we were not reading it).
   if (!communicating) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
@@ -341,28 +326,13 @@ void DifferentialDriveController::controlStep()
     return;
   }
 
-  // ---- Odometry path (encoder feedback is valid even with servo off) ----
-  // Twist (-> /odom_enc, /omega_enc, /odom_accel) comes from the servo's own
-  // actualVelocity: it is the cleaner velocity signal and the localization EKF
-  // fuses only the twist (vx/vy/vyaw) from /odom_enc.
   const ddl::WheelOmega enc{left.actualVelocity, right.actualVelocity};
   const ddl::BodyVel body = model_.forward(enc);  // {vx, vyaw}, vy is 0 for diff-drive
 
-  // Pose & /odom_deltas are dead-reckoned from per-wheel encoder POSITION deltas:
-  // more precise than velocity*dt (dt-free, no constant-velocity assumption, no
-  // dt-jitter sensitivity). actualPos is a WMX user-unit; posUnitScale_ converts it
-  // to wheel radians (1.0 when the loaded WMX param file already scales to rad, as
-  // our config does -- verified: actualVelocity reads rad/s under the same scaling).
   if (havePrev_) {
     const double dt = (now - prevLoopTime_).seconds();
     const double dPhiLeft = (left.actualPos - prevPosLeft_) * posUnitScale_;
     const double dPhiRight = (right.actualPos - prevPosRight_) * posUnitScale_;
-    // Jump guard: a homing, encoder rollover, or position glitch shows up as a
-    // per-step angle delta wildly inconsistent with actualVelocity*dt. On a trip,
-    // re-baseline (contribute nothing this cycle) instead of integrating a bogus
-    // jump; legitimate high-speed motion stays consistent and passes. (The guard
-    // needs a valid dt; if dt is non-positive/non-finite the position delta is
-    // still valid on its own, so we integrate it unguarded rather than drop it.)
     const bool finiteDt = std::isfinite(dt) && dt > 0.0;
     const bool jumped = finiteDt &&
       (std::abs(dPhiLeft - left.actualVelocity * dt) > jumpGuardTol_ ||
@@ -388,7 +358,6 @@ void DifferentialDriveController::controlStep()
   publishAccel(now, body);
   if (publishTf_) {publishTf(now);}
 
-  // ---- Command path ----
   if (left.ampAlarm || right.ampAlarm) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
@@ -404,9 +373,6 @@ void DifferentialDriveController::controlStep()
     return;
   }
 
-  // Stale-command safety: zero the wheels if no fresh /cmd_vel within the timeout.
-  // NOTE: this decelerates over dec_time (TimeAccTrapezoidal); a true emergency stop
-  // must go through the WMX hardware-level stop path, not this software timeout.
   const bool stale = !haveCmd_ || (now - lastCmdTime_).seconds() > cmdVelTimeout_;
   const ddl::BodyVel cmd =
     stale ? ddl::BodyVel{0.0, 0.0} : ddl::BodyVel{cmdVelMsg_.linear.x, cmdVelMsg_.angular.z};
@@ -417,16 +383,8 @@ void DifferentialDriveController::controlStep()
 
 void DifferentialDriveController::commandWheels(double omegaLeft, double omegaRight)
 {
-  // Resend only on change so we don't restart the velocity trapezoid every cycle.
-  // The status/alarm/timeout branches above invalidate the cache so a transition
-  // (timeout->zero, alarm-recovery) is always re-sent.
   if (lastSentValid_ && omegaLeft == lastSentLeft_ && omegaRight == lastSentRight_) {
     return;
-  }
-  // Commit the resend cache only if BOTH axes accepted the command; otherwise leave
-  // it invalid so the next cycle re-attempts this same target. A StartVel that failed
-  // (e.g. a transient motion-state conflict) must NOT be remembered as "already sent"
-  // - that would suppress retries, including a critical timeout->zero stop.
   const bool okLeft = setVelocity(leftAxis_, omegaLeft);
   const bool okRight = setVelocity(rightAxis_, omegaRight);
   if (okLeft && okRight) {
@@ -469,13 +427,6 @@ void DifferentialDriveController::publishOdometry(
   msg.twist.twist.linear.y = 0.0;     // diff-drive: no lateral motion
   msg.twist.twist.angular.z = body.angular;
 
-  // Covariance. The localization EKF fuses ONLY twist vx, vy, vyaw from this source
-  // (robot_localization odom0_config indices 6, 7, 11 of its 15-state vector). In this
-  // nav_msgs 6x6 twist covariance those same components are the diagonal entries
-  // [0]=vx, [7]=vy, [35]=vyaw - set below. The EKF ignores pose, but x/y/yaw are kept
-  // authoritative (small variance) for the no-EKF fallback where this odom feeds Nav2
-  // directly; unused axes (z/roll/pitch) are non-authoritative. Mirrors the proven upstream
-  // diff_drive_node values.
   constexpr double kSmall = 0.01;
   constexpr double kLarge = 99999.0;
   msg.pose.covariance[0] = kSmall;    // x
@@ -496,7 +447,6 @@ void DifferentialDriveController::publishOdometry(
 
 void DifferentialDriveController::publishDeltas(const rclcpp::Time & stamp)
 {
-  // accumulated |ds|, |dtheta| from per-wheel position deltas; resets on take()
   const ddl::OdomDelta delta = deltas_.take();
   geometry_msgs::msg::TwistStamped msg;
   msg.header.stamp = stamp;
@@ -509,9 +459,6 @@ void DifferentialDriveController::publishDeltas(const rclcpp::Time & stamp)
 void DifferentialDriveController::publishAccel(
   const rclcpp::Time & stamp, const ddl::BodyVel & body)
 {
-  // Rate-limit accel publishing relative to the (fast) control loop. The estimator
-  // differentiates body velocity over the actual elapsed accel interval, so we feed
-  // it dt measured between accel publishes - not the control-loop dt.
   if (!haveAccelClock_) {
     prevAccelTime_ = stamp;
     haveAccelClock_ = true;
@@ -549,8 +496,6 @@ void DifferentialDriveController::publishTf(const rclcpp::Time & stamp)
 
 geometry_msgs::msg::Quaternion DifferentialDriveController::yawToQuaternion(double yaw)
 {
-  // Closed-form yaw-only quaternion (equivalent to tf2::Quaternion::setRPY(0,0,yaw)),
-  // built directly to avoid tf2 LinearMath/geometry_msgs header churn across distros.
   geometry_msgs::msg::Quaternion q;
   q.x = 0.0;
   q.y = 0.0;
@@ -590,9 +535,6 @@ void DifferentialDriveController::setRosParameter()
     RCLCPP_WARN(this->get_logger(), "rate must be > 0; falling back to 100 Hz");
     rate_ = 100;
   }
-  // Guard the kinematics preconditions in release builds too: DiffDriveModel only
-  // assert()s wheel_radius/separation > 0, and assert is elided under NDEBUG (the
-  // default for optimized ROS 2 builds), so a 0 here would yield inf/nan odometry.
   if (wheelRadius_ <= 0.0) {
     RCLCPP_WARN(this->get_logger(), "wheel_radius must be > 0; falling back to 0.095");
     wheelRadius_ = 0.095;
@@ -601,21 +543,16 @@ void DifferentialDriveController::setRosParameter()
     RCLCPP_WARN(this->get_logger(), "wheel_to_wheel must be > 0; falling back to 0.55");
     wheelToWheel_ = 0.55;
   }
-  // accel_publish_rate: 0 means "publish /odom_accel every control cycle"; a negative
-  // value is a misconfiguration, so guard it (otherwise it falls through to every-cycle).
   if (accelPublishRate_ < 0.0) {
     RCLCPP_WARN(this->get_logger(), "accel_publish_rate must be >= 0; falling back to 10.0");
     accelPublishRate_ = 10.0;
   }
-  // pos_unit_scale converts actualPos user-units -> wheel rad; 0 or non-finite would
-  // zero/poison all position-based odometry, so guard it to the rad-native default.
   if (!std::isfinite(posUnitScale_) || posUnitScale_ == 0.0) {
     RCLCPP_WARN(
       this->get_logger(),
       "pos_unit_scale must be finite and non-zero; falling back to 1.0");
     posUnitScale_ = 1.0;
   }
-  // jump_guard_tol must be > 0 (it bounds |dPhi - actualVelocity*dt| before re-baselining).
   if (!(jumpGuardTol_ > 0.0)) {
     RCLCPP_WARN(this->get_logger(), "jump_guard_tol must be > 0; falling back to 0.5");
     jumpGuardTol_ = 0.5;
