@@ -61,6 +61,14 @@ namespace
 // communication cycle. Poll rather than sleep-and-hope when waiting on it.
 constexpr auto kPollInterval = std::chrono::microseconds(200);
 constexpr auto kDrainTimeout = std::chrono::seconds(10);
+
+// A Clear, or a freshly recorded block, is not visible in GetStatus until the
+// engine has ticked. Sampling immediately after a write reads a half-applied
+// state — which silently corrupts any measurement built on freeSize deltas.
+// Poll at whole-cycle granularity and require several identical readings.
+constexpr auto kSettlePoll = std::chrono::milliseconds(1);
+constexpr auto kSettleTimeout = std::chrono::seconds(2);
+constexpr int kSettleSamples = 5;
 }  // namespace
 
 class ApiBufferProbe : public rclcpp::Node
@@ -110,6 +118,7 @@ private:
   bool attachDevice(WMX3Api * lib, const char * name);
   bool check(int err, const char * what);
   bool getStatus(ApiBufferStatus * st);
+  bool settle(ApiBufferStatus * st);
   bool resetChannel();
   bool drain(int * cycles_waited);
   void seedNeutralCommand();
@@ -250,10 +259,46 @@ bool ApiBufferProbe::getStatus(ApiBufferStatus * st)
   return check(abCtl_->GetStatus(channel_, st), "ApiBuffer::GetStatus");
 }
 
+// Wait until the cyclic status stops moving, so callers never measure against a
+// counter that is still catching up with a Clear or a burst of recorded blocks.
+bool ApiBufferProbe::settle(ApiBufferStatus * st)
+{
+  const auto deadline = std::chrono::steady_clock::now() + kSettleTimeout;
+  long long prev_blocks = -1;
+  int prev_free = -1;
+  int stable = 0;
+
+  while (rclcpp::ok()) {
+    if (!getStatus(st)) {
+      return false;
+    }
+    if (st->blockCount == prev_blocks && st->freeSize == prev_free) {
+      if (++stable >= kSettleSamples) {
+        return true;
+      }
+    } else {
+      stable = 0;
+      prev_blocks = st->blockCount;
+      prev_free = st->freeSize;
+    }
+    if (std::chrono::steady_clock::now() > deadline) {
+      RCLCPP_WARN(
+        this->get_logger(), "Status never settled (blockCount=%lld freeSize=%d)",
+        st->blockCount, st->freeSize);
+      return false;
+    }
+    std::this_thread::sleep_for(kSettlePoll);
+  }
+  return false;
+}
+
 // Halt then Clear. Order matters: Halt controls the execution state
 // (Active -> Stop), Clear controls the content (empties, counters -> 0).
 // Clearing an Active channel leaves it Active, which is not what we want
 // between measurements.
+//
+// The Clear is asynchronous: it lands a cycle or more later. Wait for it, or
+// the next measurement's baseline freeSize still counts the blocks being freed.
 bool ApiBufferProbe::resetChannel()
 {
   abCtl_->Halt(channel_);      // may legitimately fail if already stopped
@@ -262,13 +307,14 @@ bool ApiBufferProbe::resetChannel()
   }
 
   ApiBufferStatus st;
-  if (!getStatus(&st)) {
+  if (!settle(&st)) {
     return false;
   }
   if (st.blockCount != 0 || st.remainingBlockCount != 0) {
     RCLCPP_WARN(
       this->get_logger(), "Channel not empty after Clear (blockCount=%lld remaining=%lld)",
       st.blockCount, st.remainingBlockCount);
+    return false;
   }
   return true;
 }
@@ -336,7 +382,7 @@ bool ApiBufferProbe::measureBlockSize(int * motion_bytes, int * sleep_bytes, int
   ApiBufferStatus st;
 
   // ---- pass A: StartLinearIntplPos blocks ----
-  if (!resetChannel() || !getStatus(&st)) {
+  if (!resetChannel() || !settle(&st)) {
     return false;
   }
   *buffer_size = st.bufferSize;
@@ -367,7 +413,7 @@ bool ApiBufferProbe::measureBlockSize(int * motion_bytes, int * sleep_bytes, int
     return false;
   }
 
-  if (!getStatus(&st)) {
+  if (!settle(&st)) {
     return false;
   }
   *motion_bytes = (free_before_motion - st.freeSize) / recorded_motion;
@@ -377,7 +423,7 @@ bool ApiBufferProbe::measureBlockSize(int * motion_bytes, int * sleep_bytes, int
 
   // ---- pass B: USleep blocks ----
   // Clear FIRST: the motion blocks above must never reach the execution engine.
-  if (!resetChannel() || !getStatus(&st)) {
+  if (!resetChannel() || !settle(&st)) {
     return false;
   }
   const int free_before_sleep = st.freeSize;
@@ -401,7 +447,7 @@ bool ApiBufferProbe::measureBlockSize(int * motion_bytes, int * sleep_bytes, int
     return false;
   }
 
-  if (!getStatus(&st)) {
+  if (!settle(&st)) {
     return false;
   }
   *sleep_bytes = (free_before_sleep - st.freeSize) / recorded_sleep;
@@ -422,7 +468,10 @@ bool ApiBufferProbe::measureBlockSize(int * motion_bytes, int * sleep_bytes, int
 // last real sleep has completed. This also verifies that documented behaviour.
 void ApiBufferProbe::measureSleepResolution()
 {
-  const unsigned int test_us[] = {1000, 1500, 2500, 10000, 25000};
+  // Deliberately NOT all multiples of a round number: 1100/1333/1750 are the
+  // values that distinguish "honours the request" from "quantises to 250/500 us
+  // and happens to agree on the round ones". 250 probes the sub-cycle floor.
+  const unsigned int test_us[] = {250, 750, 1000, 1100, 1333, 1500, 1750, 2500, 10000, 25000};
 
   RCLCPP_INFO(this->get_logger(), "--- Measurement 2: USleep resolution ---");
   RCLCPP_INFO(
@@ -505,7 +554,7 @@ void ApiBufferProbe::measureBlockAccounting()
   }
 
   ApiBufferStatus st;
-  if (!getStatus(&st)) {
+  if (!settle(&st)) {
     return;
   }
   RCLCPP_INFO(
@@ -527,7 +576,7 @@ void ApiBufferProbe::measureBlockAccounting()
   }
   abCtl_->Halt(channel_);
 
-  if (!getStatus(&st)) {
+  if (!settle(&st)) {
     return;
   }
   RCLCPP_INFO(

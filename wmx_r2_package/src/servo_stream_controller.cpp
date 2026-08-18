@@ -21,6 +21,11 @@
 //   StartLinearIntplPos(6 axes)   coordinated, lands as a FastBlending override
 //   USleep(T)                     paces the queue, T trimmed to hold depth
 //
+// T is in microseconds and is NOT quantised to the engine cycle: api_buffer_probe
+// measured USleep tracking sub-millisecond requests to within ~0.3%. Measured
+// cost per setpoint is ~396 bytes (320 motion + 76 sleep), so a 1 MB channel
+// holds ~2650 setpoints, over a minute of stream at Servo's 40 Hz.
+//
 // Notes on the motion model:
 //   - LinearIntplOverrideType is FastBlending, so consecutive interpolations
 //     blend rather than stop-and-go.
@@ -113,9 +118,9 @@ private:
   int channelEstop_ = 1;
   int bufferSizeMb_ = 5;
   int targetQueueDepth_ = 2;
-  int nominalPeriodCycles_ = 25;
-  int clampLoCycles_ = 20;
-  int clampHiCycles_ = 30;
+  int nominalPeriodUs_ = 25000;
+  int clampLoUs_ = 20000;
+  int clampHiUs_ = 30000;
   double pacingKp_ = 0.15;
   int rosQueueDepth_ = 8;
   int starvationTimeoutMs_ = 75;
@@ -166,8 +171,8 @@ private:
   void pumpLoop();
   bool beginStream();
   void endStream(const char * reason, bool controlled_stop);
-  bool recordSetpoint(const std::vector<double> & target, int period_cycles);
-  int pacePeriodCycles(int depth) const;
+  bool recordSetpoint(const std::vector<double> & target, int period_us);
+  int pacePeriodUs(int depth) const;
   void pollStatus();
 };
 
@@ -240,9 +245,9 @@ void ServoStreamController::setRosParameter()
   this->declare_parameter<int>("estop_buffer_channel", 1);
   this->declare_parameter<int>("api_buffer_size_mb", 5);
   this->declare_parameter<int>("target_queue_depth", 2);
-  this->declare_parameter<int>("nominal_period_cycles", 25);
-  this->declare_parameter<int>("period_clamp_lo_cycles", 20);
-  this->declare_parameter<int>("period_clamp_hi_cycles", 30);
+  this->declare_parameter<int>("nominal_period_us", 25000);
+  this->declare_parameter<int>("period_clamp_lo_us", 20000);
+  this->declare_parameter<int>("period_clamp_hi_us", 30000);
   this->declare_parameter<double>("pacing_kp", 0.15);
   this->declare_parameter<int>("ros_queue_depth", 8);
   this->declare_parameter<int>("starvation_timeout_ms", 75);
@@ -256,9 +261,9 @@ void ServoStreamController::setRosParameter()
   this->get_parameter("estop_buffer_channel", channelEstop_);
   this->get_parameter("api_buffer_size_mb", bufferSizeMb_);
   this->get_parameter("target_queue_depth", targetQueueDepth_);
-  this->get_parameter("nominal_period_cycles", nominalPeriodCycles_);
-  this->get_parameter("period_clamp_lo_cycles", clampLoCycles_);
-  this->get_parameter("period_clamp_hi_cycles", clampHiCycles_);
+  this->get_parameter("nominal_period_us", nominalPeriodUs_);
+  this->get_parameter("period_clamp_lo_us", clampLoUs_);
+  this->get_parameter("period_clamp_hi_us", clampHiUs_);
   this->get_parameter("pacing_kp", pacingKp_);
   this->get_parameter("ros_queue_depth", rosQueueDepth_);
   this->get_parameter("starvation_timeout_ms", starvationTimeoutMs_);
@@ -296,10 +301,10 @@ void ServoStreamController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "api_buffer_size_mb: %d", bufferSizeMb_);
   RCLCPP_INFO(
     this->get_logger(), "target_queue_depth: %d setpoints (~%d ms of latency)",
-    targetQueueDepth_, targetQueueDepth_ * nominalPeriodCycles_);
+    targetQueueDepth_, targetQueueDepth_ * nominalPeriodUs_ / 1000);
   RCLCPP_INFO(
-    this->get_logger(), "period: %d cycles, clamp [%d, %d], Kp %.2f",
-    nominalPeriodCycles_, clampLoCycles_, clampHiCycles_, pacingKp_);
+    this->get_logger(), "period: %d us, clamp [%d, %d] us, Kp %.2f (%.0f us per setpoint of error)",
+    nominalPeriodUs_, clampLoUs_, clampHiUs_, pacingKp_, pacingKp_ * 1000.0);
   RCLCPP_INFO(this->get_logger(), "ros_queue_depth: %d", rosQueueDepth_);
   RCLCPP_INFO(this->get_logger(), "starvation_timeout_ms: %d", starvationTimeoutMs_);
   RCLCPP_INFO(this->get_logger(), "accel_ratio: %.2f", accelRatio_);
@@ -558,13 +563,22 @@ void ServoStreamController::jointTrajectoryCallback(
   ringCv_.notify_one();
 }
 
-// Adaptive playout: trim the sleep to hold the queue at target depth. Worked in
-// whole cycles because the engine ticks at 1 kHz and USleep cannot resolve finer.
-int ServoStreamController::pacePeriodCycles(int depth) const
+// Adaptive playout: trim the sleep to hold the queue at target depth.
+//
+// Worked in MICROSECONDS, not engine cycles. api_buffer_probe measured USleep
+// honouring sub-millisecond requests to within ~0.3% (1333 us -> 1341 us), so
+// there is no 1 kHz quantisation to round to. Rounding to whole cycles used to
+// swallow the correction entirely: at Kp 0.15 the depth error had to exceed
+// 3.34 setpoints before lround moved the period at all, which left the loop
+// unable to ever speed up — depth cannot go far enough below target to trip it.
+//
+// pacing_kp keeps its original meaning: cycles of adjustment per setpoint of
+// depth error, hence the x1000 to microseconds.
+int ServoStreamController::pacePeriodUs(int depth) const
 {
-  const double adjust = pacingKp_ * static_cast<double>(depth - targetQueueDepth_);
-  const int cycles = static_cast<int>(std::lround(nominalPeriodCycles_ + adjust));
-  return std::max(clampLoCycles_, std::min(clampHiCycles_, cycles));
+  const double adjust = pacingKp_ * static_cast<double>(depth - targetQueueDepth_) * 1000.0;
+  const int us = static_cast<int>(std::lround(nominalPeriodUs_ + adjust));
+  return std::max(clampLoUs_, std::min(clampHiUs_, us));
 }
 
 bool ServoStreamController::beginStream()
@@ -617,10 +631,10 @@ void ServoStreamController::endStream(const char * reason, bool controlled_stop)
     controlled_stop ? " (axes stopped)" : "");
 }
 
-bool ServoStreamController::recordSetpoint(const std::vector<double> & target, int period_cycles)
+bool ServoStreamController::recordSetpoint(const std::vector<double> & target, int period_us)
 {
   const size_t count = jointAxes_.size();
-  const double period_s = period_cycles / 1000.0;   // 1 kHz cycle
+  const double period_s = period_us / 1000000.0;
 
   intpl_.axisCount = count;
   for (size_t i = 0; i < count; ++i) {
@@ -647,7 +661,7 @@ bool ServoStreamController::recordSetpoint(const std::vector<double> & target, i
   }
   const int motion_err = cmRec_->motion->StartLinearIntplPos(&intpl_);
   const int sleep_err =
-    (motion_err == ErrorCode::None) ? abRec_->USleep(period_cycles * 1000) : ErrorCode::None;
+    (motion_err == ErrorCode::None) ? abRec_->USleep(period_us) : ErrorCode::None;
   abRec_->EndRecordBufferChannel();
 
   if (motion_err != ErrorCode::None || sleep_err != ErrorCode::None) {
@@ -739,7 +753,7 @@ void ServoStreamController::pumpLoop()
         "API buffer backlog: %d setpoints in flight (target %d)", depth, targetQueueDepth_);
     }
 
-    if (recordSetpoint(target, pacePeriodCycles(depth))) {
+    if (recordSetpoint(target, pacePeriodUs(depth))) {
       last_sent = std::chrono::steady_clock::now();
     }
   }

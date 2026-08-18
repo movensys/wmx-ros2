@@ -40,15 +40,20 @@ servo_stream_controller:
 
     api_buffer_channel: 0
     estop_buffer_channel: 1      # watch trigger routine; must differ from the above
-    api_buffer_size_mb: 5        # revise from api_buffer_probe's bytes/setpoint figure
+    # api_buffer_probe measured 396 bytes/setpoint (320 motion + 76 sleep), so
+    # 1 MB holds ~2650 setpoints = ~66 s of stream at 40 Hz. Ample.
+    api_buffer_size_mb: 1
 
-    # Queue depth is the latency/robustness dial. At a 1 kHz cycle and Servo's
-    # 25 ms publish period, depth 2 costs ~50 ms of deliberate latency.
+    # Queue depth is the latency/robustness dial. At Servo's 25 ms publish
+    # period, depth 2 costs ~50 ms of deliberate latency.
     target_queue_depth: 2
-    nominal_period_cycles: 25    # = Servo publish_period 0.025 s at 1 kHz
-    period_clamp_lo_cycles: 20   # pacing authority, +/-20%
-    period_clamp_hi_cycles: 30
-    pacing_kp: 0.15
+    # Microseconds, not engine cycles: api_buffer_probe measured USleep honouring
+    # sub-millisecond requests to within ~0.3%, so the pacing loop has full
+    # resolution and does not lose corrections to rounding.
+    nominal_period_us: 25000     # = Servo publish_period 0.025 s
+    period_clamp_lo_us: 20000    # pacing authority, +/-20%
+    period_clamp_hi_us: 30000
+    pacing_kp: 0.15              # 150 us of correction per setpoint of depth error
 
     ros_queue_depth: 8           # drop-oldest above this; stale teleop is worthless
     starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
