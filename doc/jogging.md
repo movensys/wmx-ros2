@@ -1,17 +1,17 @@
 # Jogging
 
-Hold-to-move jog on `/wmx/axis/jog`. The publisher must keep republishing while
+Hold-to-move jog on `/wmx/axes/start_jog`. The publisher must keep republishing while
 the operator holds the control; the axis stops once refreshes stop arriving.
 
 ## 1. Prepare (after `launch_wmx_r2_general_nodes.md`)
 ```
 # Clear alarms, servo on, home
-ros2 service call /wmx/axis/clear_alarm wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
-ros2 service call /wmx/axis/set_on    wmx_r2_message/srv/SetAxis "{index: [0], data: [1]}"
-ros2 service call /wmx/axis/homing    wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{indices: [0], data: [0]}"
+ros2 service call /wmx/axes/set_servo_on    wmx_r2_message/srv/SetAxes "{indices: [0], data: [1]}"
+ros2 service call /wmx/axes/start_home    wmx_r2_message/srv/SetAxes "{indices: [0], data: [0]}"
 
 # Jog requires Position mode (0)
-ros2 service call /wmx/axis/set_mode  wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+ros2 service call /wmx/axes/set_axis_command_mode  wmx_r2_message/srv/SetAxes "{indices: [0], data: [0]}"
 ```
 
 ## 2a. Jog with the keyboard
@@ -41,17 +41,17 @@ macOS and Windows expose the same setting in their keyboard control panel.
 ## 2b. Jog from the CLI
 ```
 # Positive direction. Ctrl-C acts as the release.
-ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
-  "{index: [0], velocity: [10000], acc: [100000], dec: [100000]}"
+ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
+  "{indices: [0], velocities: [10000], accelerations: [100000], decelerations: [100000]}"
 
 # Negative direction
-ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
-  "{index: [0], velocity: [-10000], acc: [100000], dec: [100000]}"
+ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
+  "{indices: [0], velocities: [-10000], accelerations: [100000], decelerations: [100000]}"
 ```
 
 ## 3. Stop
 ```
-ros2 service call /wmx/axis/stop wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{indices: [0], data: [0]}"
 ```
 
 ## Parameters

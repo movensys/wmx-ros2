@@ -43,9 +43,9 @@ colcon build && source install/setup.bash
 ros2 launch wmx_ros2_package wmx_ros2_general_nodes.launch.py
 
 # 3. Bring axes online and command a move
-ros2 service call /wmx/axis/set_on wmx_ros2_message/srv/SetAxis "{index: [0,1], data: [1,1]}"
-ros2 topic pub --once /wmx/axis/position wmx_ros2_message/msg/AxisPose \
-  "{index: [0,1], target: [8388608, 10000], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"
+ros2 service call /wmx/axes/set_servo_on wmx_ros2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
+ros2 topic pub --once /wmx/axes/start_pos wmx_ros2_message/msg/AxesPose \
+  "{indices: [0,1], positions: [8388608, 10000], velocities: [1000000, 5000], accelerations: [100000, 1000], decelerations: [100000, 1000]}"
 ```
 
 The full startup sequence and the complete service/topic catalog are documented in

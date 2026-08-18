@@ -17,27 +17,27 @@ WmxIoNode::WmxIoNode()
 
   getInputBitService_ = this->create_service<wmx_r2_message::srv::GetIoBit>(
     "wmx/io/get_input_bit",
-    std::bind(&WmxIoNode::getInputBit, this, _1, _2));
+    std::bind(&WmxIoNode::getInputBitCallback, this, _1, _2));
 
   getOutputBitService_ = this->create_service<wmx_r2_message::srv::GetIoBit>(
     "wmx/io/get_output_bit",
-    std::bind(&WmxIoNode::getOutputBit, this, _1, _2));
+    std::bind(&WmxIoNode::getOutputBitCallback, this, _1, _2));
 
   getInputBytesService_ = this->create_service<wmx_r2_message::srv::GetIoBytes>(
     "wmx/io/get_input_bytes",
-    std::bind(&WmxIoNode::getInputBytes, this, _1, _2));
+    std::bind(&WmxIoNode::getInputBytesCallback, this, _1, _2));
 
   getOutputBytesService_ = this->create_service<wmx_r2_message::srv::GetIoBytes>(
     "wmx/io/get_output_bytes",
-    std::bind(&WmxIoNode::getOutputBytes, this, _1, _2));
+    std::bind(&WmxIoNode::getOutputBytesCallback, this, _1, _2));
 
   setOutputBitService_ = this->create_service<wmx_r2_message::srv::SetIoBit>(
     "wmx/io/set_output_bit",
-    std::bind(&WmxIoNode::setOutputBit, this, _1, _2));
+    std::bind(&WmxIoNode::setOutputBitCallback, this, _1, _2));
 
   setOutputBytesService_ = this->create_service<wmx_r2_message::srv::SetIoBytes>(
     "wmx/io/set_output_bytes",
-    std::bind(&WmxIoNode::setOutputBytes, this, _1, _2));
+    std::bind(&WmxIoNode::setOutputBytesCallback, this, _1, _2));
 
   RCLCPP_INFO(this->get_logger(), "wmx_io_node waiting for engine...");
 }
@@ -92,7 +92,7 @@ void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
   RCLCPP_INFO(this->get_logger(), "wmx_io_node is ready");
 }
 
-void WmxIoNode::getInputBit(
+void WmxIoNode::getInputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
@@ -124,7 +124,7 @@ void WmxIoNode::getInputBit(
   response->message = buffer_;
 }
 
-void WmxIoNode::getOutputBit(
+void WmxIoNode::getOutputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
@@ -156,7 +156,7 @@ void WmxIoNode::getOutputBit(
   response->message = buffer_;
 }
 
-void WmxIoNode::getInputBytes(
+void WmxIoNode::getInputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
@@ -194,7 +194,7 @@ void WmxIoNode::getInputBytes(
   response->message = buffer_;
 }
 
-void WmxIoNode::getOutputBytes(
+void WmxIoNode::getOutputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
@@ -232,7 +232,7 @@ void WmxIoNode::getOutputBytes(
   response->message = buffer_;
 }
 
-void WmxIoNode::setOutputBit(
+void WmxIoNode::setOutputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBit::Response> response)
 {
@@ -269,7 +269,7 @@ void WmxIoNode::setOutputBit(
   response->message = buffer_;
 }
 
-void WmxIoNode::setOutputBytes(
+void WmxIoNode::setOutputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Response> response)
 {

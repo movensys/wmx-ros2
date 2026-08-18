@@ -16,19 +16,23 @@ WmxEtherCatNode::WmxEtherCatNode()
 
   getNetworkStateService_ = this->create_service<wmx_r2_message::srv::EcatGetNetworkState>(
     "wmx/ecat/get_network_state",
-    std::bind(&WmxEtherCatNode::getNetworkState, this, _1, _2));
+    std::bind(&WmxEtherCatNode::getNetworkStateCallback, this, _1, _2));
 
   registerReadService_ = this->create_service<wmx_r2_message::srv::EcatRegisterRead>(
     "wmx/ecat/register_read",
-    std::bind(&WmxEtherCatNode::registerRead, this, _1, _2));
+    std::bind(&WmxEtherCatNode::registerReadCallback, this, _1, _2));
 
   resetStatisticsService_ = this->create_service<wmx_r2_message::srv::EcatResetStatistics>(
     "wmx/ecat/reset_statistics",
-    std::bind(&WmxEtherCatNode::resetStatistics, this, _1, _2));
+    std::bind(&WmxEtherCatNode::resetStatisticsCallback, this, _1, _2));
+
+  scanNetworkService_ = this->create_service<wmx_r2_message::srv::EcatScanNetwork>(
+    "wmx/ecat/scan_network",
+    std::bind(&WmxEtherCatNode::scanNetworkCallback, this, _1, _2));
 
   startHotconnectService_ = this->create_service<wmx_r2_message::srv::EcatStartHotconnect>(
     "wmx/ecat/start_hotconnect",
-    std::bind(&WmxEtherCatNode::startHotconnect, this, _1, _2));
+    std::bind(&WmxEtherCatNode::startHotconnectCallback, this, _1, _2));
 
   RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node waiting for engine...");
 }
@@ -79,7 +83,7 @@ void WmxEtherCatNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
   RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is ready");
 }
 
-void WmxEtherCatNode::getNetworkState(
+void WmxEtherCatNode::getNetworkStateCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatGetNetworkState::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatGetNetworkState::Response> response)
 {
@@ -156,7 +160,7 @@ void WmxEtherCatNode::getNetworkState(
 }
 
 
-void WmxEtherCatNode::registerRead(
+void WmxEtherCatNode::registerReadCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatRegisterRead::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatRegisterRead::Response> response)
 {
@@ -216,7 +220,7 @@ void WmxEtherCatNode::registerRead(
   response->message = std::string(buffer_);
 }
 
-void WmxEtherCatNode::resetStatistics(
+void WmxEtherCatNode::resetStatisticsCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatResetStatistics::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatResetStatistics::Response> response)
 {
@@ -264,7 +268,40 @@ void WmxEtherCatNode::resetStatistics(
   response->message = std::string(buffer_);
 }
 
-void WmxEtherCatNode::startHotconnect(
+void WmxEtherCatNode::scanNetworkCallback(
+  const std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Response> response)
+{
+  if (!initialized_) {
+    response->success = false;
+    response->message = "EtherCAT node not initialized. Engine not ready.";
+    return;
+  }
+
+  err_ = wmxEcat_.ScanNetwork(request->master_id);
+
+  if (err_ != ErrorCode::None) {
+    char ecErrString[256];
+    wmx3Api::ecApi::Ecat::ErrorToString(err_, ecErrString, sizeof(ecErrString));
+    snprintf(
+      buffer_, sizeof(buffer_),
+      "ScanNetwork failed. masterId=%d Error=%d (%s)",
+      request->master_id, err_, ecErrString);
+    RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
+    response->success = false;
+    response->message = std::string(buffer_);
+    return;
+  }
+
+  snprintf(
+    buffer_, sizeof(buffer_),
+    "ScanNetwork done. masterId=%d", request->master_id);
+  RCLCPP_INFO(this->get_logger(), "%s", buffer_);
+  response->success = true;
+  response->message = std::string(buffer_);
+}
+
+void WmxEtherCatNode::startHotconnectCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Response> response)
 {

@@ -19,8 +19,8 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetEngine.srv"
-  "srv/SetAxis.srv"
-  "srv/SetAxisGearRatio.srv"
+  "srv/SetAxes.srv"
+  "srv/SetAxesGearRatio.srv"
   "srv/GetIoBit.srv"
   "srv/GetIoBytes.srv"
   "srv/SetIoBit.srv"
@@ -29,14 +29,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/EcatGetNetworkState.srv"
   "srv/EcatRegisterRead.srv"
   "srv/EcatResetStatistics.srv"
+  "srv/EcatScanNetwork.srv"
   "srv/EcatStartHotconnect.srv"
 
   "srv/LoadWmxParams.srv"
   "srv/GetWmxParams.srv"
 
-  "msg/AxisVelocity.msg"
-  "msg/AxisState.msg"
-  "msg/AxisPose.msg"
+  "msg/AxesVelocity.msg"
+  "msg/AxesStatus.msg"
+  "msg/AxesPose.msg"
   DEPENDENCIES std_msgs
 )
 

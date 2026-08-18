@@ -15,8 +15,8 @@ WmxCoreMotionNode::WmxCoreMotionNode()
 {
   init_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-  // setHoming() blocks in motion->Wait() its own group until the axis goes Idle.
-  // Move setHoming() to set its own MutuallyExclusive group.
+  // startHomeCallback() blocks in motion->Wait() its own group until the axis goes Idle.
+  // Move startHomeCallback() to set its own MutuallyExclusive group.
   homing_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
   rclcpp::SubscriptionOptions sub_opts;
@@ -30,54 +30,54 @@ WmxCoreMotionNode::WmxCoreMotionNode()
   coreMotionReadyPub_ = this->create_publisher<std_msgs::msg::Bool>(
     "wmx/core_motion/ready", ready_qos);
 
-  setAxisOnService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/set_on",
-    std::bind(&WmxCoreMotionNode::setAxisOn, this, _1, _2));
+  setServoOnService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/set_servo_on",
+    std::bind(&WmxCoreMotionNode::setServoOnCallback, this, _1, _2));
 
-  clearAlarmService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/clear_alarm",
-    std::bind(&WmxCoreMotionNode::clearAlarm, this, _1, _2));
+  clearAmpAlarmService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/clear_amp_alarm",
+    std::bind(&WmxCoreMotionNode::clearAmpAlarmCallback, this, _1, _2));
 
-  setAxisModeService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/set_mode",
-    std::bind(&WmxCoreMotionNode::setAxisMode, this, _1, _2));
+  setAxisCommandModeService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/set_axis_command_mode",
+    std::bind(&WmxCoreMotionNode::setAxisCommandModeCallback, this, _1, _2));
 
-  setAxisPolarityService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/set_polarity",
-    std::bind(&WmxCoreMotionNode::setAxisPolarity, this, _1, _2));
+  setAxisPolarityService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/set_axis_polarity",
+    std::bind(&WmxCoreMotionNode::setAxisPolarityCallback, this, _1, _2));
 
-  setAxisGearRatioService_ = this->create_service<wmx_r2_message::srv::SetAxisGearRatio>(
-    "wmx/axis/set_gear_ratio",
-    std::bind(&WmxCoreMotionNode::setAxisGearRatio, this, _1, _2));
+  setGearRatioService_ = this->create_service<wmx_r2_message::srv::SetAxesGearRatio>(
+    "wmx/axes/set_gear_ratio",
+    std::bind(&WmxCoreMotionNode::setGearRatioCallback, this, _1, _2));
 
-  setHomingService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/homing",
-    std::bind(&WmxCoreMotionNode::setHoming, this, _1, _2),
+  startHomeService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/start_home",
+    std::bind(&WmxCoreMotionNode::startHomeCallback, this, _1, _2),
     rclcpp::ServicesQoS(), homing_cb_group_);
 
-  stopAxisService_ = this->create_service<wmx_r2_message::srv::SetAxis>(
-    "wmx/axis/stop",
-    std::bind(&WmxCoreMotionNode::stopAxes, this, _1, _2));
+  stopAxisService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/stop",
+    std::bind(&WmxCoreMotionNode::stopAxisCallback, this, _1, _2));
 
   jogTimeoutMs_ = this->declare_parameter("jog_timeout_ms", 200.0);
   jogRunTimeMs_ = this->declare_parameter("jog_run_time_ms", 2000.0);
   jogJerkRatio_ = this->declare_parameter("jog_jerk_ratio", 0.75);
 
-  loadParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
-    "wmx/params/load",
-    std::bind(&WmxCoreMotionNode::loadWmxParams, this, _1, _2));
+  loadWmxParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
+    "wmx/core_motion/load_wmx_params",
+    std::bind(&WmxCoreMotionNode::loadWmxParamsCallback, this, _1, _2));
 
-  getParamsService_ = this->create_service<wmx_r2_message::srv::GetWmxParams>(
-    "wmx/params/get",
-    std::bind(&WmxCoreMotionNode::getWmxParams, this, _1, _2));
+  getWmxParamsService_ = this->create_service<wmx_r2_message::srv::GetWmxParams>(
+    "wmx/core_motion/get_wmx_params",
+    std::bind(&WmxCoreMotionNode::getWmxParamsCallback, this, _1, _2));
 
   RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node waiting for engine...");
 }
 
 WmxCoreMotionNode::~WmxCoreMotionNode()
 {
-  if (axisStateTimer_) {
-    axisStateTimer_->cancel();
+  if (axesStatusTimer_) {
+    axesStatusTimer_->cancel();
   }
   if (jogWatchdogTimer_) {
     jogWatchdogTimer_->cancel();
@@ -139,33 +139,33 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
     axisCount_ += engineStatus_.interrupts[i].numOfAxes;
   }
   if (axisCount_ <= 0) {
-    RCLCPP_WARN(this->get_logger(), "Engine reported 0 axes; axis state will be empty.");
+    RCLCPP_WARN(this->get_logger(), "Engine reported 0 axes; axes status will be empty.");
   }
 
   wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
 
-  axisStatePub_ = this->create_publisher<wmx_r2_message::msg::AxisState>(
-    "wmx/axis/state", 1);
+  axesStatusPub_ = this->create_publisher<wmx_r2_message::msg::AxesStatus>(
+    "wmx/axes/status", 1);
 
-  axisVelSub_ = this->create_subscription<wmx_r2_message::msg::AxisVelocity>(
-    "wmx/axis/velocity", 1,
-    std::bind(&WmxCoreMotionNode::axisVelCallback, this, _1));
+  startVelSub_ = this->create_subscription<wmx_r2_message::msg::AxesVelocity>(
+    "wmx/axes/start_vel", 1,
+    std::bind(&WmxCoreMotionNode::startVelCallback, this, _1));
 
-  axisPoseSub_ = this->create_subscription<wmx_r2_message::msg::AxisPose>(
-    "wmx/axis/position", 1,
-    std::bind(&WmxCoreMotionNode::axisPoseCallback, this, _1));
+  startPosSub_ = this->create_subscription<wmx_r2_message::msg::AxesPose>(
+    "wmx/axes/start_pos", 1,
+    std::bind(&WmxCoreMotionNode::startPosCallback, this, _1));
 
-  axisPoseRelativeSub_ = this->create_subscription<wmx_r2_message::msg::AxisPose>(
-    "wmx/axis/position/relative", 1,
-    std::bind(&WmxCoreMotionNode::axisPoseRelativeCallback, this, _1));
+  startMovSub_ = this->create_subscription<wmx_r2_message::msg::AxesPose>(
+    "wmx/axes/start_mov", 1,
+    std::bind(&WmxCoreMotionNode::startMovCallback, this, _1));
 
-  axisJogSub_ = this->create_subscription<wmx_r2_message::msg::AxisVelocity>(
-    "wmx/axis/jog", 1,
-    std::bind(&WmxCoreMotionNode::axisJogCallback, this, _1));
+  startJogSub_ = this->create_subscription<wmx_r2_message::msg::AxesVelocity>(
+    "wmx/axes/start_jog", 1,
+    std::bind(&WmxCoreMotionNode::startJogCallback, this, _1));
 
-  axisStateTimer_ = this->create_wall_timer(
+  axesStatusTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / rate_),
-    std::bind(&WmxCoreMotionNode::axisStateStep, this));
+    std::bind(&WmxCoreMotionNode::axesStatusStep, this));
 
   jogWatchdogTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(20),
@@ -183,53 +183,53 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
     this->get_logger(), "wmx_core_motion_node is ready (%d axes, 100 Hz)", axisCount_);
 }
 
-void WmxCoreMotionNode::axisStateStep()
+void WmxCoreMotionNode::axesStatusStep()
 {
-  axisStateMsg_.amp_alarm.clear();
-  axisStateMsg_.servo_on.clear();
-  axisStateMsg_.home_done.clear();
-  axisStateMsg_.motion_complete.clear();
-  axisStateMsg_.negative_ls.clear();
-  axisStateMsg_.positive_ls.clear();
-  axisStateMsg_.home_switch.clear();
-  axisStateMsg_.pos_cmd.clear();
-  axisStateMsg_.velocity_cmd.clear();
-  axisStateMsg_.actual_pos.clear();
-  axisStateMsg_.actual_velocity.clear();
-  axisStateMsg_.actual_torque.clear();
+  axesStatusMsg_.amp_alarms.clear();
+  axesStatusMsg_.servo_on.clear();
+  axesStatusMsg_.home_done.clear();
+  axesStatusMsg_.motion_complete.clear();
+  axesStatusMsg_.negative_ls.clear();
+  axesStatusMsg_.positive_ls.clear();
+  axesStatusMsg_.home_switch.clear();
+  axesStatusMsg_.position_commands.clear();
+  axesStatusMsg_.velocity_commands.clear();
+  axesStatusMsg_.actual_positions.clear();
+  axesStatusMsg_.actual_velocities.clear();
+  axesStatusMsg_.actual_torques.clear();
 
-  axisStateMsg_.header.stamp = this->now();
-  axisStateMsg_.header.frame_id = "base_link";
+  axesStatusMsg_.header.stamp = this->now();
+  axesStatusMsg_.header.frame_id = "base_link";
 
   wmx3LibCm_->GetStatus(&cmStatus_);
 
   for (int i = 0; i < axisCount_; ++i) {
-    axisStateMsg_.amp_alarm.push_back(cmStatus_.axesStatus[i].ampAlarm);
-    axisStateMsg_.servo_on.push_back(cmStatus_.axesStatus[i].servoOn);
-    axisStateMsg_.home_done.push_back(cmStatus_.axesStatus[i].homeDone);
-    axisStateMsg_.motion_complete.push_back(cmStatus_.axesStatus[i].motionComplete);
-    axisStateMsg_.negative_ls.push_back(cmStatus_.axesStatus[i].negativeLS);
-    axisStateMsg_.positive_ls.push_back(cmStatus_.axesStatus[i].positiveLS);
-    axisStateMsg_.home_switch.push_back(cmStatus_.axesStatus[i].homeSwitch);
-    axisStateMsg_.pos_cmd.push_back(cmStatus_.axesStatus[i].posCmd);
-    axisStateMsg_.velocity_cmd.push_back(cmStatus_.axesStatus[i].velocityCmd);
-    axisStateMsg_.actual_pos.push_back(cmStatus_.axesStatus[i].actualPos);
-    axisStateMsg_.actual_velocity.push_back(cmStatus_.axesStatus[i].actualVelocity);
-    axisStateMsg_.actual_torque.push_back(cmStatus_.axesStatus[i].actualTorque);
+    axesStatusMsg_.amp_alarms.push_back(cmStatus_.axesStatus[i].ampAlarm);
+    axesStatusMsg_.servo_on.push_back(cmStatus_.axesStatus[i].servoOn);
+    axesStatusMsg_.home_done.push_back(cmStatus_.axesStatus[i].homeDone);
+    axesStatusMsg_.motion_complete.push_back(cmStatus_.axesStatus[i].motionComplete);
+    axesStatusMsg_.negative_ls.push_back(cmStatus_.axesStatus[i].negativeLS);
+    axesStatusMsg_.positive_ls.push_back(cmStatus_.axesStatus[i].positiveLS);
+    axesStatusMsg_.home_switch.push_back(cmStatus_.axesStatus[i].homeSwitch);
+    axesStatusMsg_.position_commands.push_back(cmStatus_.axesStatus[i].posCmd);
+    axesStatusMsg_.velocity_commands.push_back(cmStatus_.axesStatus[i].velocityCmd);
+    axesStatusMsg_.actual_positions.push_back(cmStatus_.axesStatus[i].actualPos);
+    axesStatusMsg_.actual_velocities.push_back(cmStatus_.axesStatus[i].actualVelocity);
+    axesStatusMsg_.actual_torques.push_back(cmStatus_.axesStatus[i].actualTorque);
   }
-  axisStatePub_->publish(axisStateMsg_);
+  axesStatusPub_->publish(axesStatusMsg_);
 }
 
-void WmxCoreMotionNode::axisPoseCallback(const wmx_r2_message::msg::AxisPose::SharedPtr msg)
+void WmxCoreMotionNode::startPosCallback(const wmx_r2_message::msg::AxesPose::SharedPtr msg)
 {
-  size_t axis_count = msg->index.size();
+  size_t axis_count = msg->indices.size();
   for (size_t i = 0; i < axis_count; i++) {
-    position_.axis = msg->index[i];
-    position_.target = msg->target[i];
-    position_.profile.velocity = msg->velocity[i];
+    position_.axis = msg->indices[i];
+    position_.target = msg->positions[i];
+    position_.profile.velocity = msg->velocities[i];
     position_.profile.type = ProfileType::T::Trapezoidal;
-    position_.profile.acc = msg->acc[i];
-    position_.profile.dec = msg->dec[i];
+    position_.profile.acc = msg->accelerations[i];
+    position_.profile.dec = msg->decelerations[i];
 
     err_ = wmx3LibCm_->motion->StartPos(&position_);
     if (err_ != ErrorCode::None) {
@@ -237,22 +237,22 @@ void WmxCoreMotionNode::axisPoseCallback(const wmx_r2_message::msg::AxisPose::Sh
       RCLCPP_ERROR(
         this->get_logger(),
         "Failed to move position motor %d. Error=%d (%s)",
-        msg->index[i], err_, errString_);
+        msg->indices[i], err_, errString_);
     }
   }
 }
 
-void WmxCoreMotionNode::axisPoseRelativeCallback(
-  const wmx_r2_message::msg::AxisPose::SharedPtr msg)
+void WmxCoreMotionNode::startMovCallback(
+  const wmx_r2_message::msg::AxesPose::SharedPtr msg)
 {
-  size_t axis_count = msg->index.size();
+  size_t axis_count = msg->indices.size();
   for (size_t i = 0; i < axis_count; i++) {
-    position_.axis = msg->index[i];
-    position_.target = msg->target[i];
-    position_.profile.velocity = msg->velocity[i];
+    position_.axis = msg->indices[i];
+    position_.target = msg->positions[i];
+    position_.profile.velocity = msg->velocities[i];
     position_.profile.type = ProfileType::T::Trapezoidal;
-    position_.profile.acc = msg->acc[i];
-    position_.profile.dec = msg->dec[i];
+    position_.profile.acc = msg->accelerations[i];
+    position_.profile.dec = msg->decelerations[i];
 
     err_ = wmx3LibCm_->motion->StartMov(&position_);
     if (err_ != ErrorCode::None) {
@@ -260,20 +260,20 @@ void WmxCoreMotionNode::axisPoseRelativeCallback(
       RCLCPP_ERROR(
         this->get_logger(),
         "Failed to move relative motor %d. Error=%d (%s)",
-        msg->index[i], err_, errString_);
+        msg->indices[i], err_, errString_);
     }
   }
 }
 
-void WmxCoreMotionNode::axisVelCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg)
+void WmxCoreMotionNode::startVelCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg)
 {
-  size_t axis_count = msg->index.size();
+  size_t axis_count = msg->indices.size();
   for (size_t i = 0; i < axis_count; i++) {
-    velocity_.axis = msg->index[i];
-    velocity_.profile.velocity = msg->velocity[i];
+    velocity_.axis = msg->indices[i];
+    velocity_.profile.velocity = msg->velocities[i];
     velocity_.profile.type = ProfileType::T::Trapezoidal;
-    velocity_.profile.acc = msg->acc[i];
-    velocity_.profile.dec = msg->dec[i];
+    velocity_.profile.acc = msg->accelerations[i];
+    velocity_.profile.dec = msg->decelerations[i];
 
     err_ = wmx3LibCm_->velocity->StartVel(&velocity_);
     if (err_ != ErrorCode::None) {
@@ -281,7 +281,7 @@ void WmxCoreMotionNode::axisVelCallback(const wmx_r2_message::msg::AxisVelocity:
       RCLCPP_ERROR(
         this->get_logger(),
         "Failed to move velocity motor %d. Error=%d (%s)",
-        msg->index[i], err_, errString_);
+        msg->indices[i], err_, errString_);
     }
   }
 }
@@ -289,7 +289,7 @@ void WmxCoreMotionNode::axisVelCallback(const wmx_r2_message::msg::AxisVelocity:
 // Jog command. The publisher (keyboard/joystick teleop, CLI, ...) must keep
 // republishing while the operator holds the control; jogWatchdogStep() stops
 // the axis once refreshes stop arriving. Velocity sign selects the direction.
-void WmxCoreMotionNode::axisJogCallback(const wmx_r2_message::msg::AxisVelocity::SharedPtr msg)
+void WmxCoreMotionNode::startJogCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg)
 {
   if (!initialized_) {
     RCLCPP_WARN_THROTTLE(
@@ -298,10 +298,10 @@ void WmxCoreMotionNode::axisJogCallback(const wmx_r2_message::msg::AxisVelocity:
     return;
   }
 
-  const size_t axis_count = msg->index.size();
-  if (msg->velocity.size() != axis_count ||
-    msg->acc.size() != axis_count ||
-    msg->dec.size() != axis_count)
+  const size_t axis_count = msg->indices.size();
+  if (msg->velocities.size() != axis_count ||
+    msg->accelerations.size() != axis_count ||
+    msg->decelerations.size() != axis_count)
   {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
@@ -314,8 +314,8 @@ void WmxCoreMotionNode::axisJogCallback(const wmx_r2_message::msg::AxisVelocity:
     static_cast<int64_t>(jogTimeoutMs_ * 1e6));
 
   for (size_t i = 0; i < axis_count; ++i) {
-    const int axis = msg->index[i];
-    const double velocity = msg->velocity[i];
+    const int axis = msg->indices[i];
+    const double velocity = msg->velocities[i];
 
     if (velocity == 0.0) {
       std::lock_guard<std::mutex> lock(jogMutex_);
@@ -342,11 +342,11 @@ void WmxCoreMotionNode::axisJogCallback(const wmx_r2_message::msg::AxisVelocity:
     // Same profile WOS uses for its jog buttons. A run time requires a
     // time-based profile: Trapezoidal is rejected with ProfileTypeNotSupported.
     // acc/dec stay accelerations on the wire and are converted to ramp times
-    // here, so AxisVelocity keeps the same meaning as on wmx/axis/velocity.
-    const double accTimeMs = (msg->acc[i] > 0.0) ?
-      std::abs(velocity) / msg->acc[i] * 1000.0 : 0.0;
-    const double decTimeMs = (msg->dec[i] > 0.0) ?
-      std::abs(velocity) / msg->dec[i] * 1000.0 : 0.0;
+    // here, so AxesVelocity keeps the same meaning as on wmx/axes/start_vel.
+    const double accTimeMs = (msg->accelerations[i] > 0.0) ?
+      std::abs(velocity) / msg->accelerations[i] * 1000.0 : 0.0;
+    const double decTimeMs = (msg->decelerations[i] > 0.0) ?
+      std::abs(velocity) / msg->decelerations[i] * 1000.0 : 0.0;
 
     wmx3Api::Motion::JogCommand jogCommand = wmx3Api::Motion::JogCommand();
     jogCommand.axis = axis;
@@ -427,9 +427,9 @@ int WmxCoreMotionNode::stopAxis(int axis)
   return err;
 }
 
-void WmxCoreMotionNode::stopAxes(
-  const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
-  std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
+void WmxCoreMotionNode::stopAxisCallback(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
   if (!initialized_) {
     response->success = false;
@@ -440,8 +440,8 @@ void WmxCoreMotionNode::stopAxes(
   bool all_success = true;
   std::stringstream msg_stream;
 
-  for (size_t i = 0; i < request->index.size(); ++i) {
-    const int axis = request->index[i];
+  for (size_t i = 0; i < request->indices.size(); ++i) {
+    const int axis = request->indices[i];
 
     {
       std::lock_guard<std::mutex> lock(jogMutex_);
@@ -464,9 +464,9 @@ void WmxCoreMotionNode::stopAxes(
   response->message = msg_stream.str();
 }
 
-void WmxCoreMotionNode::setAxisOn(
-  const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
-  std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
+void WmxCoreMotionNode::setServoOnCallback(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
   if (!initialized_) {
     response->success = false;
@@ -477,8 +477,8 @@ void WmxCoreMotionNode::setAxisOn(
   bool all_success = true;
   std::stringstream msg_stream;
 
-  for (size_t i = 0; i < request->index.size(); ++i) {
-    int axis_index = request->index[i];
+  for (size_t i = 0; i < request->indices.size(); ++i) {
+    int axis_index = request->indices[i];
     int on_off = request->data[i];
 
     err_ = wmx3LibCm_->axisControl->SetServoOn(axis_index, on_off, 1000);
@@ -503,9 +503,9 @@ void WmxCoreMotionNode::setAxisOn(
   response->message = msg_stream.str();
 }
 
-void WmxCoreMotionNode::setAxisMode(
-  const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
-  std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
+void WmxCoreMotionNode::setAxisCommandModeCallback(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
   if (!initialized_) {
     response->success = false;
@@ -516,8 +516,8 @@ void WmxCoreMotionNode::setAxisMode(
   bool all_success = true;
   std::stringstream msg_stream;
 
-  for (size_t i = 0; i < request->index.size(); ++i) {
-    int axis_index = request->index[i];
+  for (size_t i = 0; i < request->indices.size(); ++i) {
+    int axis_index = request->indices[i];
     int mode_value = request->data[i];
 
     if (mode_value == 0) {
@@ -556,9 +556,9 @@ void WmxCoreMotionNode::setAxisMode(
   response->message = msg_stream.str();
 }
 
-void WmxCoreMotionNode::clearAlarm(
-  const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
-  std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
+void WmxCoreMotionNode::clearAmpAlarmCallback(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
   if (!initialized_) {
     response->success = false;
@@ -569,18 +569,18 @@ void WmxCoreMotionNode::clearAlarm(
   bool all_success = true;
   std::stringstream msg_stream;
 
-  for (size_t i = 0; i < request->index.size(); ++i) {
-    err_ = wmx3LibCm_->axisControl->ClearAmpAlarm(request->index[i]);
+  for (size_t i = 0; i < request->indices.size(); ++i) {
+    err_ = wmx3LibCm_->axisControl->ClearAmpAlarm(request->indices[i]);
     if (err_ != ErrorCode::None) {
       wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
       snprintf(
         buffer_, sizeof(buffer_),
         "Failed to clear alarm axis %d. Error=%d (%s)",
-        request->index[i], err_, errString_);
+        request->indices[i], err_, errString_);
       RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
       all_success = false;
     } else {
-      snprintf(buffer_, sizeof(buffer_), "Cleared alarm axis %d", request->index[i]);
+      snprintf(buffer_, sizeof(buffer_), "Cleared alarm axis %d", request->indices[i]);
       RCLCPP_INFO(this->get_logger(), "%s", buffer_);
     }
     msg_stream << buffer_ << "; ";
@@ -590,9 +590,9 @@ void WmxCoreMotionNode::clearAlarm(
   response->message = msg_stream.str();
 }
 
-void WmxCoreMotionNode::setAxisPolarity(
-  const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
-  std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
+void WmxCoreMotionNode::setAxisPolarityCallback(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
   if (!initialized_) {
     response->success = false;
@@ -603,27 +603,27 @@ void WmxCoreMotionNode::setAxisPolarity(
   bool all_success = true;
   std::stringstream msg_stream;
 
-  for (size_t i = 0; i < request->index.size(); ++i) {
+  for (size_t i = 0; i < request->indices.size(); ++i) {
     if (request->data[i] != 1 && request->data[i] != -1) {
       snprintf(
         buffer_, sizeof(buffer_),
         "Invalid polarity value for axis %d: %d",
-        request->index[i], request->data[i]);
+        request->indices[i], request->data[i]);
       RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
       msg_stream << buffer_ << "; ";
       all_success = false;
       continue;
     }
 
-    err_ = wmx3LibCm_->config->SetAxisPolarity(request->index[i], request->data[i]);
+    err_ = wmx3LibCm_->config->SetAxisPolarity(request->indices[i], request->data[i]);
     if (err_ != ErrorCode::None) {
       snprintf(
         buffer_, sizeof(buffer_),
-        "Failed to set polarity on axis %d", request->index[i]);
+        "Failed to set polarity on axis %d", request->indices[i]);
       RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
       all_success = false;
     } else {
-      snprintf(buffer_, sizeof(buffer_), "Set polarity on axis %d", request->index[i]);
+      snprintf(buffer_, sizeof(buffer_), "Set polarity on axis %d", request->indices[i]);
       RCLCPP_INFO(this->get_logger(), "%s", buffer_);
     }
     msg_stream << buffer_ << "; ";
@@ -633,9 +633,9 @@ void WmxCoreMotionNode::setAxisPolarity(
   response->message = msg_stream.str();
 }
 
-void WmxCoreMotionNode::setAxisGearRatio(
-  const std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Request> request,
-  std::shared_ptr<wmx_r2_message::srv::SetAxisGearRatio::Response> response)
+void WmxCoreMotionNode::setGearRatioCallback(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxesGearRatio::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxesGearRatio::Response> response)
 {
   if (!initialized_) {
     response->success = false;
@@ -646,17 +646,17 @@ void WmxCoreMotionNode::setAxisGearRatio(
   bool all_success = true;
   std::stringstream msg_stream;
 
-  for (size_t i = 0; i < request->index.size(); ++i) {
+  for (size_t i = 0; i < request->indices.size(); ++i) {
     err_ = wmx3LibCm_->config->SetGearRatio(
-      request->index[i], request->numerator[i], request->denominator[i]);
+      request->indices[i], request->numerators[i], request->denominators[i]);
     if (err_ != ErrorCode::None) {
       all_success = false;
       snprintf(
         buffer_, sizeof(buffer_),
-        "Failed to set gear ratio on axis %d", request->index[i]);
+        "Failed to set gear ratio on axis %d", request->indices[i]);
       RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
     } else {
-      snprintf(buffer_, sizeof(buffer_), "Set gear ratio on axis %d", request->index[i]);
+      snprintf(buffer_, sizeof(buffer_), "Set gear ratio on axis %d", request->indices[i]);
       RCLCPP_INFO(this->get_logger(), "%s", buffer_);
     }
     msg_stream << buffer_ << "; ";
@@ -665,11 +665,11 @@ void WmxCoreMotionNode::setAxisGearRatio(
   response->success = all_success;
   response->message = msg_stream.str();
 }
-// ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis \
-//   "{index: [0, 1], data: [0, 0]}"
-void WmxCoreMotionNode::setHoming(
-  const std::shared_ptr<wmx_r2_message::srv::SetAxis::Request> request,
-  std::shared_ptr<wmx_r2_message::srv::SetAxis::Response> response)
+// ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes \
+//   "{indices: [0, 1], data: [0, 0]}"
+void WmxCoreMotionNode::startHomeCallback(
+  const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
   if (!initialized_) {
     response->success = false;
@@ -680,23 +680,23 @@ void WmxCoreMotionNode::setHoming(
   bool all_success = true;
   std::stringstream msg_stream;
 
-  for (size_t i = 0; i < request->index.size(); ++i) {
-    wmx3LibCm_->config->GetHomeParam(request->index[i], &homeParam_);
+  for (size_t i = 0; i < request->indices.size(); ++i) {
+    wmx3LibCm_->config->GetHomeParam(request->indices[i], &homeParam_);
     homeParam_.homeType = Config::HomeType::CurrentPos;
-    wmx3LibCm_->config->SetHomeParam(request->index[i], &homeParam_);
-    wmx3LibCm_->home->StartHome(request->index[i]);
-    err_ = wmx3LibCm_->motion->Wait(request->index[i]);
+    wmx3LibCm_->config->SetHomeParam(request->indices[i], &homeParam_);
+    wmx3LibCm_->home->StartHome(request->indices[i]);
+    err_ = wmx3LibCm_->motion->Wait(request->indices[i]);
 
     if (err_ != ErrorCode::None) {
       wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
       snprintf(
         buffer_, sizeof(buffer_),
         "Failed to home axis %d. Error=%d (%s)",
-        request->index[i], err_, errString_);
+        request->indices[i], err_, errString_);
       RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
       all_success = false;
     } else {
-      snprintf(buffer_, sizeof(buffer_), "Homed axis %d", request->index[i]);
+      snprintf(buffer_, sizeof(buffer_), "Homed axis %d", request->indices[i]);
       RCLCPP_INFO(this->get_logger(), "%s", buffer_);
     }
     msg_stream << buffer_ << "; ";
@@ -706,7 +706,7 @@ void WmxCoreMotionNode::setHoming(
   response->message = msg_stream.str();
 }
 
-void WmxCoreMotionNode::loadWmxParams(
+void WmxCoreMotionNode::loadWmxParamsCallback(
   const std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Request> request,
   std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Response> response)
 {
@@ -735,7 +735,7 @@ void WmxCoreMotionNode::loadWmxParams(
   }
 }
 
-void WmxCoreMotionNode::getWmxParams(
+void WmxCoreMotionNode::getWmxParamsCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Response> response)
 {
@@ -752,7 +752,7 @@ void WmxCoreMotionNode::getWmxParams(
   wmx3LibCm_->config->GetAxisParam(&axisParam);
 
   auto & lines = response->params_dump;
-  for (int32_t i : request->index) {
+  for (int32_t i : request->indices) {
     lines.push_back("=== Axis " + std::to_string(i) + " ===");
 
     lines.push_back("[AxisParam]");

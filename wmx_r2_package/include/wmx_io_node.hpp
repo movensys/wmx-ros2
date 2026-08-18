@@ -49,22 +49,22 @@ private:
 
   void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
 
-  void getInputBit(
+  void getInputBitCallback(
     const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
     std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response);
-  void getOutputBit(
+  void getOutputBitCallback(
     const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
     std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response);
-  void getInputBytes(
+  void getInputBytesCallback(
     const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
     std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response);
-  void getOutputBytes(
+  void getOutputBytesCallback(
     const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
     std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response);
-  void setOutputBit(
+  void setOutputBitCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetIoBit::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetIoBit::Response> response);
-  void setOutputBytes(
+  void setOutputBytesCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Response> response);
 };

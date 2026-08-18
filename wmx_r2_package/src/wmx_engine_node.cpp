@@ -9,7 +9,7 @@ using std::placeholders::_1;
 using std::placeholders::_2;
 
 WmxEngineNode::WmxEngineNode()
-: Node("wmx_engine_node"), wmx3Lib_Ecat_(&wmx3Lib_)
+: Node("wmx_engine_node")
 {
   this->declare_parameter<int>("engine_core", -1);
   this->declare_parameter<int64_t>("engine_affinity_mask", 0);
@@ -18,20 +18,16 @@ WmxEngineNode::WmxEngineNode()
   engineReadyPub_ = this->create_publisher<std_msgs::msg::Bool>("wmx/engine/ready", ready_qos);
 
   setEngineService_ = this->create_service<wmx_r2_message::srv::SetEngine>(
-    "wmx/engine/set_device",
-    std::bind(&WmxEngineNode::setEngine, this, _1, _2));
+    "wmx/engine/set_engine",
+    std::bind(&WmxEngineNode::setEngineCallback, this, _1, _2));
 
   setCommService_ = this->create_service<std_srvs::srv::SetBool>(
     "wmx/engine/set_comm",
-    std::bind(&WmxEngineNode::setComm, this, _1, _2));
+    std::bind(&WmxEngineNode::setCommCallback, this, _1, _2));
 
   getEngineStatusService_ = this->create_service<std_srvs::srv::Trigger>(
-    "wmx/engine/get_status",
-    std::bind(&WmxEngineNode::getEngineStatus, this, _1, _2));
-
-  scanNetworkService_ = this->create_service<std_srvs::srv::Trigger>(
-    "wmx/engine/scan_network",
-    std::bind(&WmxEngineNode::scanNetwork, this, _1, _2));
+    "wmx/engine/get_engine_status",
+    std::bind(&WmxEngineNode::getEngineStatusCallback, this, _1, _2));
 
   readyTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000),
@@ -169,7 +165,7 @@ void WmxEngineNode::stopEngine()
   }
 }
 
-void WmxEngineNode::getEngineStatus(
+void WmxEngineNode::getEngineStatusCallback(
   const std::shared_ptr<std_srvs::srv::Trigger::Request>/*request*/,
   std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
@@ -196,38 +192,7 @@ void WmxEngineNode::getEngineStatus(
   response->message = status_str;
 }
 
-void WmxEngineNode::scanNetwork(
-  const std::shared_ptr<std_srvs::srv::Trigger::Request>/*request*/,
-  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-{
-  if (!startComplete_) {
-    response->success = false;
-    response->message = "Engine startup in progress";
-    return;
-  }
-
-  int err;
-  char ecErrString[256];
-  char buffer[512];
-  const int masterId = 0;
-  err = wmx3Lib_Ecat_.ScanNetwork(masterId);
-
-  if (err != wmx3Api::ErrorCode::None) {
-    wmx3Api::ecApi::Ecat::ErrorToString(err, ecErrString, sizeof(ecErrString));
-    snprintf(
-      buffer, sizeof(buffer),
-      "Failed to scan network. Error=%d (%s)", err, ecErrString);
-    RCLCPP_ERROR(this->get_logger(), "%s", buffer);
-    response->success = false;
-    response->message = std::string(buffer);
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Scan network operation done!");
-    response->success = true;
-    response->message = "Scan network operation done!";
-  }
-}
-
-void WmxEngineNode::setComm(
+void WmxEngineNode::setCommCallback(
   const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
   std::shared_ptr<std_srvs::srv::SetBool::Response> response)
 {
@@ -280,7 +245,7 @@ void WmxEngineNode::setComm(
   }
 }
 
-void WmxEngineNode::setEngine(
+void WmxEngineNode::setEngineCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetEngine::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetEngine::Response> response)
 {
