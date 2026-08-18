@@ -97,6 +97,13 @@ constexpr int kFaultBackoffMaxShift = 4;
 // buffer and succeeds even when every block is failing at execution time. Only
 // elapsed time with the channel still Active proves the engine is consuming.
 constexpr auto kHealthyStreamTime = std::chrono::seconds(1);
+
+// A Stop state read within this window of Execute is not trusted. GetStatus is
+// cyclic, so the first poll after Execute can still be reporting the Stop that
+// the preceding Halt/Clear left behind. Long enough to cover several engine
+// cycles and the pump's own 25 ms cadence, short enough that a genuine
+// error-free Stop (an external Halt, say) is still caught promptly.
+constexpr auto kStatusSettleTime = std::chrono::milliseconds(50);
 }  // namespace
 
 class ServoStreamController : public rclcpp::Node
@@ -734,6 +741,13 @@ void ServoStreamController::endStream(const char * reason, bool controlled_stop)
   streaming_ = false;
   haveLastTarget_ = false;
 
+  // The pump only writes observedDepth_ on its success path, so without this
+  // the depth topic keeps republishing the last in-flight count for as long as
+  // the stream stays down -- reporting a healthy backlog at exactly the moment
+  // the buffer is empty and the axes have stopped. Nothing is in flight past
+  // the Clear below, so say so.
+  observedDepth_.store(0);
+
   abCtl_->Halt(channelMotion_);
   abCtl_->Clear(channelMotion_);
 
@@ -856,24 +870,49 @@ void ServoStreamController::pumpLoop()
     }
 
     if (st.state == ApiBufferState::Stop) {
-      // stopOnError tripped, or the watch fired.
+      // A Stop with nothing recorded against it is not a fault: since GetStatus
+      // is one cycle stale, the first poll after Execute reads back the Stop
+      // that endStream's Halt left behind. Faulting on that tears down the
+      // stream 30 us after starting it, Halt/Clear/Stops the axes on nothing,
+      // and escalates the backoff -- so the next attempt is delayed on evidence
+      // that was never there. Let the status catch up instead.
+      const bool recorded_error = st.watchError || st.errorCount > 0;
+      if (!recorded_error &&
+        std::chrono::steady_clock::now() - streamStartedAt_ < kStatusSettleTime)
+      {
+        continue;
+      }
+
       ++consecutiveFaults_;
       const auto backoff = std::min(
         kFaultBackoffMax,
         kFaultBackoffBase * (1 << std::min(consecutiveFaults_ - 1, kFaultBackoffMaxShift)));
       faultUntil_ = std::chrono::steady_clock::now() + backoff;
 
+      // watchErrorCode only means anything when watchError is set, and
+      // "stopOnError" was a guess at the cause rather than a reading of it.
+      // Name what the device recorded: the watch, the block that failed (error
+      // log index 0 is newest), or nothing at all.
+      char cause[320];
       if (st.watchError) {
         wmxCtl_.ErrorToString(st.watchErrorCode, errString_, sizeof(errString_));
+        snprintf(
+          cause, sizeof(cause), "watch fired on axis %d, code %d (%s)",
+          st.watchErrorAxis, st.watchErrorCode, errString_);
+      } else if (st.errorCount > 0) {
+        wmxCtl_.ErrorToString(st.errorLog[0].errorCode, errString_, sizeof(errString_));
+        snprintf(
+          cause, sizeof(cause), "block %lld failed, code %d (%s)",
+          static_cast<long long>(st.errorLog[0].execBlockNumber),
+          st.errorLog[0].errorCode, errString_);
       } else {
-        snprintf(errString_, sizeof(errString_), "stopOnError");
+        snprintf(
+          cause, sizeof(cause), "no error recorded, channel never left Stop after Execute");
       }
       RCLCPP_ERROR_THROTTLE(
         this->get_logger(), *this->get_clock(), 1000,
-        "Motion channel stopped (errors=%lld watchError=%d axis=%d code=%d (%s)); "
-        "fault %d, holding off %ld ms",
-        st.errorCount, st.watchError ? 1 : 0, st.watchErrorAxis, st.watchErrorCode,
-        errString_, consecutiveFaults_, static_cast<long>(backoff.count()));
+        "Motion channel stopped (%s; errors=%lld); fault %d, holding off %ld ms",
+        cause, st.errorCount, consecutiveFaults_, static_cast<long>(backoff.count()));
 
       endStream("channel stopped", true);
       continue;
