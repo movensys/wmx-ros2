@@ -42,6 +42,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -81,6 +82,21 @@ namespace
 constexpr int kBlocksPerSetpoint = 2;      // StartLinearIntplPos + USleep
 constexpr auto kPumpIdleWait = std::chrono::milliseconds(5);
 constexpr auto kStatusPollPeriod = std::chrono::milliseconds(100);   // ~10 Hz
+
+// Backoff after the motion channel stops on a fault. Without this the pump
+// re-Executes on the very next setpoint, so a PERSISTENT fault (servo off, for
+// one) becomes a 40 Hz Clear/Execute/Stop storm against the engine that never
+// gives up. Doubles per consecutive fault, capped, and resets the moment a
+// setpoint records successfully — so a transient trip still recovers promptly.
+constexpr auto kFaultBackoffBase = std::chrono::milliseconds(500);
+constexpr auto kFaultBackoffMax = std::chrono::milliseconds(5000);
+constexpr int kFaultBackoffMaxShift = 4;
+
+// How long a stream must survive before the fault history is forgiven. A
+// recorded block is NOT evidence of health: recordSetpoint only writes into the
+// buffer and succeeds even when every block is failing at execution time. Only
+// elapsed time with the channel still Active proves the engine is consuming.
+constexpr auto kHealthyStreamTime = std::chrono::seconds(1);
 }  // namespace
 
 class ServoStreamController : public rclcpp::Node
@@ -143,6 +159,10 @@ private:
                                               // GetCumulativeBlockCount
   long long lastErrorCount_ = 0;             // ApiBufferStatus::errorCount is long long
 
+  int consecutiveFaults_ = 0;                       // channel stops without progress
+  std::chrono::steady_clock::time_point faultUntil_{};   // suppress restarts until
+  std::chrono::steady_clock::time_point streamStartedAt_{};
+
   std::atomic<bool> inExecution_{false};      // move_group owns the arm
   std::atomic<bool> running_{true};
   std::atomic<int> observedDepth_{0};
@@ -164,7 +184,10 @@ private:
   void jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
   void runInitSequence();
   bool attachDevice(WMX3Api * lib, const char * name);
+  bool createBuffer(int channel, int size_mb, const char * what);
+  void teardownPartialInit();
   bool check(int err, const char * what);
+  void blockErrorToString(int code, char * buf, size_t size);
   bool setupBuffers();
   void recordEstopRoutine();
 
@@ -216,7 +239,11 @@ ServoStreamController::~ServoStreamController()
     }
     if (cmCtl_) {
       cmCtl_->motion->Stop(&axisSel_);
-      cmCtl_->motion->Wait(&axisSel_);
+      // Bounded. The no-timeout Wait can block indefinitely if an axis never
+      // reaches rest (servo off, alarm), and a shutdown that hangs here never
+      // reaches FreeApiBuffer below — leaving the channels allocated in the
+      // engine so the NEXT run fails with "Queue ID is already used".
+      cmCtl_->motion->Wait(&axisSel_, 2000);
     }
     if (abCtl_ && bufferCreated_) {
       abCtl_->FreeApiBuffer(channelMotion_);
@@ -323,6 +350,24 @@ bool ServoStreamController::check(int err, const char * what)
   return false;
 }
 
+// A block error comes from the recorded command itself (StartLinearIntplPos),
+// so it carries a CoreMotion error code, NOT an ApiBuffer one. Decoding it with
+// ApiBuffer::ErrorToString yields an empty string — on the bench, code 65556
+// printed as "()". Try CoreMotion first, fall back to ApiBuffer, then admit
+// defeat rather than printing an empty pair of brackets.
+void ServoStreamController::blockErrorToString(int code, char * buf, size_t size)
+{
+  const auto n = static_cast<unsigned int>(size);
+  buf[0] = '\0';
+  CoreMotion::ErrorToString(code, buf, n);
+  if (buf[0] == '\0') {
+    ApiBuffer::ErrorToString(code, buf, n);
+  }
+  if (buf[0] == '\0') {
+    snprintf(buf, size, "unrecognised code");
+  }
+}
+
 void ServoStreamController::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
 {
   if (!msg->data || initialized_ || initializing_.exchange(true)) {
@@ -386,19 +431,70 @@ void ServoStreamController::recordEstopRoutine()
   RCLCPP_INFO(this->get_logger(), "Recorded e-stop routine into channel %d", channelEstop_);
 }
 
+// API buffers are engine-side and outlive the client process, so a controller
+// that died without freeing them leaves the channel allocated and the next run
+// gets "Queue ID is already used". Reclaim the channel instead of making the
+// operator restart the whole engine.
+bool ServoStreamController::createBuffer(int channel, int size_mb, const char * what)
+{
+  int err = abCtl_->CreateApiBuffer(channel, size_mb, SizeUnit::Megabyte);
+  if (err == ErrorCode::None) {
+    return true;
+  }
+
+  ApiBuffer::ErrorToString(err, errString_, sizeof(errString_));
+  RCLCPP_WARN(
+    this->get_logger(),
+    "%s failed (Error=%d %s); channel %d appears stale, reclaiming",
+    what, err, errString_, channel);
+
+  abCtl_->Halt(channel);
+  abCtl_->Clear(channel);
+  abCtl_->FreeApiBuffer(channel);
+
+  return check(abCtl_->CreateApiBuffer(channel, size_mb, SizeUnit::Megabyte), what);
+}
+
+// Undo whatever runInitSequence managed before failing. Without this, a failure
+// part-way through leaks engine-side buffers AND device handles, and the 1 Hz
+// engine-ready timer then retries forever — leaking two more devices a second.
+void ServoStreamController::teardownPartialInit()
+{
+  if (abCtl_) {
+    // Unconditional: bufferCreated_ is only set once BOTH channels exist, so it
+    // cannot tell us whether the first one was already allocated. Freeing an
+    // unallocated channel is harmless.
+    abCtl_->Halt(channelMotion_);
+    abCtl_->Clear(channelMotion_);
+    abCtl_->FreeApiBuffer(channelMotion_);
+    if (channelMotion_ != channelEstop_) {
+      abCtl_->FreeApiBuffer(channelEstop_);
+    }
+  }
+  bufferCreated_ = false;
+
+  abRec_.reset();
+  abCtl_.reset();
+  cmRec_.reset();
+  cmCtl_.reset();
+
+  if (recAttached_) {
+    wmxRec_.CloseDevice();
+    recAttached_ = false;
+  }
+  if (ctlAttached_) {
+    wmxCtl_.CloseDevice();
+    ctlAttached_ = false;
+  }
+}
+
 bool ServoStreamController::setupBuffers()
 {
-  if (!check(
-      abCtl_->CreateApiBuffer(channelMotion_, bufferSizeMb_, SizeUnit::Megabyte),
-      "CreateApiBuffer(motion)"))
-  {
+  if (!createBuffer(channelMotion_, bufferSizeMb_, "CreateApiBuffer(motion)")) {
     return false;
   }
   if (channelMotion_ != channelEstop_) {
-    if (!check(
-        abCtl_->CreateApiBuffer(channelEstop_, 1, SizeUnit::Megabyte),
-        "CreateApiBuffer(estop)"))
-    {
+    if (!createBuffer(channelEstop_, 1, "CreateApiBuffer(estop)")) {
       return false;
     }
   }
@@ -433,13 +529,20 @@ bool ServoStreamController::setupBuffers()
 
 void ServoStreamController::runInitSequence()
 {
-  if (!attachDevice(&wmxRec_, "servo_stream_rec") ||
-    !attachDevice(&wmxCtl_, "servo_stream_ctl"))
-  {
+  // Flags are set per-device, not after both: if the second attach fails the
+  // first device still needs closing, or the retry leaks it.
+  if (!attachDevice(&wmxRec_, "servo_stream_rec")) {
+    teardownPartialInit();
     initializing_ = false;
     return;
   }
   recAttached_ = true;
+
+  if (!attachDevice(&wmxCtl_, "servo_stream_ctl")) {
+    teardownPartialInit();
+    initializing_ = false;
+    return;
+  }
   ctlAttached_ = true;
 
   cmRec_ = std::make_unique<CoreMotion>(&wmxRec_);
@@ -448,6 +551,7 @@ void ServoStreamController::runInitSequence()
   abCtl_ = std::make_unique<ApiBuffer>(&wmxCtl_);
 
   if (!setupBuffers()) {
+    teardownPartialInit();
     initializing_ = false;
     return;
   }
@@ -574,9 +678,17 @@ void ServoStreamController::jointTrajectoryCallback(
 //
 // pacing_kp keeps its original meaning: cycles of adjustment per setpoint of
 // depth error, hence the x1000 to microseconds.
+//
+// SIGN: the period is what the ENGINE spends per setpoint, while the pump feeds
+// at whatever rate ROS delivers. So depth grows when the period exceeds the
+// arrival interval and shrinks when it is shorter — meaning a depth BELOW target
+// calls for a LONGER period, not a shorter one. The error term is therefore
+// (target - depth). Getting this backwards makes the loop positive-feedback:
+// it pins depth at 0 (nothing ever buffered, so no jitter absorption at all)
+// and lets a backlog run away instead of draining it.
 int ServoStreamController::pacePeriodUs(int depth) const
 {
-  const double adjust = pacingKp_ * static_cast<double>(depth - targetQueueDepth_) * 1000.0;
+  const double adjust = pacingKp_ * static_cast<double>(targetQueueDepth_ - depth) * 1000.0;
   const int us = static_cast<int>(std::lround(nominalPeriodUs_ + adjust));
   return std::max(clampLoUs_, std::min(clampHiUs_, us));
 }
@@ -604,7 +716,10 @@ bool ServoStreamController::beginStream()
   blocksAdded_ = 0;
   lastErrorCount_ = 0;
   streaming_ = true;
-  RCLCPP_INFO(this->get_logger(), "Stream started (channel %d Active)", channelMotion_);
+  streamStartedAt_ = std::chrono::steady_clock::now();
+  RCLCPP_INFO_THROTTLE(
+    this->get_logger(), *this->get_clock(), 1000,
+    "Stream started (channel %d Active)", channelMotion_);
   return true;
 }
 
@@ -626,9 +741,9 @@ void ServoStreamController::endStream(const char * reason, bool controlled_stop)
     cmCtl_->motion->Stop(&axisSel_);
   }
 
-  RCLCPP_INFO(
-    this->get_logger(), "Stream ended: %s%s", reason,
-    controlled_stop ? " (axes stopped)" : "");
+  RCLCPP_INFO_THROTTLE(
+    this->get_logger(), *this->get_clock(), 1000,
+    "Stream ended: %s%s", reason, controlled_stop ? " (axes stopped)" : "");
 }
 
 bool ServoStreamController::recordSetpoint(const std::vector<double> & target, int period_us)
@@ -722,6 +837,12 @@ void ServoStreamController::pumpLoop()
       continue;   // move_group owns the arm; discard
     }
 
+    // Holding off after a fault. Discard setpoints rather than restarting the
+    // channel into a condition that is still present.
+    if (std::chrono::steady_clock::now() < faultUntil_) {
+      continue;
+    }
+
     if (!streaming_ && !beginStream()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
@@ -736,10 +857,24 @@ void ServoStreamController::pumpLoop()
 
     if (st.state == ApiBufferState::Stop) {
       // stopOnError tripped, or the watch fired.
-      RCLCPP_ERROR(
-        this->get_logger(),
-        "Motion channel stopped unexpectedly (errors=%lld watchError=%d axis=%d code=%d)",
-        st.errorCount, st.watchError ? 1 : 0, st.watchErrorAxis, st.watchErrorCode);
+      ++consecutiveFaults_;
+      const auto backoff = std::min(
+        kFaultBackoffMax,
+        kFaultBackoffBase * (1 << std::min(consecutiveFaults_ - 1, kFaultBackoffMaxShift)));
+      faultUntil_ = std::chrono::steady_clock::now() + backoff;
+
+      if (st.watchError) {
+        wmxCtl_.ErrorToString(st.watchErrorCode, errString_, sizeof(errString_));
+      } else {
+        snprintf(errString_, sizeof(errString_), "stopOnError");
+      }
+      RCLCPP_ERROR_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "Motion channel stopped (errors=%lld watchError=%d axis=%d code=%d (%s)); "
+        "fault %d, holding off %ld ms",
+        st.errorCount, st.watchError ? 1 : 0, st.watchErrorAxis, st.watchErrorCode,
+        errString_, consecutiveFaults_, static_cast<long>(backoff.count()));
+
       endStream("channel stopped", true);
       continue;
     }
@@ -755,6 +890,13 @@ void ServoStreamController::pumpLoop()
 
     if (recordSetpoint(target, pacePeriodUs(depth))) {
       last_sent = std::chrono::steady_clock::now();
+      // Forgive the fault history only once the stream has actually survived a
+      // while. Resetting on a successful record instead would pin the backoff
+      // at its first step forever, since recording succeeds regardless of
+      // whether the engine can execute what was recorded.
+      if (last_sent - streamStartedAt_ > kHealthyStreamTime) {
+        consecutiveFaults_ = 0;
+      }
     }
   }
 
@@ -790,7 +932,7 @@ void ServoStreamController::pollStatus()
   const int reportable = static_cast<int>(
     std::min<long long>(missed, wmx3Api::constants::maxApiBufferErrorLog));
   for (int i = 0; i < reportable; ++i) {
-    ApiBuffer::ErrorToString(st.errorLog[i].errorCode, errString_, sizeof(errString_));
+    blockErrorToString(st.errorLog[i].errorCode, errString_, sizeof(errString_));
     RCLCPP_ERROR(
       this->get_logger(),
       "API buffer error at block %lld (setpoint ~%lld): %d (%s)",
