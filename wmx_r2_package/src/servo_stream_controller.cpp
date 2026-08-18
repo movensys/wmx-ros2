@@ -494,34 +494,52 @@ void ServoStreamController::jointTrajectoryCallback(
   const auto & pt = msg->points.back();
   const size_t count = jointAxes_.size();
 
-  if (pt.positions.size() < count) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 1000,
-      "Dropped trajectory: %zu positions for %zu axes", pt.positions.size(), count);
-    return;
-  }
-
-  // Reorder incoming positions into joint_axes order.
   std::vector<double> target(count, 0.0);
-  for (size_t i = 0; i < count; ++i) {
-    if (msg->joint_names.empty()) {
-      target[i] = pt.positions[i];
-      continue;
-    }
-    const auto it = axisByName_.find(msg->joint_names[i]);
-    if (it == axisByName_.end()) {
+  std::vector<bool> filled(count, false);
+
+  if (msg->joint_names.empty()) {
+    // Unnamed: positional, assumed already in joint_axes order.
+    if (pt.positions.size() < count) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 1000,
-        "Dropped trajectory: joint '%s' is not in joint_name",
-        msg->joint_names[i].c_str());
+        "Dropped trajectory: %zu positions for %zu axes", pt.positions.size(), count);
       return;
     }
-    // Find where this axis sits in our fixed ordering.
-    const auto pos = std::find(jointAxes_.begin(), jointAxes_.end(), it->second);
-    if (pos == jointAxes_.end()) {
+    for (size_t i = 0; i < count; ++i) {
+      target[i] = pt.positions[i];
+      filled[i] = true;
+    }
+  } else {
+    // Iterate the MESSAGE's joints and pick out the ones this node drives.
+    // Doing it this way round lets a subset configuration (e.g. joint_axes: [0]
+    // for single-axis bring-up) consume Servo's full six-joint output, and is
+    // robust to a publisher that orders joints differently than we do.
+    const size_t n = std::min(msg->joint_names.size(), pt.positions.size());
+    for (size_t i = 0; i < n; ++i) {
+      const auto it = axisByName_.find(msg->joint_names[i]);
+      if (it == axisByName_.end()) {
+        continue;                       // a joint we are not responsible for
+      }
+      const auto pos = std::find(jointAxes_.begin(), jointAxes_.end(), it->second);
+      if (pos == jointAxes_.end()) {
+        continue;
+      }
+      const size_t slot = static_cast<size_t>(std::distance(jointAxes_.begin(), pos));
+      target[slot] = pt.positions[i];
+      filled[slot] = true;
+    }
+  }
+
+  // Every axis we drive must be commanded: a partial setpoint would hold some
+  // joints and move others, bending the path Servo computed.
+  for (size_t i = 0; i < count; ++i) {
+    if (!filled[i]) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "Dropped trajectory: no command for axis %d (check joint_name vs publisher)",
+        static_cast<int>(jointAxes_[i]));
       return;
     }
-    target[static_cast<size_t>(std::distance(jointAxes_.begin(), pos))] = pt.positions[i];
   }
 
   // Drop-oldest. A stale teleop setpoint is worthless, and the WMX3 ring cannot

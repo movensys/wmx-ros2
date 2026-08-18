@@ -67,6 +67,13 @@ target_link_libraries(servo_stream_controller coremotionapi apibufferapi wmx3api
 target_link_directories(servo_stream_controller PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(servo_stream_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
+# Synthetic Servo stand-in for characterising the streaming path without MoveIt.
+# No WMX3 dependency: it only publishes JointTrajectory.
+add_executable(servo_stream_test_source src/servo_stream_test_source.cpp)
+ament_target_dependencies(servo_stream_test_source
+  rclcpp sensor_msgs trajectory_msgs)
+target_include_directories(servo_stream_test_source PRIVATE include)
+
 add_executable(api_buffer_probe src/api_buffer_probe.cpp)
 ament_target_dependencies(api_buffer_probe
   rclcpp std_msgs)
@@ -128,6 +135,7 @@ install(TARGETS
   joint_trajectory_controller
   joint_position_controller
   servo_stream_controller
+  servo_stream_test_source
   api_buffer_probe
   differential_drive_controller
   gripper_controller
