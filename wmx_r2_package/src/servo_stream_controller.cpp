@@ -136,7 +136,7 @@ private:
   bool streaming_ = false;                    // buffer Active and being fed
   long long blocksAdded_ = 0;                 // stands in for the SDK's missing
                                               // GetCumulativeBlockCount
-  int lastErrorCount_ = 0;
+  long long lastErrorCount_ = 0;             // ApiBufferStatus::errorCount is long long
 
   std::atomic<bool> inExecution_{false};      // move_group owns the arm
   std::atomic<bool> running_{true};
@@ -724,13 +724,13 @@ void ServoStreamController::pumpLoop()
       // stopOnError tripped, or the watch fired.
       RCLCPP_ERROR(
         this->get_logger(),
-        "Motion channel stopped unexpectedly (errors=%d watchError=%d axis=%d code=%d)",
+        "Motion channel stopped unexpectedly (errors=%lld watchError=%d axis=%d code=%d)",
         st.errorCount, st.watchError ? 1 : 0, st.watchErrorAxis, st.watchErrorCode);
       endStream("channel stopped", true);
       continue;
     }
 
-    const int depth = st.remainingBlockCount / kBlocksPerSetpoint;
+    const int depth = static_cast<int>(st.remainingBlockCount / kBlocksPerSetpoint);
     observedDepth_.store(depth);
 
     if (depth > 4 * targetQueueDepth_) {
@@ -770,22 +770,23 @@ void ServoStreamController::pollStatus()
     return;
   }
 
-  const int missed = st.errorCount - lastErrorCount_;
+  const long long missed = st.errorCount - lastErrorCount_;
   lastErrorCount_ = st.errorCount;
 
-  const int reportable = std::min(missed, static_cast<int>(wmx3Api::constants::maxApiBufferErrorLog));
+  const int reportable = static_cast<int>(
+    std::min<long long>(missed, wmx3Api::constants::maxApiBufferErrorLog));
   for (int i = 0; i < reportable; ++i) {
     ApiBuffer::ErrorToString(st.errorLog[i].errorCode, errString_, sizeof(errString_));
     RCLCPP_ERROR(
       this->get_logger(),
-      "API buffer error at block %d (setpoint ~%lld): %d (%s)",
+      "API buffer error at block %lld (setpoint ~%lld): %d (%s)",
       st.errorLog[i].execBlockNumber,
-      static_cast<long long>(st.errorLog[i].execBlockNumber) / kBlocksPerSetpoint,
+      st.errorLog[i].execBlockNumber / kBlocksPerSetpoint,
       st.errorLog[i].errorCode, errString_);
   }
   if (missed > reportable) {
     RCLCPP_ERROR(
-      this->get_logger(), "%d further errors overflowed the log between polls",
+      this->get_logger(), "%lld further errors overflowed the log between polls",
       missed - reportable);
   }
 }

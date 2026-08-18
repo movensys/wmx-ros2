@@ -267,7 +267,7 @@ bool ApiBufferProbe::resetChannel()
   }
   if (st.blockCount != 0 || st.remainingBlockCount != 0) {
     RCLCPP_WARN(
-      this->get_logger(), "Channel not empty after Clear (blockCount=%d remaining=%d)",
+      this->get_logger(), "Channel not empty after Clear (blockCount=%lld remaining=%lld)",
       st.blockCount, st.remainingBlockCount);
   }
   return true;
@@ -292,7 +292,7 @@ bool ApiBufferProbe::drain(int * cycles_waited)
     }
     if (std::chrono::steady_clock::now() > deadline) {
       RCLCPP_ERROR(
-        this->get_logger(), "Timed out draining buffer (remaining=%d)", st.remainingBlockCount);
+        this->get_logger(), "Timed out draining buffer (remaining=%lld)", st.remainingBlockCount);
       return false;
     }
     ++polls;
@@ -510,7 +510,7 @@ void ApiBufferProbe::measureBlockAccounting()
   }
   RCLCPP_INFO(
     this->get_logger(),
-    "  after recording: local=%d blockCount=%d remaining=%d exec=%d",
+    "  after recording: local=%d blockCount=%lld remaining=%lld exec=%lld",
     localBlocks, st.blockCount, st.remainingBlockCount, st.execBlockCount);
   if (st.blockCount != localBlocks || st.remainingBlockCount != localBlocks) {
     RCLCPP_WARN(
@@ -532,7 +532,7 @@ void ApiBufferProbe::measureBlockAccounting()
   }
   RCLCPP_INFO(
     this->get_logger(),
-    "  after draining:  local=%d blockCount=%d remaining=%d exec=%d errors=%d",
+    "  after draining:  local=%d blockCount=%lld remaining=%lld exec=%lld errors=%lld",
     localBlocks, st.blockCount, st.remainingBlockCount, st.execBlockCount, st.errorCount);
 
   resetChannel();
