@@ -19,7 +19,6 @@
 #include "wmx_r2_message/srv/set_engine.hpp"
 
 #include "WMX3Api.h"
-#include "EcApi.h"
 
 class WmxEngineNode : public rclcpp::Node
 {
@@ -29,7 +28,6 @@ public:
 
 private:
   wmx3Api::WMX3Api wmx3Lib_;
-  wmx3Api::ecApi::Ecat wmx3Lib_Ecat_;
   std::atomic<bool> commStarted_{false};
   std::atomic<bool> startComplete_{false};
   std::thread startThread_;
@@ -40,23 +38,19 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetEngine>::SharedPtr setEngineService_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr getEngineStatusService_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr scanNetworkService_;
 
   void startEngine();
   void stopEngine();
   void stopCommunication();
   void publishReady();
 
-  void setEngine(
+  void setEngineCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetEngine::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetEngine::Response> response);
-  void setComm(
+  void setCommCallback(
     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
     std::shared_ptr<std_srvs::srv::SetBool::Response> response);
-  void getEngineStatus(
-    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  void scanNetwork(
+  void getEngineStatusCallback(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);
 };

@@ -75,8 +75,8 @@ class TestEngineLifecycle(unittest.TestCase):
         )
 
     def test_get_engine_status_service(self):
-        """wmx/engine/get_status service should return a valid engine state."""
-        client = self.node.create_client(Trigger, 'wmx/engine/get_status')
+        """wmx/engine/get_engine_status service should return a valid engine state."""
+        client = self.node.create_client(Trigger, 'wmx/engine/get_engine_status')
 
         self.assertTrue(
             client.wait_for_service(timeout_sec=15),

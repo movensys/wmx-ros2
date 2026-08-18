@@ -2,7 +2,7 @@
 // Licensed under the MIT License. See LICENSE.txt for details.
 //
 // Keyboard jog teleop. This node sits where joy_node + teleop would: it does
-// not link WMX3 and only publishes wmx/axis/jog. wmx_core_motion_node owns the
+// not link WMX3 and only publishes wmx/axes/start_jog. wmx_core_motion_node owns the
 // dead-man (jog_timeout_ms), so this node just has to keep publishing while a
 // key is held and go quiet when it is released.
 //
@@ -28,7 +28,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "wmx_r2_message/msg/axis_velocity.hpp"
+#include "wmx_r2_message/msg/axes_velocity.hpp"
 
 namespace
 {
@@ -84,7 +84,7 @@ public:
     graceMarginS_ = this->declare_parameter("grace_margin_s", 0.06);
     const double publishRate = this->declare_parameter("publish_rate", 20.0);
 
-    jogPub_ = this->create_publisher<wmx_r2_message::msg::AxisVelocity>("wmx/axis/jog", 1);
+    jogPub_ = this->create_publisher<wmx_r2_message::msg::AxesVelocity>("wmx/axes/start_jog", 1);
     lastKeyTime_ = this->now();
     firstKeyTime_ = lastKeyTime_;
 
@@ -218,11 +218,11 @@ private:
 
   void publishJog(double direction)
   {
-    wmx_r2_message::msg::AxisVelocity msg;
-    msg.index = {axis_};
-    msg.velocity = {velocity_ * direction};
-    msg.acc = {acc_};
-    msg.dec = {dec_};
+    wmx_r2_message::msg::AxesVelocity msg;
+    msg.indices = {axis_};
+    msg.velocities = {velocity_ * direction};
+    msg.accelerations = {acc_};
+    msg.decelerations = {dec_};
     jogPub_->publish(msg);
   }
 
@@ -238,7 +238,7 @@ private:
   rclcpp::Time lastKeyTime_;
   rclcpp::Time firstKeyTime_;
 
-  rclcpp::Publisher<wmx_r2_message::msg::AxisVelocity>::SharedPtr jogPub_;
+  rclcpp::Publisher<wmx_r2_message::msg::AxesVelocity>::SharedPtr jogPub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

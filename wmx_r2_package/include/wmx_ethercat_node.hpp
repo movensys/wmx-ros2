@@ -17,6 +17,7 @@
 #include "wmx_r2_message/srv/ecat_get_network_state.hpp"
 #include "wmx_r2_message/srv/ecat_register_read.hpp"
 #include "wmx_r2_message/srv/ecat_reset_statistics.hpp"
+#include "wmx_r2_message/srv/ecat_scan_network.hpp"
 #include "wmx_r2_message/srv/ecat_start_hotconnect.hpp"
 
 #include "WMX3Api.h"
@@ -45,23 +46,27 @@ private:
   rclcpp::Service<wmx_r2_message::srv::EcatGetNetworkState>::SharedPtr getNetworkStateService_;
   rclcpp::Service<wmx_r2_message::srv::EcatRegisterRead>::SharedPtr registerReadService_;
   rclcpp::Service<wmx_r2_message::srv::EcatResetStatistics>::SharedPtr resetStatisticsService_;
+  rclcpp::Service<wmx_r2_message::srv::EcatScanNetwork>::SharedPtr scanNetworkService_;
   rclcpp::Service<wmx_r2_message::srv::EcatStartHotconnect>::SharedPtr startHotconnectService_;
 
   void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
 
-  void getNetworkState(
+  void getNetworkStateCallback(
     const std::shared_ptr<wmx_r2_message::srv::EcatGetNetworkState::Request> request,
     std::shared_ptr<wmx_r2_message::srv::EcatGetNetworkState::Response> response);
 
-  void registerRead(
+  void registerReadCallback(
     const std::shared_ptr<wmx_r2_message::srv::EcatRegisterRead::Request> request,
     std::shared_ptr<wmx_r2_message::srv::EcatRegisterRead::Response> response);
 
-  void resetStatistics(
+  void resetStatisticsCallback(
     const std::shared_ptr<wmx_r2_message::srv::EcatResetStatistics::Request> request,
     std::shared_ptr<wmx_r2_message::srv::EcatResetStatistics::Response> response);
 
-  void startHotconnect(
+  void scanNetworkCallback(
+    const std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Request> request,
+    std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Response> response);
+  void startHotconnectCallback(
     const std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Request> request,
     std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Response> response);
 };
