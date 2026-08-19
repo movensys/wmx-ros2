@@ -4,7 +4,7 @@
 #ifndef WMX_IO_NODE_HPP_
 #define WMX_IO_NODE_HPP_
 
-#include <iostream>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -20,8 +20,36 @@
 #include "WMX3Api.h"
 #include "IOApi.h"
 
-using std::placeholders::_1;
-using std::placeholders::_2;
+class WmxIoNodeApi
+{
+public:
+  explicit WmxIoNodeApi(const rclcpp::Logger & logger);
+  ~WmxIoNodeApi();
+
+  int attachDevice(std::string & message);
+  void releaseDevice();
+
+  int getInputBit(int32_t byte, int32_t bit, int32_t & value, std::string & message);
+  int getInputBytes(
+    int32_t byte, int32_t length, std::vector<uint8_t> & data, std::string & message);
+  int getOutputBit(int32_t byte, int32_t bit, int32_t & value, std::string & message);
+  int getOutputBytes(
+    int32_t byte, int32_t length, std::vector<uint8_t> & data, std::string & message);
+
+  int setOutputBit(int32_t byte, int32_t bit, int32_t value, std::string & message);
+  int setOutputBytes(int32_t byte, const std::vector<uint8_t> & data, std::string & message);
+
+  bool isDeviceOpen() const {return wmxIo_ != nullptr;}
+
+private:
+  rclcpp::Logger logger_;
+
+  const char * deviceName_ = "wmx_io_node";
+  unsigned int timeout_ = 10000;
+
+  wmx3Api::WMX3Api wmx3Lib_;
+  std::unique_ptr<wmx3Api::IO> wmxIo_;
+};
 
 class WmxIoNode : public rclcpp::Node
 {
@@ -30,13 +58,7 @@ public:
   ~WmxIoNode();
 
 private:
-  bool initialized_ = false;
-  int err_;
-  char errString_[256];
-  char buffer_[512];
-
-  wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::IO> wmxIo_;
+  std::unique_ptr<WmxIoNodeApi> api_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
@@ -46,6 +68,9 @@ private:
   rclcpp::Service<wmx_r2_message::srv::GetIoBytes>::SharedPtr getOutputBytesService_;
   rclcpp::Service<wmx_r2_message::srv::SetIoBit>::SharedPtr setOutputBitService_;
   rclcpp::Service<wmx_r2_message::srv::SetIoBytes>::SharedPtr setOutputBytesService_;
+
+  bool isReady();
+  std::string notReadyMessage();
 
   void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
 

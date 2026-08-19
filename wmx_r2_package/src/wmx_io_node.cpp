@@ -3,13 +3,241 @@
 
 #include "wmx_io_node.hpp"
 
+using std::placeholders::_1;
+using std::placeholders::_2;
+
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::IO;
 
+namespace
+{
+std::string ioErrorText(int err)
+{
+  char errString[256] = {};
+  IO::ErrorToString(err, errString, sizeof(errString));
+  return errString;
+}
+
+std::string failureText(const std::string & call, const std::string & where, int err)
+{
+  return call + " failed " + where + ". Error=" + std::to_string(err) +
+         " (" + ioErrorText(err) + ")";
+}
+}  // namespace
+
+WmxIoNodeApi::WmxIoNodeApi(const rclcpp::Logger & logger)
+: logger_(logger)
+{
+}
+
+WmxIoNodeApi::~WmxIoNodeApi()
+{
+  if (wmxIo_) {
+    releaseDevice();
+  }
+}
+
+int WmxIoNodeApi::attachDevice(std::string & message)
+{
+  if (wmxIo_) {
+    message = "Already attached to the WMX3 device";
+    return ErrorCode::None;
+  }
+
+  const int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
+  if (err != ErrorCode::None) {
+    if (err == ErrorCode::StartProcessLockError) {
+      message = "Failed to attach to device (lock busy, will retry on next signal).";
+      RCLCPP_WARN(logger_, "%s", message.c_str());
+    } else {
+      message = "Failed to attach to device. Error=" + std::to_string(err) +
+        " (" + ioErrorText(err) + ")";
+      RCLCPP_ERROR(logger_, "%s", message.c_str());
+    }
+    return err;
+  }
+
+  wmx3Lib_.SetDeviceName(deviceName_);
+  wmxIo_ = std::make_unique<IO>(&wmx3Lib_);
+
+  message = "Attached to WMX3 device";
+  RCLCPP_INFO(logger_, "%s", message.c_str());
+  return ErrorCode::None;
+}
+
+void WmxIoNodeApi::releaseDevice()
+{
+  wmxIo_.reset();
+
+  const int err = wmx3Lib_.CloseDevice();
+  if (err != ErrorCode::None) {
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, ioErrorText(err).c_str());
+  } else {
+    RCLCPP_INFO(logger_, "Device closed");
+  }
+}
+
+int WmxIoNodeApi::getInputBit(int32_t byte, int32_t bit, int32_t & value, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot read input bit. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  unsigned char data = 0;
+  const int err = wmxIo_->GetInBitEx(byte, bit, &data);
+  if (err != ErrorCode::None) {
+    message = failureText(
+      "GetInBitEx", "byte=" + std::to_string(byte) + " bit=" + std::to_string(bit), err);
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  value = static_cast<int32_t>(data);
+  message = "Input bit " + std::to_string(byte) + "." + std::to_string(bit) + " = " +
+    std::to_string(data);
+  return ErrorCode::None;
+}
+
+int WmxIoNodeApi::getOutputBit(int32_t byte, int32_t bit, int32_t & value, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot read output bit. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  unsigned char data = 0;
+  const int err = wmxIo_->GetOutBitEx(byte, bit, &data);
+  if (err != ErrorCode::None) {
+    message = failureText(
+      "GetOutBitEx", "byte=" + std::to_string(byte) + " bit=" + std::to_string(bit), err);
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  value = static_cast<int32_t>(data);
+  message = "Output bit " + std::to_string(byte) + "." + std::to_string(bit) + " = " +
+    std::to_string(data);
+  return ErrorCode::None;
+}
+
+int WmxIoNodeApi::getInputBytes(
+  int32_t byte, int32_t length, std::vector<uint8_t> & data, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot read input bytes. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  if (length <= 0) {
+    message = "Invalid length: must be > 0";
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
+  std::vector<unsigned char> raw(length, 0);
+  const int err = wmxIo_->GetInBytesEx(byte, length, raw.data());
+  if (err != ErrorCode::None) {
+    message = failureText(
+      "GetInBytesEx", "byte=" + std::to_string(byte) + " length=" + std::to_string(length), err);
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  data.assign(raw.begin(), raw.end());
+  message = "Read " + std::to_string(length) + " input bytes from byte " + std::to_string(byte);
+  return ErrorCode::None;
+}
+
+int WmxIoNodeApi::getOutputBytes(
+  int32_t byte, int32_t length, std::vector<uint8_t> & data, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot read output bytes. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  if (length <= 0) {
+    message = "Invalid length: must be > 0";
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
+  std::vector<unsigned char> raw(length, 0);
+  const int err = wmxIo_->GetOutBytesEx(byte, length, raw.data());
+  if (err != ErrorCode::None) {
+    message = failureText(
+      "GetOutBytesEx", "byte=" + std::to_string(byte) + " length=" + std::to_string(length), err);
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  data.assign(raw.begin(), raw.end());
+  message = "Read " + std::to_string(length) + " output bytes from byte " + std::to_string(byte);
+  return ErrorCode::None;
+}
+
+int WmxIoNodeApi::setOutputBit(int32_t byte, int32_t bit, int32_t value, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot set output bit. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  if (value != 0 && value != 1) {
+    message = "Invalid value: must be 0 or 1";
+    return ErrorCode::ArgumentOutOfRange;
+  }
+
+  const int err = wmxIo_->SetOutBitEx(byte, bit, (value ? 1 : 0));
+  if (err != ErrorCode::None) {
+    message = failureText(
+      "SetOutBitEx",
+      "byte=" + std::to_string(byte) + " bit=" + std::to_string(bit) +
+      " value=" + std::to_string(value), err);
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  message = "Set output bit " + std::to_string(byte) + "." + std::to_string(bit) + " = " +
+    std::to_string(value);
+  RCLCPP_INFO(logger_, "%s", message.c_str());
+  return ErrorCode::None;
+}
+
+int WmxIoNodeApi::setOutputBytes(
+  int32_t byte, const std::vector<uint8_t> & data, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot set output bytes. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  if (data.empty()) {
+    message = "No data provided";
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
+  const int length = static_cast<int>(data.size());
+  std::vector<unsigned char> raw(data.begin(), data.end());
+
+  const int err = wmxIo_->SetOutBytesEx(byte, length, raw.data());
+  if (err != ErrorCode::None) {
+    message = failureText(
+      "SetOutBytesEx", "byte=" + std::to_string(byte) + " length=" + std::to_string(length), err);
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  message = "Set " + std::to_string(length) + " output bytes from byte " + std::to_string(byte);
+  RCLCPP_INFO(logger_, "%s", message.c_str());
+  return ErrorCode::None;
+}
+
 WmxIoNode::WmxIoNode()
 : Node("wmx_io_node")
 {
+  api_ = std::make_unique<WmxIoNodeApi>(this->get_logger());
+
   auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
     "wmx/engine/ready", ready_qos,
@@ -44,48 +272,32 @@ WmxIoNode::WmxIoNode()
 
 WmxIoNode::~WmxIoNode()
 {
-  if (initialized_) {
-    wmxIo_.reset();
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device");
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
+  api_.reset();
   RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
+}
+
+bool WmxIoNode::isReady()
+{
+  return api_->isDeviceOpen();
+}
+
+std::string WmxIoNode::notReadyMessage()
+{
+  return "IO not initialized. Engine not ready.";
 }
 
 void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
 {
-  if (!msg->data || initialized_) {
+  if (!msg->data || api_->isDeviceOpen()) {
     return;
   }
 
   RCLCPP_INFO(this->get_logger(), "Engine ready — initializing IO...");
 
-  unsigned int timeout = 10000;
-  err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
-
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Failed to attach to device (lock busy, will retry on next signal).");
-    } else {
-      RCLCPP_ERROR(
-        this->get_logger(),
-        "Failed to attach to device. Error=%d (%s)", err_, errString_);
-    }
+  std::string message;
+  if (api_->attachDevice(message) != ErrorCode::None) {
     return;
   }
-
-  wmx3Lib_.SetDeviceName("wmx_io_node");
-  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
-
-  wmxIo_ = std::make_unique<IO>(&wmx3Lib_);
-  initialized_ = true;
 
   engineReadySub_.reset();
 
@@ -96,217 +308,110 @@ void WmxIoNode::getInputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!initialized_) {
+  if (!isReady()) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notReadyMessage();
     return;
   }
 
-  unsigned char data = 0;
-  err_ = wmxIo_->GetInBitEx(request->byte, request->bit, &data);
-  if (err_ != ErrorCode::None) {
-    IO::ErrorToString(err_, errString_, sizeof(errString_));
-    snprintf(
-      buffer_, sizeof(buffer_),
-      "GetInBitEx failed byte=%d bit=%d. Error=%d (%s)",
-      request->byte, request->bit, err_, errString_);
-    RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
-    response->success = false;
-    response->message = buffer_;
-    return;
-  }
+  int32_t value = 0;
+  std::string message;
+  const int err = api_->getInputBit(request->byte, request->bit, value, message);
 
-  response->success = true;
-  response->value = static_cast<int32_t>(data);
-  snprintf(
-    buffer_, sizeof(buffer_),
-    "Input bit %d.%d = %d", request->byte, request->bit, data);
-  response->message = buffer_;
+  response->success = (err == ErrorCode::None);
+  response->value = value;
+  response->message = message;
 }
 
 void WmxIoNode::getOutputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!initialized_) {
+  if (!isReady()) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notReadyMessage();
     return;
   }
 
-  unsigned char data = 0;
-  err_ = wmxIo_->GetOutBitEx(request->byte, request->bit, &data);
-  if (err_ != ErrorCode::None) {
-    IO::ErrorToString(err_, errString_, sizeof(errString_));
-    snprintf(
-      buffer_, sizeof(buffer_),
-      "GetOutBitEx failed byte=%d bit=%d. Error=%d (%s)",
-      request->byte, request->bit, err_, errString_);
-    RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
-    response->success = false;
-    response->message = buffer_;
-    return;
-  }
+  int32_t value = 0;
+  std::string message;
+  const int err = api_->getOutputBit(request->byte, request->bit, value, message);
 
-  response->success = true;
-  response->value = static_cast<int32_t>(data);
-  snprintf(
-    buffer_, sizeof(buffer_),
-    "Output bit %d.%d = %d", request->byte, request->bit, data);
-  response->message = buffer_;
+  response->success = (err == ErrorCode::None);
+  response->value = value;
+  response->message = message;
 }
 
 void WmxIoNode::getInputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!initialized_) {
+  if (!isReady()) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notReadyMessage();
     return;
   }
 
-  if (request->length <= 0) {
-    response->success = false;
-    response->message = "Invalid length: must be > 0";
-    return;
-  }
+  std::vector<uint8_t> data;
+  std::string message;
+  const int err = api_->getInputBytes(request->byte, request->length, data, message);
 
-  std::vector<unsigned char> data(request->length, 0);
-  err_ = wmxIo_->GetInBytesEx(request->byte, request->length, data.data());
-  if (err_ != ErrorCode::None) {
-    IO::ErrorToString(err_, errString_, sizeof(errString_));
-    snprintf(
-      buffer_, sizeof(buffer_),
-      "GetInBytesEx failed byte=%d length=%d. Error=%d (%s)",
-      request->byte, request->length, err_, errString_);
-    RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
-    response->success = false;
-    response->message = buffer_;
-    return;
-  }
-
-  response->success = true;
-  response->data.assign(data.begin(), data.end());
-  snprintf(
-    buffer_, sizeof(buffer_),
-    "Read %d input bytes from byte %d", request->length, request->byte);
-  response->message = buffer_;
+  response->success = (err == ErrorCode::None);
+  response->data = data;
+  response->message = message;
 }
 
 void WmxIoNode::getOutputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!initialized_) {
+  if (!isReady()) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notReadyMessage();
     return;
   }
 
-  if (request->length <= 0) {
-    response->success = false;
-    response->message = "Invalid length: must be > 0";
-    return;
-  }
+  std::vector<uint8_t> data;
+  std::string message;
+  const int err = api_->getOutputBytes(request->byte, request->length, data, message);
 
-  std::vector<unsigned char> data(request->length, 0);
-  err_ = wmxIo_->GetOutBytesEx(request->byte, request->length, data.data());
-  if (err_ != ErrorCode::None) {
-    IO::ErrorToString(err_, errString_, sizeof(errString_));
-    snprintf(
-      buffer_, sizeof(buffer_),
-      "GetOutBytesEx failed byte=%d length=%d. Error=%d (%s)",
-      request->byte, request->length, err_, errString_);
-    RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
-    response->success = false;
-    response->message = buffer_;
-    return;
-  }
-
-  response->success = true;
-  response->data.assign(data.begin(), data.end());
-  snprintf(
-    buffer_, sizeof(buffer_),
-    "Read %d output bytes from byte %d", request->length, request->byte);
-  response->message = buffer_;
+  response->success = (err == ErrorCode::None);
+  response->data = data;
+  response->message = message;
 }
 
 void WmxIoNode::setOutputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBit::Response> response)
 {
-  if (!initialized_) {
+  if (!isReady()) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notReadyMessage();
     return;
   }
 
-  if (request->value != 0 && request->value != 1) {
-    response->success = false;
-    response->message = "Invalid value: must be 0 or 1";
-    return;
-  }
+  std::string message;
+  const int err = api_->setOutputBit(request->byte, request->bit, request->value, message);
 
-  err_ = wmxIo_->SetOutBitEx(request->byte, request->bit, (request->value ? 1 : 0));
-  if (err_ != ErrorCode::None) {
-    IO::ErrorToString(err_, errString_, sizeof(errString_));
-    snprintf(
-      buffer_, sizeof(buffer_),
-      "SetOutBitEx failed byte=%d bit=%d value=%d. Error=%d (%s)",
-      request->byte, request->bit, request->value, err_, errString_);
-    RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
-    response->success = false;
-    response->message = buffer_;
-    return;
-  }
-
-  snprintf(
-    buffer_, sizeof(buffer_),
-    "Set output bit %d.%d = %d", request->byte, request->bit, request->value);
-  RCLCPP_INFO(this->get_logger(), "%s", buffer_);
-  response->success = true;
-  response->message = buffer_;
+  response->success = (err == ErrorCode::None);
+  response->message = message;
 }
 
 void WmxIoNode::setOutputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Response> response)
 {
-  if (!initialized_) {
+  if (!isReady()) {
     response->success = false;
-    response->message = "IO not initialized. Engine not ready.";
+    response->message = notReadyMessage();
     return;
   }
 
-  if (request->data.empty()) {
-    response->success = false;
-    response->message = "No data provided";
-    return;
-  }
+  std::string message;
+  const int err = api_->setOutputBytes(request->byte, request->data, message);
 
-  int dataLen = static_cast<int>(request->data.size());
-  std::vector<unsigned char> rawData(request->data.begin(), request->data.end());
-
-  err_ = wmxIo_->SetOutBytesEx(request->byte, dataLen, rawData.data());
-  if (err_ != ErrorCode::None) {
-    IO::ErrorToString(err_, errString_, sizeof(errString_));
-    snprintf(
-      buffer_, sizeof(buffer_),
-      "SetOutBytesEx failed byte=%d length=%d. Error=%d (%s)",
-      request->byte, dataLen, err_, errString_);
-    RCLCPP_ERROR(this->get_logger(), "%s", buffer_);
-    response->success = false;
-    response->message = buffer_;
-    return;
-  }
-
-  snprintf(
-    buffer_, sizeof(buffer_),
-    "Set %d output bytes from byte %d", dataLen, request->byte);
-  RCLCPP_INFO(this->get_logger(), "%s", buffer_);
-  response->success = true;
-  response->message = buffer_;
+  response->success = (err == ErrorCode::None);
+  response->message = message;
 }
 
 int main(int argc, char ** argv)

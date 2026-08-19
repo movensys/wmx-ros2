@@ -4,12 +4,10 @@
 #ifndef WMX_ETHERCAT_NODE_HPP_
 #define WMX_ETHERCAT_NODE_HPP_
 
-#include <iostream>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
-#include <chrono>
-#include <thread>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -23,8 +21,35 @@
 #include "WMX3Api.h"
 #include "EcApi.h"
 
-using std::placeholders::_1;
-using std::placeholders::_2;
+class WmxEtherCatNodeApi
+{
+public:
+  explicit WmxEtherCatNodeApi(const rclcpp::Logger & logger);
+  ~WmxEtherCatNodeApi();
+
+  int attachDevice(std::string & message);
+  void releaseDevice();
+
+  int getMasterInfo(
+    int32_t masterId, wmx3Api::ecApi::EcMasterInfo & info, std::string & message);
+  int registerRead(
+    int32_t masterId, int32_t slaveId, int32_t regAddress, int32_t length,
+    std::vector<uint8_t> & data, std::string & message);
+  int resetStatistics(int32_t masterId, std::string & message);
+  int scanNetwork(int32_t masterId, std::string & message);
+  int startHotconnect(int32_t masterId, std::string & message);
+
+  bool isDeviceOpen() const {return wmxEcat_ != nullptr;}
+
+private:
+  rclcpp::Logger logger_;
+
+  const char * deviceName_ = "wmx_ethercat_node";
+  unsigned int timeout_ = 10000;
+
+  wmx3Api::WMX3Api wmx3Lib_;
+  std::unique_ptr<wmx3Api::ecApi::Ecat> wmxEcat_;
+};
 
 class WmxEtherCatNode : public rclcpp::Node
 {
@@ -33,13 +58,7 @@ public:
   ~WmxEtherCatNode();
 
 private:
-  bool initialized_ = false;
-  int err_;
-  char errString_[256];
-  char buffer_[512];
-
-  wmx3Api::WMX3Api wmx3Lib_;
-  wmx3Api::ecApi::Ecat wmxEcat_;
+  std::unique_ptr<WmxEtherCatNodeApi> api_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
@@ -48,6 +67,9 @@ private:
   rclcpp::Service<wmx_r2_message::srv::EcatResetStatistics>::SharedPtr resetStatisticsService_;
   rclcpp::Service<wmx_r2_message::srv::EcatScanNetwork>::SharedPtr scanNetworkService_;
   rclcpp::Service<wmx_r2_message::srv::EcatStartHotconnect>::SharedPtr startHotconnectService_;
+
+  bool isReady();
+  std::string notReadyMessage();
 
   void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
 

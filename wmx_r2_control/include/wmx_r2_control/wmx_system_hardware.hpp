@@ -5,6 +5,7 @@
 #define WMX_R2_CONTROL__WMX_SYSTEM_HARDWARE_HPP_
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,63 @@
 
 namespace wmx_r2_control
 {
+
+/// Owns the WMX3 device handle behind the ros2_control system interface.
+/// Knows nothing about hardware_interface beyond its logger.
+class WmxSystemHardwareApi
+{
+public:
+  struct Config
+  {
+    std::string sdkPath;
+    std::string deviceName;
+    double accTimeMilliseconds = 1.0;
+    double decTimeMilliseconds = 1.0;
+    int maxDeviceRetries = 30;
+  };
+
+  struct AxisFeedback
+  {
+    double actualPos = 0.0;
+    double actualVelocity = 0.0;
+    bool servoOn = false;
+    bool ampAlarm = false;
+  };
+
+  WmxSystemHardwareApi(const rclcpp::Logger & logger, const Config & config);
+  ~WmxSystemHardwareApi();
+
+  /// Retries while the device lock is busy, up to Config::maxDeviceRetries.
+  int attachDevice(std::string & message);
+  void releaseDevice();
+
+  int importAndSetAll(const std::string & path, std::string & message);
+
+  /// One status read per control cycle, projected onto the requested axes.
+  int getStatus(
+    const std::vector<int> & axes, std::vector<AxisFeedback> & feedback,
+    bool & communicating, std::string & message);
+
+  int startVel(int axis, double omega, std::string & message);
+  int setServoOn(int axis, int on, std::string & message);
+  int clearAmpAlarm(int axis, std::string & message);
+
+  bool isDeviceOpen() const {return cm_ != nullptr;}
+
+private:
+  std::string errorText(int err);
+
+  rclcpp::Logger logger_;
+  Config config_;
+
+  unsigned int timeout_ = 10000;
+  unsigned int servoOnTimeout_ = 2000;
+
+  std::mutex deviceMutex_;
+
+  wmx3Api::WMX3Api wmx3Lib_;
+  std::unique_ptr<wmx3Api::CoreMotion> cm_;
+};
 
 enum class JointMode
 {
@@ -87,31 +145,25 @@ private:
   rclcpp::Logger logger_ = rclcpp::get_logger("WmxSystemHardware");
   rclcpp::Clock clock_{RCL_STEADY_TIME};
 
-  // WMX3 handles
-  wmx3Api::WMX3Api wmx_;
-  std::unique_ptr<wmx3Api::CoreMotion> cm_;
-  wmx3Api::CoreMotionStatus cm_status_;
-  bool device_open_ = false;
+  std::unique_ptr<WmxSystemHardwareApi> api_;
 
   // Joints
   std::vector<WmxJoint> joints_;
+  std::vector<int> axes_;
+
+  // Last status read, shared between read() and write().
+  std::vector<WmxSystemHardwareApi::AxisFeedback> feedback_;
+  bool communicating_ = false;
 
   // Hardware parameters (from <hardware><param> in the ros2_control xacro)
-  std::string sdk_path_;
-  std::string device_name_;
   std::string wmx_param_file_;
-  double acc_time_ms_ = 1.0;
-  double dec_time_ms_ = 1.0;
   int max_device_retries_ = 30;
   bool auto_servo_on_ = true;   ///< clear alarms + servo-on in on_activate, servo-off on deactivate
 
-  char err_str_[256] = {0};
-
   // Helpers
   hardware_interface::CallbackReturn initImpl();
-  bool attachDevice();
-  void closeDevice();
-  bool engineCommunicating();
+  bool waitForCommunicating();
+  void seedJointStates();
   void startVelocity(const WmxJoint & joint, double omega);
   std::string getHwParam(const std::string & key, const std::string & def) const;
 };
