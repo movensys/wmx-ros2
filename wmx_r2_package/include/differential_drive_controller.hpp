@@ -100,7 +100,7 @@ public:
 
   void odometryPoseCalculation(double ds, double dtheta)
   {
-    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;} 
+    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}
     const double half = 0.5 * dtheta;
     const double mid = pose_.theta + half;
     const double k = ds * sinc(half);
@@ -287,8 +287,8 @@ private:
   bool publishTf_;
   std::string odomFrame_;
   std::string baseFrame_;
-  double posUnitScale_;  
-  double jumpGuardTol_;   
+  double posUnitScale_;
+  double jumpGuardTol_;
 
   std::string cmdVelTopic_;
   std::string encoderOmegaTopic_;
