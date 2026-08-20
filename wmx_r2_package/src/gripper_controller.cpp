@@ -168,8 +168,9 @@ GripperController::GripperController()
 
   setRosParameter();
 
+  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "/wmx/engine/ready", 1,
+    "wmx/engine/ready", ready_qos,
     std::bind(&GripperController::onEngineReady, this, std::placeholders::_1));
 
   RCLCPP_INFO(this->get_logger(), "gripper_controller waiting for engine...");

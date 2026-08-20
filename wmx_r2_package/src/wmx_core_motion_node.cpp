@@ -435,7 +435,7 @@ int WmxCoreMotionNodeApi::setAxisPolarity(int axis, int polarity, std::string & 
 }
 
 int WmxCoreMotionNodeApi::setGearRatio(
-  int axis, int numerator, int denominator, std::string & message)
+  int axis, double numerator, double denominator, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
