@@ -1,60 +1,171 @@
 // Copyright 2026 Movensys Corporation.
 // Licensed under the MIT License. See LICENSE.txt for details.
 
-#include <memory>
-#include <thread>
-#include <sstream>
-#include <chrono>
+#include "gripper_controller.hpp"
+
 #include <cstdlib>
-#include <string>
-#include <vector>
-
-#include "WMX3Api.h"
-#include "IOApi.h"
-
-#include "rclcpp/rclcpp.hpp"
-
-#include "std_srvs/srv/set_bool.hpp"
-#include "std_msgs/msg/bool.hpp"
 
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::IO;
-using wmx3Api::WMX3Api;
 
-class GripperController : public rclcpp::Node {
-public:
-  GripperController();
-  ~GripperController();
+namespace
+{
+std::string ioErrorText(int err)
+{
+  char errString[256] = {};
+  IO::ErrorToString(err, errString, sizeof(errString));
+  return errString;
+}
+}  // namespace
 
-  std::vector<int64_t> gripperAddress;
-  std::string wmxGripperTopic_;
+GripperControllerApi::GripperControllerApi(const rclcpp::Logger & logger)
+: logger_(logger)
+{
+}
 
-  unsigned char gripperSwitchData_;
-  unsigned char gripperPowerData_;
+GripperControllerApi::~GripperControllerApi()
+{
+  if (io_) {
+    releaseDevice();
+  }
+}
 
-  int err_;
-  char errString_[256];
+std::string GripperControllerApi::errorText(int err)
+{
+  char errString[256] = {};
+  wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
+  return errString;
+}
 
-private:
-  bool initialized_ = false;
+int GripperControllerApi::attachDevice(std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  WMX3Api wmx3Lib_;
-  IO Wmx3Lib_Io_;
+  if (io_) {
+    message = "Already attached to the WMX3 device";
+    return ErrorCode::None;
+  }
 
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
-  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
+  const int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
+  if (err != ErrorCode::None) {
+    message = "Failed to attach to device. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
 
-  // Service callback declaration
-  void setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                        std::shared_ptr<std_srvs::srv::SetBool::Response> response);
+  wmx3Lib_.SetDeviceName(deviceName_);
+  io_ = std::make_unique<IO>(&wmx3Lib_);
 
-  void setRosParameter();
-  void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
-  void DobotCR3AGripperSetup();
-};
+  message = "Attached to WMX3 device";
+  RCLCPP_INFO(logger_, "%s", message.c_str());
+  return ErrorCode::None;
+}
 
-GripperController::GripperController() : Node("gripper_controller"){
+void GripperControllerApi::releaseDevice()
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  io_.reset();
+
+  const int err = wmx3Lib_.CloseDevice();
+  if (err != ErrorCode::None) {
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
+  } else {
+    RCLCPP_INFO(logger_, "Device closed");
+  }
+}
+
+int GripperControllerApi::setOutputBit(
+  int32_t byte, int32_t bit, int32_t value, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!io_) {
+    message = "Cannot set output bit. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  const int err = io_->SetOutBit(byte, bit, (value ? 1 : 0));
+  if (err != ErrorCode::None) {
+    message = ioErrorText(err);
+    return err;
+  }
+
+  message = "Set output bit " + std::to_string(byte) + "." + std::to_string(bit) + " = " +
+    std::to_string(value);
+  return ErrorCode::None;
+}
+
+int GripperControllerApi::setOutputByte(int32_t byte, int32_t value, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!io_) {
+    message = "Cannot set output byte. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  const int err = io_->SetOutByte(byte, static_cast<unsigned char>(value));
+  if (err != ErrorCode::None) {
+    message = ioErrorText(err);
+    return err;
+  }
+
+  message = "Set output byte " + std::to_string(byte) + " = " + std::to_string(value);
+  return ErrorCode::None;
+}
+
+int GripperControllerApi::getOutputByte(int32_t byte, int32_t & value, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!io_) {
+    message = "Cannot read output byte. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  unsigned char data = 0;
+  const int err = io_->GetOutByte(byte, &data);
+  if (err != ErrorCode::None) {
+    message = ioErrorText(err);
+    return err;
+  }
+
+  value = static_cast<int32_t>(data);
+  message = "Output byte " + std::to_string(byte) + " = " + std::to_string(value);
+  return ErrorCode::None;
+}
+
+int GripperControllerApi::getInputBit(
+  int32_t byte, int32_t bit, int32_t & value, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!io_) {
+    message = "Cannot read input bit. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  unsigned char data = 0;
+  const int err = io_->GetInBit(byte, bit, &data);
+  if (err != ErrorCode::None) {
+    message = ioErrorText(err);
+    return err;
+  }
+
+  value = static_cast<int32_t>(data);
+  message = "Input bit " + std::to_string(byte) + "." + std::to_string(bit) + " = " +
+    std::to_string(value);
+  return ErrorCode::None;
+}
+
+GripperController::GripperController()
+: Node("gripper_controller")
+{
+  api_ = std::make_unique<GripperControllerApi>(this->get_logger());
+
   setRosParameter();
 
   engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
@@ -64,56 +175,43 @@ GripperController::GripperController() : Node("gripper_controller"){
   RCLCPP_INFO(this->get_logger(), "gripper_controller waiting for engine...");
 }
 
-GripperController::~GripperController(){
-  RCLCPP_INFO(this->get_logger(), "Stop joint_trajectory_controller");
+GripperController::~GripperController()
+{
+  RCLCPP_INFO(this->get_logger(), "Stop gripper_controller");
 
-  if (initialized_) {
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device");
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
-  }
+  api_.reset();
 
   RCLCPP_INFO(this->get_logger(), "gripper_controller is stopped");
 }
 
-void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg) {
+void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg)
+{
   if (!msg->data || initialized_) {
     return;
   }
 
   RCLCPP_INFO(this->get_logger(), "Engine ready — initializing Gripper Controller");
 
-  unsigned int timeout = 10000;
-  err_ = wmx3Lib_.CreateDevice("/opt/lmx/", DeviceType::DeviceTypeNormal, timeout);
-  wmx3Lib_.SetDeviceName("gripper_controller");
-
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    RCLCPP_ERROR(this->get_logger(),
-                 "Failed to attach to device. Error=%d (%s)", err_, errString_);
+  std::string message;
+  if (api_->attachDevice(message) != ErrorCode::None) {
     return;
   }
 
-  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
-
-  Wmx3Lib_Io_ = IO(&wmx3Lib_);
-
-  const char* manipulatorModel = std::getenv("MANIPULATOR_MODEL");
+  const char * manipulatorModel = std::getenv("MANIPULATOR_MODEL");
   if (manipulatorModel && std::string(manipulatorModel) == "dobot_cr3a") {
-    DobotCR3AGripperSetup();
+    dobotCR3AGripperSetup();
   } else {
-    RCLCPP_INFO(this->get_logger(),
-      "Skipping DobotCR3AGripperSetup (MANIPULATOR_MODEL=%s)",
+    RCLCPP_INFO(
+      this->get_logger(),
+      "Skipping dobotCR3AGripperSetup (MANIPULATOR_MODEL=%s)",
       manipulatorModel ? manipulatorModel : "not set");
   }
 
-  setGripperService_ = this->create_service<std_srvs::srv::SetBool>(wmxGripperTopic_,
-                    std::bind(&GripperController::setGripper, this,
-                    std::placeholders::_1, std::placeholders::_2));
+  setGripperService_ = this->create_service<std_srvs::srv::SetBool>(
+    wmxGripperTopic_,
+    std::bind(
+      &GripperController::setGripper, this,
+      std::placeholders::_1, std::placeholders::_2));
 
   initialized_ = true;
   engineReadySub_.reset();
@@ -121,87 +219,80 @@ void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg) {
   RCLCPP_INFO(this->get_logger(), "gripper_controller is ready");
 }
 
-void GripperController::DobotCR3AGripperSetup(){
-  err_ = Wmx3Lib_Io_.SetOutByte(28, 113);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+void GripperController::dobotCR3AGripperSetup()
+{
+  std::string message;
+
+  if (api_->setOutputByte(28, 113, message) != ErrorCode::None) {
     RCLCPP_ERROR(
       this->get_logger(),
-      "[dobot_cr3a] gripper setup failed (SetOutByte): %s", errString_);
+      "[dobot_cr3a] gripper setup failed (SetOutByte): %s", message.c_str());
     return;
   }
   RCLCPP_INFO(this->get_logger(), "[dobot_cr3a] gripper power byte set");
 
-  err_ = Wmx3Lib_Io_.GetOutByte(28, &gripperSwitchData_);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+  int32_t gripperSwitchData = 0;
+  if (api_->getOutputByte(28, gripperSwitchData, message) != ErrorCode::None) {
     RCLCPP_ERROR(
       this->get_logger(),
-      "[dobot_cr3a] gripper setup failed (GetOutByte): %s", errString_);
+      "[dobot_cr3a] gripper setup failed (GetOutByte): %s", message.c_str());
     return;
   }
 
-  err_ = Wmx3Lib_Io_.GetInBit(0, 1, &gripperPowerData_);
-  if (err_ != ErrorCode::None) {
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
+  int32_t gripperPowerData = 0;
+  if (api_->getInputBit(0, 1, gripperPowerData, message) != ErrorCode::None) {
     RCLCPP_ERROR(
       this->get_logger(),
-      "[dobot_cr3a] gripper setup failed (GetInBit): %s", errString_);
+      "[dobot_cr3a] gripper setup failed (GetInBit): %s", message.c_str());
     return;
   }
 
-  if (gripperSwitchData_ == 113 && gripperPowerData_ == 1) {
+  if (gripperSwitchData == 113 && gripperPowerData == 1) {
     RCLCPP_INFO(this->get_logger(), "[dobot_cr3a] gripper is on and ready");
   } else {
-    RCLCPP_WARN(this->get_logger(),
+    RCLCPP_WARN(
+      this->get_logger(),
       "[dobot_cr3a] gripper state unexpected: switchData=%d, powerData=%d",
-      gripperSwitchData_, gripperPowerData_);
+      gripperSwitchData, gripperPowerData);
   }
 }
 
-void GripperController::setRosParameter(){
+void GripperController::setRosParameter()
+{
   this->declare_parameter<std::string>("wmx_gripper_topic", "/wmx_gripper_topic/no_param");
   this->declare_parameter<std::vector<int64_t>>("gripper_address", std::vector<int64_t>{0, 0});
 
   this->get_parameter("wmx_gripper_topic", wmxGripperTopic_);
-  this->get_parameter("gripper_address", gripperAddress);
+  this->get_parameter("gripper_address", gripperAddress_);
 
-  // Print parameter values
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "wmx_gripper_topic: %s", wmxGripperTopic_.c_str());
   RCLCPP_INFO(
     this->get_logger(), "gripper_address: [%ld, %ld]",
-    gripperAddress[0], gripperAddress[1]);
+    gripperAddress_[0], gripperAddress_[1]);
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
-void GripperController::setGripper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                                        std::shared_ptr<std_srvs::srv::SetBool::Response> response){
-  if (request->data) {
-    err_ = Wmx3Lib_Io_.SetOutBit(gripperAddress[0], gripperAddress[1], 1);
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Gripper fails to Close: %s", errString_);
-      response->success = false;
-      response->message = "Failed to close gripper";
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Gripper success to Close");
-      response->success = true;
-      response->message = "Gripper closed successfully";
-    }
-  } else {
-    err_ = Wmx3Lib_Io_.SetOutBit(gripperAddress[0], gripperAddress[1], 0);
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Gripper fails to Open: %s", errString_);
-      response->success = false;
-      response->message = "Failed to open gripper";
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Gripper success to Open");
-      response->success = true;
-      response->message = "Gripper opened successfully";
-    }
+void GripperController::setGripper(
+  const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+  std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+{
+  const char * action = request->data ? "Close" : "Open";
+
+  std::string message;
+  const int err = api_->setOutputBit(
+    gripperAddress_[0], gripperAddress_[1], request->data ? 1 : 0, message);
+
+  if (err != ErrorCode::None) {
+    RCLCPP_ERROR(this->get_logger(), "Gripper fails to %s: %s", action, message.c_str());
+    response->success = false;
+    response->message = request->data ? "Failed to close gripper" : "Failed to open gripper";
+    return;
   }
+
+  RCLCPP_INFO(this->get_logger(), "Gripper success to %s", action);
+  response->success = true;
+  response->message = request->data ? "Gripper closed successfully" : "Gripper opened successfully";
 }
 
 int main(int argc, char ** argv)

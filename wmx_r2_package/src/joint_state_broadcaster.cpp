@@ -1,88 +1,148 @@
 // Copyright 2026 Movensys Corporation.
 // Licensed under the MIT License. See LICENSE.txt for details.
 
-#include <iostream>
-#include <memory>
-#include <string>
-#include <vector>
+#include "joint_state_broadcaster.hpp"
+
 #include <chrono>
-#include <thread>
-#include <atomic>
-
-#include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/joint_state.hpp"
-#include "std_msgs/msg/bool.hpp"
-#include "std_msgs/msg/float64_multi_array.hpp"
-
-#include "wmx_r2_message/srv/set_axes.hpp"
-
-#include "WMX3Api.h"
-#include "CoreMotionApi.h"
-#include "IOApi.h"
 
 using std::placeholders::_1;
+
 using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::IO;
-using wmx3Api::WMX3Api;
 
-class JointStateBroadcaster : public rclcpp::Node
+JointStateBroadcasterApi::JointStateBroadcasterApi(const rclcpp::Logger & logger)
+: logger_(logger)
 {
-public:
-  JointStateBroadcaster();
-  ~JointStateBroadcaster();
+}
 
-  int jointFeedbackRate_;
-  float gripperCloseValue_;
-  float gripperOpenValue_;
-  std::vector<int64_t> jointAxes_;
-  std::vector<std::string> jointNames_;
-  std::vector<std::string> gripperJointNames_;
-  std::vector<int64_t> gripperAddress_;
-  std::string encoderJointTopic_;
-  std::string isaacsimJointTopic_;
-  std::string gazeboJointTopic_;
+JointStateBroadcasterApi::~JointStateBroadcasterApi()
+{
+  if (cm_) {
+    releaseDevice();
+  }
+}
 
-  unsigned char gripperData_;
+std::string JointStateBroadcasterApi::errorText(int err)
+{
+  char errString[256] = {};
+  wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
+  return errString;
+}
 
-  int err_;
-  char errString_[256];
+int JointStateBroadcasterApi::attachDevice(std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
 
-private:
-  bool initialized_ = false;
-  std::atomic<bool> initializing_{false};
+  if (cm_) {
+    message = "Already attached to the WMX3 device";
+    return ErrorCode::None;
+  }
 
-  WMX3Api wmx3Lib_;
-  CoreMotionStatus cmStatus_;
-  std::unique_ptr<CoreMotion> wmx3LibCm_;
-  std::unique_ptr<IO> wmx3Lib_Io_;
+  const int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
+  if (err != ErrorCode::None) {
+    message = "Failed to attach to device. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
+    return err;
+  }
 
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr coreMotionReadySub_;
-  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr clearAmpAlarmClient_;
-  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr setServoOnClient_;
+  wmx3Lib_.SetDeviceName(deviceName_);
 
-  rclcpp::TimerBase::SharedPtr encoderJointTimer_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr gazeboJointPub_;
+  cm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
+  io_ = std::make_unique<IO>(&wmx3Lib_);
 
-  std::thread init_thread_;
+  message = "Attached to WMX3 device";
+  RCLCPP_INFO(logger_, "%s", message.c_str());
+  return ErrorCode::None;
+}
 
-  void onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg);
-  void runInitSequence();
-  bool callSetAxesService(rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
-                          const std::string & service_name,
-                          const std::vector<int64_t> & index,
-                          const std::vector<int64_t> & data);
-  void publishJointState();
-  void setRosParameter();
-};
+void JointStateBroadcasterApi::releaseDevice()
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
 
-JointStateBroadcaster::JointStateBroadcaster() : Node("joint_state_broadcaster")
+  io_.reset();
+  cm_.reset();
+
+  const int err = wmx3Lib_.CloseDevice();
+  if (err != ErrorCode::None) {
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
+  } else {
+    RCLCPP_INFO(logger_, "Device closed");
+  }
+}
+
+int JointStateBroadcasterApi::getStatus(
+  const std::vector<int64_t> & axes, std::vector<AxisFeedback> & feedback, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
+    message = "Cannot read status. Core motion is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  CoreMotionStatus status;
+  const int err = cm_->GetStatus(&status);
+
+  feedback.clear();
+  feedback.reserve(axes.size());
+  for (const int64_t axis : axes) {
+    AxisFeedback entry;
+    entry.actualPos = status.axesStatus[axis].actualPos;
+    entry.actualVelocity = status.axesStatus[axis].actualVelocity;
+    feedback.push_back(entry);
+  }
+
+  return err;
+}
+
+int JointStateBroadcasterApi::getOutputBit(
+  int32_t byte, int32_t bit, int32_t & value, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!io_) {
+    message = "Cannot read output bit. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  unsigned char data = 0;
+  const int err = io_->GetOutBit(byte, bit, &data);
+  value = static_cast<int32_t>(data);
+  return err;
+}
+
+int JointStateBroadcasterApi::setServoOn(int axis, int on, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  if (!cm_) {
+    message = "Cannot set servo on axis " + std::to_string(axis) +
+      ". Core motion is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  const int err = cm_->axisControl->SetServoOn(axis, on);
+  if (err != ErrorCode::None) {
+    message = "Servo " + std::to_string(axis) + " error to " + (on ? "on" : "off") +
+      ". Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
+
+  message = "Servo " + std::to_string(axis) + " " + (on ? "on" : "off");
+  RCLCPP_INFO(logger_, "%s", message.c_str());
+  return ErrorCode::None;
+}
+
+JointStateBroadcaster::JointStateBroadcaster()
+: Node("joint_state_broadcaster")
 {
   RCLCPP_INFO(this->get_logger(), "start joint_state_broadcaster");
+
+  api_ = std::make_unique<JointStateBroadcasterApi>(this->get_logger());
 
   setRosParameter();
 
@@ -112,29 +172,20 @@ JointStateBroadcaster::~JointStateBroadcaster()
     if (encoderJointTimer_) {
       encoderJointTimer_->cancel();
     }
-
-    for (int axis : jointAxes_) {
-      err_ = wmx3LibCm_->axisControl->SetServoOn(axis, 0);
-      if (err_ != ErrorCode::None) {
-        wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-        RCLCPP_ERROR(
-          this->get_logger(), "Servo %d error to off. Error=%d (%s)", axis, err_,
-          errString_);
-      } else {
-        RCLCPP_INFO(this->get_logger(), "Servo %d off", axis);
-      }
-    }
-
-    err_ = wmx3Lib_.CloseDevice();
-    if (err_ != ErrorCode::None) {
-      wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-      RCLCPP_ERROR(this->get_logger(), "Failed to close device. Error=%d (%s)", err_, errString_);
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Device closed");
-    }
+    servoOff();
   }
 
+  api_.reset();
+
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is stopped");
+}
+
+void JointStateBroadcaster::servoOff()
+{
+  for (const int64_t axis : jointAxes_) {
+    std::string message;
+    api_->setServoOn(static_cast<int>(axis), 0, message);
+  }
 }
 
 void JointStateBroadcaster::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg)
@@ -145,72 +196,61 @@ void JointStateBroadcaster::onCoreMotionReady(const std_msgs::msg::Bool::SharedP
 
   RCLCPP_INFO(this->get_logger(), "CoreMotion ready — starting init on dedicated thread...");
 
-  // Join any previous thread (e.g. from a failed retry)
   if (init_thread_.joinable()) {
     init_thread_.join();
   }
 
-  // Spawn dedicated thread so blocking wait_for() doesn't block executor
   init_thread_ = std::thread(&JointStateBroadcaster::runInitSequence, this);
+}
+
+bool JointStateBroadcaster::attachDeviceWithRetries()
+{
+  for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
+    std::string message;
+    const int err = api_->attachDevice(message);
+
+    if (err == ErrorCode::None) {
+      return true;
+    }
+
+    if (err != ErrorCode::StartProcessLockError) {
+      RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+      return false;
+    }
+
+    RCLCPP_WARN(
+      this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
+      attempt, kMaxDeviceRetries);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+
+  RCLCPP_FATAL(
+    this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
+  return false;
 }
 
 void JointStateBroadcaster::runInitSequence()
 {
-  unsigned int timeout = 10000;
-  static constexpr int kMaxDeviceRetries = 30;
-
-  for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
-    err_ = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout);
-    if (err_ == ErrorCode::None) {
-      break;
-    }
-    wmx3Lib_.ErrorToString(err_, errString_, sizeof(errString_));
-    if (err_ == ErrorCode::StartProcessLockError) {
-      RCLCPP_WARN(
-        this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-        attempt, kMaxDeviceRetries);
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    } else {
-      RCLCPP_ERROR(
-        this->get_logger(), "Failed to attach to device. Error=%d (%s)", err_,
-        errString_);
-      initializing_ = false;
-      return;
-    }
-  }
-
-  if (err_ != ErrorCode::None) {
-    RCLCPP_FATAL(
-      this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
+  if (!attachDeviceWithRetries()) {
     initializing_ = false;
     return;
   }
 
-  wmx3Lib_.SetDeviceName("joint_state_broadcaster");
-
-  RCLCPP_INFO(this->get_logger(), "Attached to WMX3 device");
-
-  wmx3LibCm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
-  wmx3Lib_Io_ = std::make_unique<IO>(&wmx3Lib_);
-
   std::vector<int64_t> zeroData(jointAxes_.size(), 0);
   std::vector<int64_t> onData(jointAxes_.size(), 1);
 
-  // Clear alarms on all axes
   if (!callSetAxesService(clearAmpAlarmClient_, "wmx/axes/clear_amp_alarm", jointAxes_, zeroData)) {
     RCLCPP_ERROR(this->get_logger(), "Init failed at clear_amp_alarm — node will not retry");
     initializing_ = false;
     return;
   }
 
-  // Set servo on for all axes
   if (!callSetAxesService(setServoOnClient_, "wmx/axes/set_servo_on", jointAxes_, onData)) {
     RCLCPP_ERROR(this->get_logger(), "Init failed at set_servo_on — node will not retry");
     initializing_ = false;
     return;
   }
 
-  // Create publishers and timer on the node (thread-safe in rclcpp)
   encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
   isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);
   gazeboJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);
@@ -225,10 +265,10 @@ void JointStateBroadcaster::runInitSequence()
 }
 
 bool JointStateBroadcaster::callSetAxesService(
-              rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
-              const std::string & service_name,
-              const std::vector<int64_t> & index,
-              const std::vector<int64_t> & data)
+  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
+  const std::string & service_name,
+  const std::vector<int64_t> & index,
+  const std::vector<int64_t> & data)
 {
   const int max_retries = 5;
   const auto service_timeout = std::chrono::seconds(10);
@@ -258,7 +298,6 @@ bool JointStateBroadcaster::callSetAxesService(
 
     auto response = future.get();
     if (!response->success) {
-      // Server may not be initialized yet -- retry instead of aborting
       if (response->message.find("not initialized") != std::string::npos) {
         RCLCPP_WARN(
           this->get_logger(),
@@ -335,7 +374,7 @@ void JointStateBroadcaster::setRosParameter()
       gripper_joint_names_str += gripperJointNames_[i];
     }
     RCLCPP_INFO(this->get_logger(), "gripper_joint_name: [%s]", gripper_joint_names_str.c_str());
-    RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f",  gripperOpenValue_);
+    RCLCPP_INFO(this->get_logger(), "gripper_open_value: %f", gripperOpenValue_);
     RCLCPP_INFO(this->get_logger(), "gripper_close_value: %f", gripperCloseValue_);
     if (gripperAddress_.size() >= 2) {
       RCLCPP_INFO(
@@ -353,21 +392,27 @@ void JointStateBroadcaster::setRosParameter()
 
 void JointStateBroadcaster::publishJointState()
 {
-  wmx3LibCm_->GetStatus(&cmStatus_);
+  std::string message;
+
+  std::vector<JointStateBroadcasterApi::AxisFeedback> feedback;
+  api_->getStatus(jointAxes_, feedback, message);
 
   sensor_msgs::msg::JointState encoderJointMsg_;
   std_msgs::msg::Float64MultiArray gazeboJointMsg_;
 
-  for (size_t i = 0; i < jointAxes_.size(); ++i) {
+  for (size_t i = 0; i < feedback.size(); ++i) {
     encoderJointMsg_.name.push_back(jointNames_[i]);
-    encoderJointMsg_.position.push_back(cmStatus_.axesStatus[jointAxes_[i]].actualPos);
-    encoderJointMsg_.velocity.push_back(cmStatus_.axesStatus[jointAxes_[i]].actualVelocity);
+    encoderJointMsg_.position.push_back(feedback[i].actualPos);
+    encoderJointMsg_.velocity.push_back(feedback[i].actualVelocity);
   }
 
   for (size_t i = 0; i < gripperJointNames_.size() && gripperAddress_.size() >= 1; ++i) {
     encoderJointMsg_.name.push_back(gripperJointNames_[i]);
-    wmx3Lib_Io_->GetOutBit(gripperAddress_[0], gripperAddress_[1], &gripperData_);
-    if (gripperData_) {
+
+    int32_t gripperData = 0;
+    api_->getOutputBit(gripperAddress_[0], gripperAddress_[1], gripperData, message);
+
+    if (gripperData) {
       encoderJointMsg_.position.push_back(gripperCloseValue_);
       encoderJointMsg_.velocity.push_back(0.000);
     } else {

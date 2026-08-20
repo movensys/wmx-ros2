@@ -5,16 +5,12 @@
 #define WMX_CORE_MOTION_NODE_HPP_
 
 #include <atomic>
-#include <cmath>
-#include <iostream>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <sstream>
-#include <chrono>
-#include <thread>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -31,8 +27,76 @@
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
 
-using std::placeholders::_1;
-using std::placeholders::_2;
+class WmxCoreMotionNodeApi
+{
+public:
+  struct Config
+  {
+    double jogTimeoutMs = 200.0;
+    double jogRunTimeMs = 2000.0;
+    double jogJerkRatio = 0.75;
+  };
+
+  WmxCoreMotionNodeApi(const rclcpp::Logger & logger, const Config & config);
+  ~WmxCoreMotionNodeApi();
+
+  int attachDevice(std::string & message);
+  void releaseDevice();
+
+  int readAxisCount();
+  int getStatus(wmx3Api::CoreMotionStatus & status);
+
+  int startPos(
+    int axis, double target, double velocity, double acc, double dec, std::string & message);
+  int startMov(
+    int axis, double target, double velocity, double acc, double dec, std::string & message);
+  int startVel(int axis, double velocity, double acc, double dec, std::string & message);
+  int stopAxis(int axis);
+
+  int startJog(
+    int axis, double velocity, double acc, double dec, const rclcpp::Time & now,
+    std::string & message);
+  void stopExpiredJogs(const rclcpp::Time & now);
+  void stopAllJogs();
+  void clearJog(int axis);
+
+  int setServoOn(int axis, int on, std::string & message);
+  int setAxisCommandMode(int axis, int mode, std::string & message);
+  int clearAmpAlarm(int axis, std::string & message);
+  int setAxisPolarity(int axis, int polarity, std::string & message);
+  int setGearRatio(int axis, int numerator, int denominator, std::string & message);
+  int startHome(int axis, std::string & message);
+
+  int loadWmxParams(const std::string & path, std::string & message);
+  int getWmxParams(
+    const std::vector<int32_t> & axes, std::vector<std::string> & dump, std::string & message);
+
+  bool isDeviceOpen() const {return cm_ != nullptr;}
+
+private:
+  struct JogState
+  {
+    double velocity;
+    rclcpp::Time deadline;
+  };
+
+  std::string errorText(int err);
+
+  rclcpp::Logger logger_;
+  Config config_;
+
+  const char * deviceName_ = "wmx_core_motion_node";
+  unsigned int timeout_ = 10000;
+  unsigned int servoOnTimeout_ = 1000;
+
+  std::mutex jogMutex_;
+  std::unordered_map<int, JogState> jogState_;
+
+  std::mutex deviceMutex_;
+
+  wmx3Api::WMX3Api wmx3Lib_;
+  std::unique_ptr<wmx3Api::CoreMotion> cm_;
+};
 
 class WmxCoreMotionNode : public rclcpp::Node
 {
@@ -41,36 +105,11 @@ public:
   ~WmxCoreMotionNode();
 
 private:
+  std::unique_ptr<WmxCoreMotionNodeApi> api_;
+
   std::atomic<bool> initialized_{false};
-  int axisCount_;
-  int err_;
-  char errString_[256];
-  char buffer_[512];
+  int axisCount_ = 0;
   const int rate_ = 100;
-
-  wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::CoreMotion> wmx3LibCm_;
-  wmx3Api::CoreMotionStatus cmStatus_;
-  // For getting axisCount_, we use this api.
-  wmx3Api::EngineStatus engineStatus_;
-
-  wmx3Api::Velocity::VelCommand velocity_;
-  wmx3Api::Motion::PosCommand position_;
-  wmx3Api::Config::HomeParam homeParam_;
-
-  // Jog is a dead-man command: the publisher must keep refreshing wmx/axes/start_jog,
-  // and the axis is stopped once refreshes stop arriving (cmd_vel pattern).
-  struct JogState
-  {
-    double velocity;
-    rclcpp::Time deadline;
-  };
-
-  double jogTimeoutMs_ = 200.0;
-  double jogRunTimeMs_ = 2000.0;
-  double jogJerkRatio_ = 0.75;
-  std::mutex jogMutex_;
-  std::unordered_map<int, JogState> jogState_;
 
   rclcpp::TimerBase::SharedPtr axesStatusTimer_;
   rclcpp::TimerBase::SharedPtr jogWatchdogTimer_;
@@ -96,6 +135,9 @@ private:
   rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadWmxParamsService_;
   rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getWmxParamsService_;
 
+  bool isReady();
+  std::string notReadyMessage();
+
   void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
   void axesStatusStep();
 
@@ -105,7 +147,6 @@ private:
   void startJogCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg);
 
   void jogWatchdogStep();
-  int stopAxis(int axis);
 
   void setServoOnCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,

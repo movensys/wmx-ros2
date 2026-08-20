@@ -4,12 +4,12 @@
 #ifndef WMX_ENGINE_NODE_HPP_
 #define WMX_ENGINE_NODE_HPP_
 
-#include <iostream>
-#include <memory>
-#include <string>
-#include <chrono>
-#include <thread>
 #include <atomic>
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -20,6 +20,51 @@
 
 #include "WMX3Api.h"
 
+class WmxEngineNodeApi
+{
+public:
+  struct Config
+  {
+    int core = -1;
+    int64_t affinityMask = 0;
+  };
+
+  WmxEngineNodeApi(const rclcpp::Logger & logger, const Config & config);
+  ~WmxEngineNodeApi();
+
+  void setConfig(const Config & config);
+
+  int startEngine(std::string & message);
+  int stopEngine(std::string & message);
+
+  int createDevice(const std::string & path, const std::string & name, std::string & message);
+  int closeDevice(std::string & message);
+
+  int startCommunication(std::string & message);
+  int stopCommunication(std::string & message);
+
+  std::string getEngineStatus();
+
+  bool isCommStarted() const {return isCommStarted_.load();}
+
+private:
+  std::string errorText(int err);
+
+  rclcpp::Logger logger_;
+  Config config_;
+
+  const char * deviceName_ = "wmx_engine_node";
+  unsigned int timeout_ = 10000;
+  int maxRetries_ = 5;
+  int retryDelay_ = 2000;
+
+  std::recursive_mutex deviceMutex_;
+
+  wmx3Api::WMX3Api wmx3Lib_;
+
+  std::atomic<bool> isCommStarted_{false};
+};
+
 class WmxEngineNode : public rclcpp::Node
 {
 public:
@@ -27,8 +72,8 @@ public:
   ~WmxEngineNode();
 
 private:
-  wmx3Api::WMX3Api wmx3Lib_;
-  std::atomic<bool> commStarted_{false};
+  std::unique_ptr<WmxEngineNodeApi> api_;
+
   std::atomic<bool> startComplete_{false};
   std::thread startThread_;
 
@@ -39,9 +84,8 @@ private:
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setCommService_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr getEngineStatusService_;
 
+  WmxEngineNodeApi::Config readConfig();
   void startEngine();
-  void stopEngine();
-  void stopCommunication();
   void publishReady();
 
   void setEngineCallback(
