@@ -4,6 +4,7 @@
 #ifndef JOINT_TRAJECTORY_CONTROLLER_HPP_
 #define JOINT_TRAJECTORY_CONTROLLER_HPP_
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -13,13 +14,11 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
-
 #include "lifecycle_msgs/msg/state.hpp"
 
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "control_msgs/msg/joint_jog.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
-#include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 #include "std_msgs/msg/bool.hpp"
 
 #include "WMX3Api.h"
@@ -30,7 +29,7 @@ class JointTrajectoryControllerApi
 {
 public:
   static constexpr int kSplineChannel = 0;
-  static constexpr int kMaxTrajectoryPoints = 1000;
+  static constexpr unsigned int kMaxTrajectoryPoints = 1000;
 
   explicit JointTrajectoryControllerApi(const rclcpp::Logger & logger);
   ~JointTrajectoryControllerApi();
@@ -38,39 +37,40 @@ public:
   int attachDevice(std::string & message);
   void releaseDevice();
 
-  void setAxes(const std::vector<int64_t> & axes);
-
-  int importAndSetAll(
-    const std::string & path, wmx3Api::Config::AxisParam & axisParamError,
-    std::string & message);
-  int getAxisParam(wmx3Api::Config::AxisParam & axisParam, std::string & message);
-
   int startCSplinePos(
     const std::vector<std::vector<double>> & positions,
     const std::vector<double> & timesMs,
     std::string & message);
 
+  int setAxes(const std::vector<int64_t> & axes, std::string & message);
   int getInPos(bool & inPos, std::string & message);
   int stopAxes(std::string & message);
 
-  bool isDeviceOpen() const {return cm_ != nullptr;}
+  bool isDeviceOpen() const {return isDeviceAttached_;}
+  size_t axisCount() const {return axisCount_;}
 
 private:
-  std::string errorText(int err);
+  int createSplineBuffer(std::string & message);
+  void freeSplineBuffer();
 
   rclcpp::Logger logger_;
 
   const char * deviceName_ = "joint_trajectory_controller";
   unsigned int timeout_ = 10000;
 
-  std::mutex deviceMutex_;
+  mutable std::mutex deviceMutex_;
 
-  std::vector<int64_t> axes_;
+  size_t axisCount_ = 0;
+  bool isDeviceAttached_ = false;
+
   wmx3Api::AxisSelection axisSel_;
+  wmx3Api::AdvMotion::PointTimeSplineCommand splineCommand_;
+  std::vector<wmx3Api::AdvMotion::SplinePoint> splinePoints_;
+  std::vector<double> splineTimesMs_;
 
   wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::CoreMotion> cm_;
-  std::unique_ptr<wmx3Api::AdvancedMotion> am_;
+  wmx3Api::CoreMotion cm_;
+  wmx3Api::AdvancedMotion am_;
 };
 
 class JointTrajectoryController : public rclcpp_lifecycle::LifecycleNode
@@ -95,32 +95,37 @@ private:
 
   std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
-  std::string wmxParamFilePath_;
 
-  rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
+  std::atomic<bool> isNodeActive_{false};
+
+  rclcpp_action::Server<FollowJointTrajectory>::SharedPtr actionServer_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
-  rclcpp_lifecycle::LifecyclePublisher<control_msgs::msg::JointJog>::SharedPtr servoResetPub_;
+  rclcpp_lifecycle::LifecyclePublisher<control_msgs::msg::JointJog>::SharedPtr servoNodeResetPub_;
 
-  rclcpp_action::GoalResponse handle_goal(
-    const rclcpp_action::GoalUUID & uuid,
-    std::shared_ptr<const FollowJointTrajectory::Goal> goal);
-
-  rclcpp_action::CancelResponse handle_cancel(
-    std::shared_ptr<GoalHandleFJT> goal_handle);
-
-  void handle_accepted(std::shared_ptr<GoalHandleFJT> goal_handle);
-
-  void execute(std::shared_ptr<GoalHandleFJT> goal_handle);
-
-  bool isNodeActive();
+  bool isNodeActive() const;
   std::string notActiveMessage();
 
   void setRosParameter();
-  void setWmxParam(const std::string & path);
-  void getWmxParam();
+
+  rclcpp_action::GoalResponse handleGoal(
+    const rclcpp_action::GoalUUID & uuid,
+    std::shared_ptr<const FollowJointTrajectory::Goal> goal);
+
+  rclcpp_action::CancelResponse handleCancel(std::shared_ptr<GoalHandleFJT> goalHandle);
+
+  void handleAccepted(std::shared_ptr<GoalHandleFJT> goalHandle);
+
+  void executeGoal(std::shared_ptr<GoalHandleFJT> goalHandle);
+
+  bool buildSplineInput(
+    const trajectory_msgs::msg::JointTrajectory & trajectory,
+    std::vector<std::vector<double>> & positions,
+    std::vector<double> & timesMs,
+    std::string & message);
+
   void logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory);
   void publishExecActive(bool active);
-  void resetServo(const std::vector<std::string> & joint_names);
+  void resetServo(const std::vector<std::string> & jointNames);
 };
 
 #endif  // JOINT_TRAJECTORY_CONTROLLER_HPP_

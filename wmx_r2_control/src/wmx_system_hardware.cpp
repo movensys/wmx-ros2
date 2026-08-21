@@ -22,6 +22,7 @@ namespace wmx_r2_control
 {
 
 using wmx3Api::CoreMotion;
+using wmx3Api::CoreMotionAxisStatus;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
 using wmx3Api::EngineState;
@@ -32,6 +33,13 @@ using wmx3Api::Velocity;
 namespace
 {
 constexpr double kCmdEpsilon = 1e-9;
+
+std::string errorText(int err)
+{
+  char errString[256] = {};
+  CoreMotion::ErrorToString(err, errString, sizeof(errString));
+  return errString;
+}
 }  // namespace
 
 WmxSystemHardwareApi::WmxSystemHardwareApi(
@@ -42,43 +50,31 @@ WmxSystemHardwareApi::WmxSystemHardwareApi(
 
 WmxSystemHardwareApi::~WmxSystemHardwareApi()
 {
-  if (cm_) {
-    releaseDevice();
-  }
-}
-
-std::string WmxSystemHardwareApi::errorText(int err)
-{
-  char errString[256] = {};
-  wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
-  return errString;
+  releaseDevice();
 }
 
 int WmxSystemHardwareApi::attachDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (cm_) {
+  if (isDeviceAttached_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
 
   int err = ErrorCode::None;
-
   for (int attempt = 1; attempt <= config_.maxDeviceRetries; ++attempt) {
     err = wmx3Lib_.CreateDevice(
       config_.sdkPath.c_str(), DeviceType::DeviceTypeNormal, timeout_);
     if (err == ErrorCode::None) {
       break;
     }
-
     if (err != ErrorCode::StartProcessLockError) {
-      message = "Failed to attach to WMX device. Error=" + std::to_string(err) +
+      message = "Failed to attach to device. Error=" + std::to_string(err) +
         " (" + errorText(err) + ")";
       RCLCPP_FATAL(logger_, "%s", message.c_str());
       return err;
     }
-
     RCLCPP_WARN(
       logger_, "WMX device lock busy, retrying in 1s... (%d/%d)",
       attempt, config_.maxDeviceRetries);
@@ -92,8 +88,18 @@ int WmxSystemHardwareApi::attachDevice(std::string & message)
     return err;
   }
 
-  wmx3Lib_.SetDeviceName(config_.deviceName.c_str());
-  cm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
+  err = wmx3Lib_.SetDeviceName(config_.deviceName.c_str());
+  if (err != ErrorCode::None) {
+    message = "Failed to name the device '" + config_.deviceName + "'. Error=" +
+      std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    // The device exists but is unnamed: close it so the next attempt starts clean.
+    wmx3Lib_.CloseDevice();
+    return err;
+  }
+
+  cm_ = CoreMotion(&wmx3Lib_);
+  isDeviceAttached_ = true;
 
   message = "Attached to WMX3 device as '" + config_.deviceName + "'";
   RCLCPP_INFO(logger_, "%s", message.c_str());
@@ -104,7 +110,9 @@ void WmxSystemHardwareApi::releaseDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  cm_.reset();
+  if (!isDeviceAttached_) {
+    return;
+  }
 
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
@@ -113,24 +121,22 @@ void WmxSystemHardwareApi::releaseDevice()
   } else {
     RCLCPP_INFO(logger_, "WMX device closed");
   }
+  isDeviceAttached_ = false;
 }
 
 int WmxSystemHardwareApi::importAndSetAll(const std::string & path, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot import WMX params. Core motion is not attached.";
+  if (!isDeviceAttached_) {
+    message = "Cannot import WMX params. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  std::vector<char> pathBuffer(path.begin(), path.end());
-  pathBuffer.push_back('\0');
-
-  const int err = cm_->config->ImportAndSetAll(pathBuffer.data());
+  const int err = cm_.config->ImportAndSetAll(const_cast<char *>(path.c_str()));
   if (err != ErrorCode::None) {
-    message = "Failed to import WMX params. Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
+    message = "Failed to import WMX params from " + path + ". Error=" +
+      std::to_string(err) + " (" + errorText(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -146,32 +152,34 @@ int WmxSystemHardwareApi::getStatus(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot read status. Core motion is not attached.";
+  communicating = false;
+  feedback.clear();
+
+  if (!isDeviceAttached_) {
+    message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
   CoreMotionStatus status;
-  const int err = cm_->GetStatus(&status);
+  const int err = cm_.GetStatus(&status);
   if (err != ErrorCode::None) {
     message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
     return err;
   }
 
-  communicating = (status.engineState == EngineState::T::Communicating);
-
-  feedback.clear();
   feedback.reserve(axes.size());
   for (const int axis : axes) {
-    const auto & raw = status.axesStatus[axis];
-    AxisFeedback entry;
-    entry.actualPos = raw.actualPos;
-    entry.actualVelocity = raw.actualVelocity;
-    entry.servoOn = raw.servoOn;
-    entry.ampAlarm = raw.ampAlarm;
-    feedback.push_back(entry);
+    if (axis < 0 || axis >= wmx3Api::constants::maxAxes) {
+      message = "Invalid axis " + std::to_string(axis) + ": must be in [0, " +
+        std::to_string(wmx3Api::constants::maxAxes) + ").";
+      feedback.clear();
+      return ErrorCode::ArgumentOutOfRange;
+    }
+    const CoreMotionAxisStatus & raw = status.axesStatus[axis];
+    feedback.push_back({raw.actualPos, raw.actualVelocity, raw.servoOn, raw.ampAlarm});
   }
 
+  communicating = status.engineState == EngineState::T::Communicating;
   return ErrorCode::None;
 }
 
@@ -179,19 +187,19 @@ int WmxSystemHardwareApi::startVel(int axis, double omega, std::string & message
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot move axis " + std::to_string(axis) + ". Core motion is not attached.";
+  if (!isDeviceAttached_) {
+    message = "Cannot move axis " + std::to_string(axis) + ". Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  Velocity::VelCommand cmd;
-  cmd.axis = axis;
-  cmd.profile.velocity = omega;
-  cmd.profile.type = ProfileType::T::TimeAccTrapezoidal;
-  cmd.profile.accTimeMilliseconds = config_.accTimeMilliseconds;
-  cmd.profile.decTimeMilliseconds = config_.decTimeMilliseconds;
+  Velocity::VelCommand command;
+  command.axis = axis;
+  command.profile.velocity = omega;
+  command.profile.type = ProfileType::T::TimeAccTrapezoidal;
+  command.profile.accTimeMilliseconds = config_.accTimeMilliseconds;
+  command.profile.decTimeMilliseconds = config_.decTimeMilliseconds;
 
-  const int err = cm_->velocity->StartVel(&cmd);
+  const int err = cm_.velocity->StartVel(&command);
   if (err != ErrorCode::None) {
     message = "StartVel failed on axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -206,20 +214,20 @@ int WmxSystemHardwareApi::setServoOn(int axis, int on, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot set servo on axis " + std::to_string(axis) +
-      ". Core motion is not attached.";
+  if (!isDeviceAttached_) {
+    message = "Cannot set servo on axis " + std::to_string(axis) + ". Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  const int err = cm_->axisControl->SetServoOn(axis, on, servoOnTimeout_);
+  const int err = cm_.axisControl->SetServoOn(axis, on, servoOnTimeout_);
   if (err != ErrorCode::None) {
     message = "Failed to servo-" + std::string(on ? "on" : "off") + " axis " +
       std::to_string(axis) + ". Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  message = "Axis " + std::to_string(axis) + " servo " + (on ? "on" : "off");
+  message = "Servo " + std::to_string(axis) + " " + (on ? "on" : "off");
   return ErrorCode::None;
 }
 
@@ -227,20 +235,21 @@ int WmxSystemHardwareApi::clearAmpAlarm(int axis, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot clear alarm on axis " + std::to_string(axis) +
-      ". Core motion is not attached.";
+  if (!isDeviceAttached_) {
+    message = "Cannot clear the alarm on axis " + std::to_string(axis) +
+      ". Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  const int err = cm_->axisControl->ClearAmpAlarm(axis);
+  const int err = cm_.axisControl->ClearAmpAlarm(axis);
   if (err != ErrorCode::None) {
-    message = "Failed to clear alarm on axis " + std::to_string(axis) + ". Error=" +
+    message = "Failed to clear the amp alarm on axis " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_WARN(logger_, "%s", message.c_str());
     return err;
   }
 
-  message = "Cleared alarm on axis " + std::to_string(axis);
+  message = "Amp alarm cleared on axis " + std::to_string(axis);
   return ErrorCode::None;
 }
 
@@ -286,14 +295,16 @@ hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
   config.decTimeMilliseconds = std::stod(getHwParam("dec_time_ms", "1.0"));
   config.maxDeviceRetries = std::stoi(getHwParam("max_device_retries", "30"));
 
-  wmx_param_file_ = getHwParam("wmx_param_file", "");
-  max_device_retries_ = config.maxDeviceRetries;
-  auto_servo_on_ = (getHwParam("auto_servo_on", "true") == "true");
+  wmxParamFile_ = getHwParam("wmx_param_file", "");
+  maxDeviceRetries_ = config.maxDeviceRetries;
+  autoServoOn_ = (getHwParam("auto_servo_on", "true") == "true");
 
   api_ = std::make_unique<WmxSystemHardwareApi>(logger_, config);
 
   joints_.clear();
   joints_.reserve(info_.joints.size());
+  axes_.clear();
+  axes_.reserve(info_.joints.size());
 
   for (const auto & j : info_.joints) {
     WmxJoint joint;
@@ -306,6 +317,13 @@ hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
       return hardware_interface::CallbackReturn::ERROR;
     }
     joint.axis = std::stoi(axis_it->second);
+
+    if (joint.axis < 0 || joint.axis >= wmx3Api::constants::maxAxes) {
+      RCLCPP_FATAL(
+        logger_, "Joint '%s' axis %d is out of range [0, %d)",
+        j.name.c_str(), joint.axis, wmx3Api::constants::maxAxes);
+      return hardware_interface::CallbackReturn::ERROR;
+    }
 
     const auto & cmd_ifs = j.command_interfaces;
     if (cmd_ifs.empty()) {
@@ -325,35 +343,50 @@ hardware_interface::CallbackReturn WmxSystemHardware::initImpl()
       joint.name.c_str(), joint.axis,
       joint.mode == JointMode::Velocity ? "velocity" : "state-only");
 
-    joints_.push_back(joint);
-  }
-
-  axes_.clear();
-  axes_.reserve(joints_.size());
-  for (const auto & joint : joints_) {
     axes_.push_back(joint.axis);
+    joints_.push_back(joint);
   }
 
   RCLCPP_INFO(
     logger_,
     "WmxSystemHardware initialised: %zu joints, sdk_path=%s, param_file=%s",
     joints_.size(), config.sdkPath.c_str(),
-    wmx_param_file_.empty() ? "(none)" : wmx_param_file_.c_str());
+    wmxParamFile_.empty() ? "(none)" : wmxParamFile_.c_str());
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-// Refresh the cached feedback and re-baseline the exported state interfaces.
+bool WmxSystemHardware::waitForCommunicating()
+{
+  for (int attempt = 1; attempt <= maxDeviceRetries_; ++attempt) {
+    std::string message;
+    bool communicating = false;
+    if (api_->getStatus(axes_, feedback_, communicating, message) == ErrorCode::None &&
+      communicating)
+    {
+      return true;
+    }
+    RCLCPP_WARN(
+      logger_, "WMX engine not Communicating yet, waiting... (%d/%d)",
+      attempt, maxDeviceRetries_);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+  return false;
+}
+
 void WmxSystemHardware::seedJointStates()
 {
   std::string message;
-  api_->getStatus(axes_, feedback_, communicating_, message);
+  if (api_->getStatus(axes_, feedback_, communicating_, message) != ErrorCode::None) {
+    RCLCPP_WARN(logger_, "Could not seed joint states: %s", message.c_str());
+    return;
+  }
 
   for (size_t i = 0; i < joints_.size() && i < feedback_.size(); ++i) {
-    joints_[i].pos_state = feedback_[i].actualPos;
-    joints_[i].vel_state = feedback_[i].actualVelocity;
+    joints_[i].posState = feedback_[i].actualPos;
+    joints_[i].velState = feedback_[i].actualVelocity;
     joints_[i].cmd = 0.0;
-    joints_[i].last_cmd = std::numeric_limits<double>::quiet_NaN();
+    joints_[i].lastCmd = std::numeric_limits<double>::quiet_NaN();
   }
 }
 
@@ -365,9 +398,10 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_configure(
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  if (!wmx_param_file_.empty()) {
-    // A bad param file is logged but not fatal: the engine keeps its current params.
-    api_->importAndSetAll(wmx_param_file_, message);
+  if (!wmxParamFile_.empty()) {
+    // Informational: a bad parameter file is reported but does not stop the
+    // component, matching the previous behaviour.
+    api_->importAndSetAll(wmxParamFile_, message);
   }
 
   seedJointStates();
@@ -376,49 +410,24 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_configure(
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-// wmx_engine_node is launched alongside the controller_manager and takes ~1s
-// to bring EtherCAT to Communicating. Wait for it (bounded) rather than
-// failing activation outright, which aborts ros2_control_node.
-bool WmxSystemHardware::waitForCommunicating()
-{
-  for (int attempt = 1; attempt <= max_device_retries_; ++attempt) {
-    std::string message;
-    api_->getStatus(axes_, feedback_, communicating_, message);
-    if (communicating_) {
-      return true;
-    }
-
-    RCLCPP_WARN(
-      logger_, "WMX engine not Communicating yet, waiting... (%d/%d)",
-      attempt, max_device_retries_);
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-  }
-
-  RCLCPP_ERROR(
-    logger_,
-    "WMX engine is not Communicating after %d s. Start wmx_engine_node and "
-    "EtherCAT communication first.", max_device_retries_);
-  return false;
-}
-
 hardware_interface::CallbackReturn WmxSystemHardware::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
   if (!waitForCommunicating()) {
+    RCLCPP_ERROR(
+      logger_,
+      "WMX engine is not Communicating after %d s. Start wmx_engine_node and "
+      "EtherCAT communication first.", maxDeviceRetries_);
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  // Clear amp alarms and enable the servos (StartVel/CyclicBuffer require
-  // servo-on). Disable via the 'auto_servo_on' hardware param if servos are
-  // managed elsewhere.
-  if (auto_servo_on_) {
+  if (autoServoOn_) {
     std::string message;
-    for (const auto & joint : joints_) {
+    for (const WmxJoint & joint : joints_) {
       api_->clearAmpAlarm(joint.axis, message);
     }
-    for (const auto & joint : joints_) {
+    for (const WmxJoint & joint : joints_) {
       if (api_->setServoOn(joint.axis, 1, message) != ErrorCode::None) {
-        RCLCPP_ERROR(logger_, "%s", message.c_str());
         return hardware_interface::CallbackReturn::ERROR;
       }
     }
@@ -434,17 +443,20 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_activate(
 hardware_interface::CallbackReturn WmxSystemHardware::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  for (const auto & joint : joints_) {
+  std::string message;
+
+  for (const WmxJoint & joint : joints_) {
     if (joint.mode == JointMode::Velocity) {
-      startVelocity(joint, 0.0);
+      api_->startVel(joint.axis, 0.0, message);
     }
   }
-  if (auto_servo_on_) {
-    std::string message;
-    for (const auto & joint : joints_) {
+
+  if (autoServoOn_) {
+    for (const WmxJoint & joint : joints_) {
       api_->setServoOn(joint.axis, 0, message);
     }
   }
+
   RCLCPP_INFO(logger_, "WmxSystemHardware deactivated");
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -452,9 +464,7 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_deactivate(
 hardware_interface::CallbackReturn WmxSystemHardware::on_cleanup(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  if (api_->isDeviceOpen()) {
-    api_->releaseDevice();
-  }
+  api_->releaseDevice();
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -463,9 +473,9 @@ std::vector<hardware_interface::StateInterface> WmxSystemHardware::export_state_
   std::vector<hardware_interface::StateInterface> state_interfaces;
   for (auto & joint : joints_) {
     state_interfaces.emplace_back(
-      joint.name, hardware_interface::HW_IF_POSITION, &joint.pos_state);
+      joint.name, hardware_interface::HW_IF_POSITION, &joint.posState);
     state_interfaces.emplace_back(
-      joint.name, hardware_interface::HW_IF_VELOCITY, &joint.vel_state);
+      joint.name, hardware_interface::HW_IF_VELOCITY, &joint.velState);
   }
   return state_interfaces;
 }
@@ -492,18 +502,10 @@ hardware_interface::return_type WmxSystemHardware::read(
   }
 
   for (size_t i = 0; i < joints_.size() && i < feedback_.size(); ++i) {
-    joints_[i].pos_state = feedback_[i].actualPos;
-    joints_[i].vel_state = feedback_[i].actualVelocity;
+    joints_[i].posState = feedback_[i].actualPos;
+    joints_[i].velState = feedback_[i].actualVelocity;
   }
   return hardware_interface::return_type::OK;
-}
-
-void WmxSystemHardware::startVelocity(const WmxJoint & joint, double omega)
-{
-  std::string message;
-  if (api_->startVel(joint.axis, omega, message) != ErrorCode::None) {
-    RCLCPP_ERROR_THROTTLE(logger_, clock_, 1000, "%s", message.c_str());
-  }
 }
 
 hardware_interface::return_type WmxSystemHardware::write(
@@ -520,19 +522,23 @@ hardware_interface::return_type WmxSystemHardware::write(
     if (joint.mode != JointMode::Velocity) {
       continue;
     }
-    // Skip (don't spam StartVel errors) while the servo is off or alarmed.
-    const auto & axis_status = feedback_[i];
-    if (!axis_status.servoOn || axis_status.ampAlarm) {
+
+    const WmxSystemHardwareApi::AxisFeedback & axisStatus = feedback_[i];
+    if (!axisStatus.servoOn || axisStatus.ampAlarm) {
       RCLCPP_WARN_THROTTLE(
         logger_, clock_, 2000,
         "Axis %d not ready (servoOn=%d, ampAlarm=%d); skipping velocity command",
-        joint.axis, axis_status.servoOn, axis_status.ampAlarm);
-      joint.last_cmd = std::numeric_limits<double>::quiet_NaN();
+        joint.axis, axisStatus.servoOn, axisStatus.ampAlarm);
+      joint.lastCmd = std::numeric_limits<double>::quiet_NaN();
       continue;
     }
-    if (std::isnan(joint.last_cmd) || std::fabs(joint.cmd - joint.last_cmd) > kCmdEpsilon) {
-      startVelocity(joint, joint.cmd);
-      joint.last_cmd = joint.cmd;
+
+    if (std::isnan(joint.lastCmd) || std::fabs(joint.cmd - joint.lastCmd) > kCmdEpsilon) {
+      std::string message;
+      if (api_->startVel(joint.axis, joint.cmd, message) != ErrorCode::None) {
+        RCLCPP_ERROR_THROTTLE(logger_, clock_, 1000, "%s", message.c_str());
+      }
+      joint.lastCmd = joint.cmd;
     }
   }
   return hardware_interface::return_type::OK;
