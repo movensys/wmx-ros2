@@ -70,8 +70,6 @@ int WmxEngineNodeApi::startEngine(std::string & message)
       err = wmx3Lib_.SetDeviceName(deviceName_);
 
       if (err == wmx3Api::ErrorCode::None) {
-        isEngineStarted_ = true;
-        isDeviceCreated_ = true;
         cm_ = std::make_unique<wmx3Api::CoreMotion>(&wmx3Lib_);
         RCLCPP_INFO(logger_, "Device created (attempt %d)", attempt + 1);
 
@@ -117,7 +115,6 @@ int WmxEngineNodeApi::stopEngine(std::string & message)
     RCLCPP_ERROR(logger_, "%s", message.c_str());
   } else {
     cm_.reset();
-    isDeviceCreated_ = false;
     message = "Device closed";
     RCLCPP_INFO(logger_, "%s", message.c_str());
   }
@@ -128,7 +125,6 @@ int WmxEngineNodeApi::stopEngine(std::string & message)
       " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
   } else {
-    isEngineStarted_ = false;
     message = "Engine stopped";
     RCLCPP_INFO(logger_, "%s", message.c_str());
   }
@@ -174,12 +170,6 @@ int WmxEngineNodeApi::importAndSetAll(const std::string & path, std::string & me
 {
   std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
 
-  if (!isDeviceCreated_ || !cm_) {
-    message = "Cannot load WMX parameters. The device is not created yet.";
-    RCLCPP_ERROR(logger_, "%s", message.c_str());
-    return wmx3Api::ErrorCode::DeviceIsNull;
-  }
-
   wmx3Api::Config::SystemParam sysParamErr;
   wmx3Api::Config::AxisParam axisParamErr;
 
@@ -206,7 +196,7 @@ int WmxEngineNodeApi::getAxisParam(
 {
   std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
 
-  if (!isDeviceCreated_ || !cm_) {
+  if (!cm_) {
     message = "Cannot read WMX parameters. The device is not created yet.";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return wmx3Api::ErrorCode::DeviceIsNull;
@@ -255,14 +245,11 @@ int WmxEngineNodeApi::getAxisParam(
 
 int WmxEngineNodeApi::getEngineStatus(std::string & message)
 {
-  if (!isEngineStarted_) {
-    message = "Cannot read engine status. Engine is not started yet.";
-    return wmx3Api::ErrorCode::DeviceIsNull;
-  }
+  std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
 
-  wmx3Api::EngineState::T state = wmx3Api::EngineState::Unknown;
+  wmx3Api::EngineStatus engineStatus;
 
-  const int err = engineState(state);
+  const int err = wmx3Lib_.GetEngineStatus(&engineStatus);
   if (err != wmx3Api::ErrorCode::None) {
     message = "Failed to read engine status. Error=" + std::to_string(err) +
       " (" + errorToString(err) + ")";
@@ -270,22 +257,7 @@ int WmxEngineNodeApi::getEngineStatus(std::string & message)
     return err;
   }
 
-  message = engineStateLabel(state);
-  return wmx3Api::ErrorCode::None;
-}
-
-int WmxEngineNodeApi::engineState(wmx3Api::EngineState::T & state)
-{
-  std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
-
-  wmx3Api::EngineStatus engineStatus;
-
-  const int err = wmx3Lib_.GetEngineStatus(&engineStatus);
-  if (err != wmx3Api::ErrorCode::None) {
-    return err;
-  }
-
-  state = engineStatus.state;
+  message = engineStateLabel(engineStatus.state);
   return wmx3Api::ErrorCode::None;
 }
 

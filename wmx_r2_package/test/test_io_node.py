@@ -13,6 +13,7 @@ import rclpy
 from rclpy.node import Node
 
 from wmx_r2_message.srv import GetIoBit
+from wmx_r2_message.srv import GetIoBits
 from wmx_r2_message.srv import GetIoBytes
 from wmx_r2_message.srv import SetIoBit
 from wmx_r2_message.srv import SetIoBytes
@@ -117,6 +118,38 @@ class TestIoNode(unittest.TestCase):
         req = GetIoBit.Request()
         req.addr = 0
         req.bit = 0
+        future = client.call_async(req)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
+
+        self.assertIsNotNone(future.result(), 'Service call returned no result')
+
+    def test_get_in_bits_service(self):
+        """get_in_bits service should be available and respond."""
+        client = self.node.create_client(GetIoBits, 'wmx/io/get_in_bits')
+        self.assertTrue(
+            client.wait_for_service(timeout_sec=20),
+            'wmx/io/get_in_bits service not available',
+        )
+
+        req = GetIoBits.Request()
+        req.addr = [0, 0]
+        req.bit = [0, 1]
+        future = client.call_async(req)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
+
+        self.assertIsNotNone(future.result(), 'Service call returned no result')
+
+    def test_get_out_bits_service(self):
+        """get_out_bits service should be available and respond."""
+        client = self.node.create_client(GetIoBits, 'wmx/io/get_out_bits')
+        self.assertTrue(
+            client.wait_for_service(timeout_sec=20),
+            'wmx/io/get_out_bits service not available',
+        )
+
+        req = GetIoBits.Request()
+        req.addr = [0, 0]
+        req.bit = [0, 1]
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
 

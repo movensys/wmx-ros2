@@ -85,14 +85,11 @@ private:
 
   std::map<std::string, int> axisByName_;
 
-  std::atomic<bool> isNodeActive_{false};
   std::atomic<bool> inExecution_{false};
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr execActiveSub_;
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr jointTrajectorySub_;
 
-  bool isNodeActive() const;
-  std::string notActiveMessage();
 
   void setRosParameter();
 

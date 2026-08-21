@@ -49,8 +49,6 @@ public:
 private:
   std::string errorToString(int err);
 
-  int engineState(wmx3Api::EngineState::T & state);
-
   rclcpp::Logger logger_;
   Config config_;
 
@@ -63,9 +61,6 @@ private:
 
   wmx3Api::WMX3Api wmx3Lib_;
   std::unique_ptr<wmx3Api::CoreMotion> cm_;
-
-  std::atomic<bool> isDeviceCreated_{false};
-  std::atomic<bool> isEngineStarted_{false};
 };
 
 class WmxEngineNode : public rclcpp::Node

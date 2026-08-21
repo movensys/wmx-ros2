@@ -13,6 +13,7 @@ from wmx_r2_message.srv import EcatResetStatistics
 from wmx_r2_message.srv import EcatStartHotconnect
 from wmx_r2_message.srv import GetAxisParam
 from wmx_r2_message.srv import GetIoBit
+from wmx_r2_message.srv import GetIoBits
 from wmx_r2_message.srv import GetIoBytes
 from wmx_r2_message.srv import GetNodeStates
 from wmx_r2_message.srv import ImportAndSetAll
@@ -226,6 +227,15 @@ class TestIoServicesSrv(unittest.TestCase):
         self.assertTrue(hasattr(req, 'addr'))
         self.assertTrue(hasattr(req, 'bit'))
         res = GetIoBit.Response()
+        self.assertTrue(hasattr(res, 'success'))
+        self.assertTrue(hasattr(res, 'data'))
+        self.assertTrue(hasattr(res, 'message'))
+
+    def test_get_io_bits(self):
+        req = GetIoBits.Request()
+        self.assertTrue(hasattr(req, 'addr'))
+        self.assertTrue(hasattr(req, 'bit'))
+        res = GetIoBits.Response()
         self.assertTrue(hasattr(res, 'success'))
         self.assertTrue(hasattr(res, 'data'))
         self.assertTrue(hasattr(res, 'message'))

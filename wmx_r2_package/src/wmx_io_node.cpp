@@ -38,11 +38,6 @@ WmxIoNodeApi::~WmxIoNodeApi()
 
 int WmxIoNodeApi::createDevice(std::string & message)
 {
-  if (wmxIo_) {
-    message = "Already attached to the WMX3 device";
-    return ErrorCode::None;
-  }
-
   int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
   if (err != ErrorCode::None) {
     if (err == ErrorCode::StartProcessLockError) {
@@ -120,6 +115,80 @@ int WmxIoNodeApi::getOutBit(int32_t addr, int32_t bit, uint8_t & data, std::stri
 
   message = "Output bit " + std::to_string(addr) + "." + std::to_string(bit) + " = " +
     std::to_string(data);
+  return ErrorCode::None;
+}
+
+int WmxIoNodeApi::getInBits(
+  const std::vector<int32_t> & addr, const std::vector<int32_t> & bit,
+  std::vector<uint8_t> & data, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot read input bits. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  if (addr.empty()) {
+    message = "No addr provided";
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
+  if (bit.size() != addr.size()) {
+    message = "addr and bit must be the same size";
+    return ErrorCode::ArgumentOutOfRange;
+  }
+
+  const int count = static_cast<int>(addr.size());
+  data.assign(addr.size(), 0);
+
+  for (size_t i = 0; i < addr.size(); ++i) {
+    const int err = wmxIo_->GetInBitEx(addr[i], bit[i], &data[i]);
+    if (err != ErrorCode::None) {
+      message = failureText(
+        "GetInBitEx", "addr=" + std::to_string(addr[i]) + " bit=" + std::to_string(bit[i]), err);
+      RCLCPP_ERROR(logger_, "%s", message.c_str());
+      data.clear();
+      return err;
+    }
+  }
+
+  message = "Read " + std::to_string(count) + " input bits";
+  return ErrorCode::None;
+}
+
+int WmxIoNodeApi::getOutBits(
+  const std::vector<int32_t> & addr, const std::vector<int32_t> & bit,
+  std::vector<uint8_t> & data, std::string & message)
+{
+  if (!wmxIo_) {
+    message = "Cannot read output bits. IO is not attached.";
+    return ErrorCode::DeviceIsNull;
+  }
+
+  if (addr.empty()) {
+    message = "No addr provided";
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
+  if (bit.size() != addr.size()) {
+    message = "addr and bit must be the same size";
+    return ErrorCode::ArgumentOutOfRange;
+  }
+
+  const int count = static_cast<int>(addr.size());
+  data.assign(addr.size(), 0);
+
+  for (size_t i = 0; i < addr.size(); ++i) {
+    const int err = wmxIo_->GetOutBitEx(addr[i], bit[i], &data[i]);
+    if (err != ErrorCode::None) {
+      message = failureText(
+        "GetOutBitEx", "addr=" + std::to_string(addr[i]) + " bit=" + std::to_string(bit[i]), err);
+      RCLCPP_ERROR(logger_, "%s", message.c_str());
+      data.clear();
+      return err;
+    }
+  }
+
+  message = "Read " + std::to_string(count) + " output bits";
   return ErrorCode::None;
 }
 
@@ -350,18 +419,6 @@ WmxIoNode::~WmxIoNode()
   RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
 }
 
-bool WmxIoNode::isNodeActive()
-{
-  return this->get_current_state().id() ==
-         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
-}
-
-std::string WmxIoNode::notActiveMessage()
-{
-  return "wmx_io_node is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 WmxIoNode::CallbackReturn WmxIoNode::on_configure(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(this->get_logger(), "Configuring wmx_io_node...");
@@ -371,6 +428,12 @@ WmxIoNode::CallbackReturn WmxIoNode::on_configure(const rclcpp_lifecycle::State 
     return CallbackReturn::FAILURE;
   }
 
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxIoNode::CallbackReturn WmxIoNode::on_activate(const rclcpp_lifecycle::State & previous_state)
+{
   getInBitService_ = this->create_service<wmx_r2_message::srv::GetIoBit>(
     "wmx/io/get_in_bit",
     std::bind(&WmxIoNode::getInBitCallback, this, _1, _2));
@@ -378,6 +441,14 @@ WmxIoNode::CallbackReturn WmxIoNode::on_configure(const rclcpp_lifecycle::State 
   getOutBitService_ = this->create_service<wmx_r2_message::srv::GetIoBit>(
     "wmx/io/get_out_bit",
     std::bind(&WmxIoNode::getOutBitCallback, this, _1, _2));
+
+  getInBitsService_ = this->create_service<wmx_r2_message::srv::GetIoBits>(
+    "wmx/io/get_in_bits",
+    std::bind(&WmxIoNode::getInBitsCallback, this, _1, _2));
+
+  getOutBitsService_ = this->create_service<wmx_r2_message::srv::GetIoBits>(
+    "wmx/io/get_out_bits",
+    std::bind(&WmxIoNode::getOutBitsCallback, this, _1, _2));
 
   getInBytesService_ = this->create_service<wmx_r2_message::srv::GetIoBytes>(
     "wmx/io/get_in_bytes",
@@ -411,12 +482,6 @@ WmxIoNode::CallbackReturn WmxIoNode::on_configure(const rclcpp_lifecycle::State 
     "wmx/io/set_out_bytes",
     std::bind(&WmxIoNode::setOutBytesCallback, this, _1, _2));
 
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node is configured");
-  return CallbackReturn::SUCCESS;
-}
-
-WmxIoNode::CallbackReturn WmxIoNode::on_activate(const rclcpp_lifecycle::State & previous_state)
-{
   LifecycleNode::on_activate(previous_state);
   RCLCPP_INFO(this->get_logger(), "wmx_io_node is active");
   return CallbackReturn::SUCCESS;
@@ -425,14 +490,11 @@ WmxIoNode::CallbackReturn WmxIoNode::on_activate(const rclcpp_lifecycle::State &
 WmxIoNode::CallbackReturn WmxIoNode::on_deactivate(const rclcpp_lifecycle::State & previous_state)
 {
   LifecycleNode::on_deactivate(previous_state);
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node is inactive");
-  return CallbackReturn::SUCCESS;
-}
 
-WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
-{
   getInBitService_.reset();
   getOutBitService_.reset();
+  getInBitsService_.reset();
+  getOutBitsService_.reset();
   getInBytesService_.reset();
   getOutBytesService_.reset();
   setOutBitService_.reset();
@@ -442,6 +504,12 @@ WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
   setOutByteService_.reset();
   setOutBytesService_.reset();
 
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
+{
   api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "wmx_io_node is cleaned up");
@@ -457,12 +525,6 @@ void WmxIoNode::getInBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->getInBit(request->addr, request->bit, response->data, message) == ErrorCode::None;
@@ -473,15 +535,31 @@ void WmxIoNode::getOutBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->getOutBit(request->addr, request->bit, response->data, message) == ErrorCode::None;
+  response->message = message;
+}
+
+void WmxIoNode::getInBitsCallback(
+  const std::shared_ptr<wmx_r2_message::srv::GetIoBits::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::GetIoBits::Response> response)
+{
+  std::string message;
+  response->success =
+    api_->getInBits(request->addr, request->bit, response->data, message) ==
+    ErrorCode::None;
+  response->message = message;
+}
+
+void WmxIoNode::getOutBitsCallback(
+  const std::shared_ptr<wmx_r2_message::srv::GetIoBits::Request> request,
+  std::shared_ptr<wmx_r2_message::srv::GetIoBits::Response> response)
+{
+  std::string message;
+  response->success =
+    api_->getOutBits(request->addr, request->bit, response->data, message) ==
+    ErrorCode::None;
   response->message = message;
 }
 
@@ -489,12 +567,6 @@ void WmxIoNode::getInBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->getInBytes(request->addr, request->size, response->data, message) ==
@@ -506,12 +578,6 @@ void WmxIoNode::getOutBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->getOutBytes(request->addr, request->size, response->data, message) ==
@@ -523,12 +589,6 @@ void WmxIoNode::setOutBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBit::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->setOutBit(request->addr, request->bit, request->data, message) == ErrorCode::None;
@@ -539,12 +599,6 @@ void WmxIoNode::setOutBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->setOutBytes(request->addr, request->data, message) == ErrorCode::None;
@@ -555,12 +609,6 @@ void WmxIoNode::getInByteCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoByte::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoByte::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->getInByte(request->addr, response->data, message) == ErrorCode::None;
@@ -571,12 +619,6 @@ void WmxIoNode::getOutByteCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoByte::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoByte::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->getOutByte(request->addr, response->data, message) == ErrorCode::None;
@@ -587,12 +629,6 @@ void WmxIoNode::setOutBitsCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBits::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBits::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->setOutBits(request->addr, request->bit, request->data, message) ==
@@ -604,12 +640,6 @@ void WmxIoNode::setOutByteCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoByte::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoByte::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   std::string message;
   response->success =
     api_->setOutByte(request->addr, request->data, message) == ErrorCode::None;

@@ -178,17 +178,6 @@ GripperController::~GripperController()
   RCLCPP_INFO(this->get_logger(), "gripper_controller stopped");
 }
 
-bool GripperController::isNodeActive() const
-{
-  return isNodeActive_.load();
-}
-
-std::string GripperController::notActiveMessage()
-{
-  return "gripper_controller is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 void GripperController::setRosParameter()
 {
   wmxGripperTopic_ = this->declare_parameter<std::string>(
@@ -231,10 +220,6 @@ GripperController::CallbackReturn GripperController::on_configure(
       manipulatorModel ? manipulatorModel : "not set");
   }
 
-  setGripperService_ = this->create_service<std_srvs::srv::SetBool>(
-    wmxGripperTopic_,
-    std::bind(&GripperController::setGripperCallback, this, _1, _2));
-
   RCLCPP_INFO(this->get_logger(), "gripper_controller is configured");
   return CallbackReturn::SUCCESS;
 }
@@ -242,8 +227,11 @@ GripperController::CallbackReturn GripperController::on_configure(
 GripperController::CallbackReturn GripperController::on_activate(
   const rclcpp_lifecycle::State & previous_state)
 {
+  setGripperService_ = this->create_service<std_srvs::srv::SetBool>(
+    wmxGripperTopic_,
+    std::bind(&GripperController::setGripperCallback, this, _1, _2));
+
   LifecycleNode::on_activate(previous_state);
-  isNodeActive_ = true;
 
   RCLCPP_INFO(this->get_logger(), "gripper_controller is active");
   return CallbackReturn::SUCCESS;
@@ -252,9 +240,10 @@ GripperController::CallbackReturn GripperController::on_activate(
 GripperController::CallbackReturn GripperController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  isNodeActive_ = false;
-
   LifecycleNode::on_deactivate(previous_state);
+
+  setGripperService_.reset();
+
   RCLCPP_INFO(this->get_logger(), "gripper_controller is inactive");
   return CallbackReturn::SUCCESS;
 }
@@ -262,10 +251,6 @@ GripperController::CallbackReturn GripperController::on_deactivate(
 GripperController::CallbackReturn GripperController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  isNodeActive_ = false;
-
-  setGripperService_.reset();
-
   api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "gripper_controller is cleaned up");
@@ -318,12 +303,6 @@ void GripperController::setGripperCallback(
   const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
   std::shared_ptr<std_srvs::srv::SetBool::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   const uint8_t bitData = request->data ? 1 : 0;
   const char * action = request->data ? "close" : "open";
 

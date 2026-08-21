@@ -196,17 +196,6 @@ DifferentialDriveController::~DifferentialDriveController()
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller stopped");
 }
 
-bool DifferentialDriveController::isNodeActive() const
-{
-  return isNodeActive_.load();
-}
-
-std::string DifferentialDriveController::notActiveMessage()
-{
-  return "differential_drive_controller is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_configure(
   const rclcpp_lifecycle::State &)
 {
@@ -217,6 +206,13 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
     return CallbackReturn::FAILURE;
   }
 
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
   encoderOmegaPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
     encoderOmegaTopic_, 1);
   encoderOdometryPub_ = this->create_publisher<nav_msgs::msg::Odometry>(
@@ -232,26 +228,14 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
   cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
 
-  const auto period = periodFromRate(rate_);
-  controlTimer_ = this->create_wall_timer(
-    period, std::bind(&DifferentialDriveController::controlStep, this));
-  controlTimer_->cancel();
-
-  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is configured");
-  return CallbackReturn::SUCCESS;
-}
-
-DifferentialDriveController::CallbackReturn DifferentialDriveController::on_activate(
-  const rclcpp_lifecycle::State & previous_state)
-{
   LifecycleNode::on_activate(previous_state);
-  isNodeActive_ = true;
 
   havePrev_ = false;
   haveCmd_ = false;
   lastSentValid_ = false;
 
-  controlTimer_->reset();
+  controlTimer_ = this->create_wall_timer(
+    periodFromRate(rate_), std::bind(&DifferentialDriveController::controlStep, this));
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is active");
   return CallbackReturn::SUCCESS;
@@ -260,24 +244,14 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_acti
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  isNodeActive_ = false;
-  controlTimer_->cancel();
+  controlTimer_.reset();
 
   startVel(leftAxis_, 0.0);
   startVel(rightAxis_, 0.0);
   lastSentValid_ = false;
 
   LifecycleNode::on_deactivate(previous_state);
-  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is inactive");
-  return CallbackReturn::SUCCESS;
-}
 
-DifferentialDriveController::CallbackReturn DifferentialDriveController::on_cleanup(
-  const rclcpp_lifecycle::State &)
-{
-  isNodeActive_ = false;
-
-  controlTimer_.reset();
   cmdVelStampedSub_.reset();
   tfBroadcaster_.reset();
   encoderOmegaPub_.reset();
@@ -285,6 +259,13 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_clea
   odomDeltasPub_.reset();
   odomAccelPub_.reset();
 
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
   api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is cleaned up");

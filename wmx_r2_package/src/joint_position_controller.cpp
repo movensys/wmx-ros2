@@ -255,17 +255,6 @@ JointPositionController::~JointPositionController()
   RCLCPP_INFO(this->get_logger(), "joint_position_controller stopped");
 }
 
-bool JointPositionController::isNodeActive() const
-{
-  return isNodeActive_.load();
-}
-
-std::string JointPositionController::notActiveMessage()
-{
-  return "joint_position_controller is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 void JointPositionController::setRosParameter()
 {
   jointAxes_ = this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
@@ -318,6 +307,13 @@ JointPositionController::CallbackReturn JointPositionController::on_configure(
     return CallbackReturn::FAILURE;
   }
 
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
   execActiveSub_ = this->create_subscription<std_msgs::msg::Bool>(
     "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local(),
     std::bind(&JointPositionController::execActiveCallback, this, _1));
@@ -326,15 +322,7 @@ JointPositionController::CallbackReturn JointPositionController::on_configure(
     jointTrajectoryTopic_, 1,
     std::bind(&JointPositionController::jointTrajectoryCallback, this, _1));
 
-  RCLCPP_INFO(this->get_logger(), "joint_position_controller is configured");
-  return CallbackReturn::SUCCESS;
-}
-
-JointPositionController::CallbackReturn JointPositionController::on_activate(
-  const rclcpp_lifecycle::State & previous_state)
-{
   LifecycleNode::on_activate(previous_state);
-  isNodeActive_ = true;
 
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is active");
   return CallbackReturn::SUCCESS;
@@ -343,12 +331,14 @@ JointPositionController::CallbackReturn JointPositionController::on_activate(
 JointPositionController::CallbackReturn JointPositionController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  isNodeActive_ = false;
-
   std::string message;
   api_->stop(message);
 
   LifecycleNode::on_deactivate(previous_state);
+
+  jointTrajectorySub_.reset();
+  execActiveSub_.reset();
+
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is inactive");
   return CallbackReturn::SUCCESS;
 }
@@ -356,11 +346,6 @@ JointPositionController::CallbackReturn JointPositionController::on_deactivate(
 JointPositionController::CallbackReturn JointPositionController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  isNodeActive_ = false;
-
-  jointTrajectorySub_.reset();
-  execActiveSub_.reset();
-
   api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is cleaned up");
@@ -460,7 +445,7 @@ bool JointPositionController::buildCommand(
 void JointPositionController::jointTrajectoryCallback(
   const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
-  if (!isNodeActive() || msg->points.empty() || inExecution_.load()) {
+  if (msg->points.empty() || inExecution_.load()) {
     return;
   }
 

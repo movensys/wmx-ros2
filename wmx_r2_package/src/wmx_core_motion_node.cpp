@@ -564,18 +564,6 @@ WmxCoreMotionNode::~WmxCoreMotionNode()
   RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node stopped");
 }
 
-bool WmxCoreMotionNode::isNodeActive()
-{
-  return this->get_current_state().id() ==
-         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
-}
-
-std::string WmxCoreMotionNode::notActiveMessage()
-{
-  return "wmx_core_motion_node is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 bool WmxCoreMotionNode::isMotionBlocked() const
 {
   std::lock_guard<std::mutex> lock(controllerMutex_);
@@ -662,6 +650,15 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_l
     RCLCPP_WARN(this->get_logger(), "Engine reported 0 axes; axis state will be empty.");
   }
 
+  RCLCPP_INFO(
+    this->get_logger(), "wmx_core_motion_node is configured (%d axes, %d Hz)",
+    numOfAxes_, rate_);
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
   setServoOnService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
     "wmx/axes/set_servo_on",
     std::bind(&WmxCoreMotionNode::setServoOnCallback, this, _1, _2));
@@ -710,16 +707,6 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_l
     "wmx/axes/start_jog", 1,
     std::bind(&WmxCoreMotionNode::startJogCallback, this, _1));
 
-  axesStatusTimer_ = this->create_wall_timer(
-    periodFromRate(rate_),
-    std::bind(&WmxCoreMotionNode::axesStatusStep, this));
-  axesStatusTimer_->cancel();
-
-  jogWatchdogTimer_ = this->create_wall_timer(
-    std::chrono::milliseconds(20),
-    std::bind(&WmxCoreMotionNode::jogWatchdogStep, this));
-  jogWatchdogTimer_->cancel();
-
   for (const std::string & controller : motionControllers_) {
     if (controller.empty() || controller == this->get_name()) {
       continue;
@@ -745,19 +732,15 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_l
       std::chrono::duration<double>(controllerResyncPeriod_)),
     std::bind(&WmxCoreMotionNode::resyncControllerStates, this));
 
-  RCLCPP_INFO(
-    this->get_logger(), "wmx_core_motion_node is configured (%d axes, %d Hz)",
-    numOfAxes_, rate_);
-  return CallbackReturn::SUCCESS;
-}
-
-WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_activate(
-  const rclcpp_lifecycle::State & previous_state)
-{
   LifecycleNode::on_activate(previous_state);
 
-  axesStatusTimer_->reset();
-  jogWatchdogTimer_->reset();
+  axesStatusTimer_ = this->create_wall_timer(
+    periodFromRate(rate_),
+    std::bind(&WmxCoreMotionNode::axesStatusStep, this));
+
+  jogWatchdogTimer_ = this->create_wall_timer(
+    std::chrono::milliseconds(20),
+    std::bind(&WmxCoreMotionNode::jogWatchdogStep, this));
 
   RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is active");
   return CallbackReturn::SUCCESS;
@@ -766,23 +749,13 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_activate(
 WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  axesStatusTimer_->cancel();
-  jogWatchdogTimer_->cancel();
+  axesStatusTimer_.reset();
+  jogWatchdogTimer_.reset();
   api_->stopAllJogs();
 
   LifecycleNode::on_deactivate(previous_state);
 
-  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is inactive");
-  return CallbackReturn::SUCCESS;
-}
-
-WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_cleanup(const rclcpp_lifecycle::State &)
-{
-  axesStatusTimer_.reset();
-  jogWatchdogTimer_.reset();
   controllerResyncTimer_.reset();
-  api_->stopAllJogs();
-
   transitionEventSubs_.clear();
   getStateClients_.clear();
   {
@@ -804,6 +777,14 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_cleanup(const rclcpp_lif
   stopService_.reset();
 
   axesStatusPub_.reset();
+
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_cleanup(const rclcpp_lifecycle::State &)
+{
+  api_->stopAllJogs();
 
   api_->closeDevice();
 
@@ -859,13 +840,6 @@ void WmxCoreMotionNode::axesStatusStep()
 
 void WmxCoreMotionNode::startPosCallback(const wmx_r2_message::msg::AxesPose::SharedPtr msg)
 {
-  if (!isNodeActive()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Position command ignored: %s", notActiveMessage().c_str());
-    return;
-  }
-
   if (isMotionBlocked()) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
@@ -896,13 +870,6 @@ void WmxCoreMotionNode::startPosCallback(const wmx_r2_message::msg::AxesPose::Sh
 void WmxCoreMotionNode::startMovCallback(
   const wmx_r2_message::msg::AxesPose::SharedPtr msg)
 {
-  if (!isNodeActive()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Relative position command ignored: %s", notActiveMessage().c_str());
-    return;
-  }
-
   if (isMotionBlocked()) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
@@ -932,13 +899,6 @@ void WmxCoreMotionNode::startMovCallback(
 
 void WmxCoreMotionNode::startVelCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg)
 {
-  if (!isNodeActive()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Velocity command ignored: %s", notActiveMessage().c_str());
-    return;
-  }
-
   if (isMotionBlocked()) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
@@ -967,13 +927,6 @@ void WmxCoreMotionNode::startVelCallback(const wmx_r2_message::msg::AxesVelocity
 
 void WmxCoreMotionNode::startJogCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg)
 {
-  if (!isNodeActive()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Jog ignored: %s", notActiveMessage().c_str());
-    return;
-  }
-
   if (isMotionBlocked()) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
@@ -1005,10 +958,6 @@ void WmxCoreMotionNode::startJogCallback(const wmx_r2_message::msg::AxesVelocity
 // Dead-man tick: the Api stops any axis whose refresh has lapsed.
 void WmxCoreMotionNode::jogWatchdogStep()
 {
-  if (!isNodeActive()) {
-    return;
-  }
-
   api_->stopExpiredJogs(this->now());
 }
 
@@ -1016,12 +965,6 @@ void WmxCoreMotionNode::stopCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   bool all_success = true;
   std::stringstream msg_stream;
 
@@ -1047,12 +990,6 @@ void WmxCoreMotionNode::setServoOnCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   bool all_success = true;
   std::stringstream msg_stream;
 
@@ -1072,12 +1009,6 @@ void WmxCoreMotionNode::setAxisCommandModeCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   bool all_success = true;
   std::stringstream msg_stream;
 
@@ -1099,12 +1030,6 @@ void WmxCoreMotionNode::clearAmpAlarmCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   bool all_success = true;
   std::stringstream msg_stream;
 
@@ -1124,12 +1049,6 @@ void WmxCoreMotionNode::setAxisPolarityCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   bool all_success = true;
   std::stringstream msg_stream;
 
@@ -1149,12 +1068,6 @@ void WmxCoreMotionNode::setGearRatioCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxesGearRatio::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxesGearRatio::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   bool all_success = true;
   std::stringstream msg_stream;
 
@@ -1177,12 +1090,6 @@ void WmxCoreMotionNode::startHomeCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isNodeActive()) {
-    response->success = false;
-    response->message = notActiveMessage();
-    return;
-  }
-
   if (isMotionBlocked()) {
     response->success = false;
     response->message = "Homing rejected: a controller is active and owns the axes.";

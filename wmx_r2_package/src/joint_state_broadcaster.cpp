@@ -206,17 +206,6 @@ JointStateBroadcaster::~JointStateBroadcaster()
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster stopped");
 }
 
-bool JointStateBroadcaster::isNodeActive() const
-{
-  return isNodeActive_.load();
-}
-
-std::string JointStateBroadcaster::notActiveMessage()
-{
-  return "joint_state_broadcaster is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 void JointStateBroadcaster::setRosParameter()
 {
   jointAxes_ = this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
@@ -298,7 +287,7 @@ void JointStateBroadcaster::setRosParameter()
 
 void JointStateBroadcaster::servoOff()
 {
-  if (!isNodeActive() || !api_ || !api_->isDeviceCreated()) {
+  if (!api_ || !api_->isDeviceCreated()) {
     return;
   }
 
@@ -324,15 +313,6 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_configure(
     RCLCPP_WARN(this->get_logger(), "Could not read WMX parameters: %s", message.c_str());
   }
 
-  encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
-  isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);
-  gazeboJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);
-
-  encoderJointTimer_ = this->create_wall_timer(
-    periodFromRate(jointFeedbackRate_),
-    std::bind(&JointStateBroadcaster::publishJointState, this));
-  encoderJointTimer_->cancel();
-
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is configured");
   return CallbackReturn::SUCCESS;
 }
@@ -353,9 +333,15 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_activate(
     return CallbackReturn::FAILURE;
   }
 
+  encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
+  isaacsimJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(isaacsimJointTopic_, 1);
+  gazeboJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);
+
   LifecycleNode::on_activate(previous_state);
-  isNodeActive_ = true;
-  encoderJointTimer_->reset();
+
+  encoderJointTimer_ = this->create_wall_timer(
+    periodFromRate(jointFeedbackRate_),
+    std::bind(&JointStateBroadcaster::publishJointState, this));
 
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is active");
   return CallbackReturn::SUCCESS;
@@ -364,11 +350,15 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_activate(
 JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  encoderJointTimer_->cancel();
+  encoderJointTimer_.reset();
   servoOff();
-  isNodeActive_ = false;
 
   LifecycleNode::on_deactivate(previous_state);
+
+  encoderJointPub_.reset();
+  isaacsimJointPub_.reset();
+  gazeboJointPub_.reset();
+
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is inactive");
   return CallbackReturn::SUCCESS;
 }
@@ -376,13 +366,6 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_deactivate(
 JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  isNodeActive_ = false;
-
-  encoderJointTimer_.reset();
-  encoderJointPub_.reset();
-  isaacsimJointPub_.reset();
-  gazeboJointPub_.reset();
-
   api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is cleaned up");
@@ -401,12 +384,16 @@ bool JointStateBroadcaster::callSetAxesService(
   const std::vector<int64_t> & axes,
   const std::vector<int64_t> & data)
 {
-  if (!client->wait_for_service(kServiceWaitTimeout)) {
-    RCLCPP_ERROR(this->get_logger(), "Service %s not available", serviceName.c_str());
-    return false;
-  }
-
   for (int attempt = 1; attempt <= kServiceMaxRetries; attempt++) {
+    // The server advertises only while it is active, so a miss here means it has
+    // not activated yet: wait again on the next attempt instead of giving up.
+    if (!client->wait_for_service(kServiceWaitTimeout)) {
+      RCLCPP_WARN(
+        this->get_logger(), "Service %s not available yet (attempt %d/%d)",
+        serviceName.c_str(), attempt, kServiceMaxRetries);
+      continue;
+    }
+
     auto request = std::make_shared<wmx_r2_message::srv::SetAxes::Request>();
     request->axis.assign(axes.begin(), axes.end());
     request->data.assign(data.begin(), data.end());
@@ -421,21 +408,12 @@ bool JointStateBroadcaster::callSetAxesService(
       RCLCPP_WARN(
         this->get_logger(), "Service call %s timed out (attempt %d/%d)",
         serviceName.c_str(), attempt, kServiceMaxRetries);
+      std::this_thread::sleep_for(kServiceRetryDelay);
       continue;
     }
 
     auto response = future.get();
     if (!response->success) {
-      if (response->message.find("not active") != std::string::npos ||
-        response->message.find("not initialized") != std::string::npos)
-      {
-        RCLCPP_WARN(
-          this->get_logger(),
-          "%s: server not ready yet (attempt %d/%d), retrying...",
-          serviceName.c_str(), attempt, kServiceMaxRetries);
-        std::this_thread::sleep_for(kServiceRetryDelay);
-        continue;
-      }
       RCLCPP_ERROR(
         this->get_logger(), "%s failed: %s",
         serviceName.c_str(), response->message.c_str());

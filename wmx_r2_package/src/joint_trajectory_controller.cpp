@@ -296,11 +296,6 @@ JointTrajectoryController::~JointTrajectoryController()
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller stopped");
 }
 
-bool JointTrajectoryController::isNodeActive() const
-{
-  return isNodeActive_.load();
-}
-
 void JointTrajectoryController::waitForGoalToFinish()
 {
   for (int i = 0; i < kGoalStopTimeoutMs / kGoalStopPollMs && goalRunning_.load(); ++i) {
@@ -311,12 +306,6 @@ void JointTrajectoryController::waitForGoalToFinish()
     RCLCPP_WARN(
       this->get_logger(), "Trajectory execution did not stop within %d ms", kGoalStopTimeoutMs);
   }
-}
-
-std::string JointTrajectoryController::notActiveMessage()
-{
-  return "joint_trajectory_controller is not active (state: " +
-         this->get_current_state().label() + ").";
 }
 
 void JointTrajectoryController::setRosParameter()
@@ -352,6 +341,13 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
     return CallbackReturn::FAILURE;
   }
 
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
   servoNodeResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
     "/servo_node/delta_joint_cmds", 10);
 
@@ -365,13 +361,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
     std::bind(&JointTrajectoryController::handleCancel, this, _1),
     std::bind(&JointTrajectoryController::handleAccepted, this, _1));
 
-  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is configured");
-  return CallbackReturn::SUCCESS;
-}
-
-JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate(
-  const rclcpp_lifecycle::State & previous_state)
-{
   LifecycleNode::on_activate(previous_state);
   isNodeActive_ = true;
 
@@ -394,6 +383,11 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactiva
   publishExecActive(false);
 
   LifecycleNode::on_deactivate(previous_state);
+
+  actionServer_.reset();
+  execActivePub_.reset();
+  servoNodeResetPub_.reset();
+
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is inactive");
   return CallbackReturn::SUCCESS;
 }
@@ -404,10 +398,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_cleanup(
   isNodeActive_ = false;
 
   waitForGoalToFinish();
-
-  actionServer_.reset();
-  execActivePub_.reset();
-  servoNodeResetPub_.reset();
 
   api_->closeDevice();
 
@@ -427,11 +417,6 @@ rclcpp_action::GoalResponse JointTrajectoryController::handleGoal(
 {
   (void)uuid;
   (void)goal;
-
-  if (!isNodeActive()) {
-    RCLCPP_WARN(this->get_logger(), "Goal rejected: %s", notActiveMessage().c_str());
-    return rclcpp_action::GoalResponse::REJECT;
-  }
 
   RCLCPP_INFO(this->get_logger(), "Received goal request");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -580,7 +565,7 @@ void JointTrajectoryController::executeGoal(std::shared_ptr<GoalHandleFJT> goalH
   }
 
   while (true) {
-    if (!isNodeActive()) {
+    if (!isNodeActive_.load()) {
       api_->stop(message);
       result->error_code = FollowJointTrajectory::Result::INVALID_GOAL;
       result->error_string = "joint_trajectory_controller was deactivated";

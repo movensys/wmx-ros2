@@ -280,6 +280,19 @@ ros2 service call /wmx/io/get_in_bit wmx_r2_message/srv/GetIoBit "{addr: 0, bit:
 ros2 service call /wmx/io/get_out_bit wmx_r2_message/srv/GetIoBit "{addr: 0, bit: 0}"
 ```
 
+### Read Input Bits
+```
+# Several scattered bits in one call: byte 0 bit 1, byte 2 bit 5.
+ros2 service call /wmx/io/get_in_bits wmx_r2_message/srv/GetIoBits \
+  "{addr: [0, 2], bit: [1, 5]}"
+```
+
+### Read Output Bits
+```
+ros2 service call /wmx/io/get_out_bits wmx_r2_message/srv/GetIoBits \
+  "{addr: [0, 2], bit: [1, 5]}"
+```
+
 ### Read Input Byte
 ```
 ros2 service call /wmx/io/get_in_byte wmx_r2_message/srv/GetIoByte "{addr: 0}"
@@ -435,6 +448,11 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
 
 **IO**
 - `addr` is the IO byte address; `bit` is the bit index within that byte (0–7)
+- `get_in_bits` / `get_out_bits` take parallel `addr`/`bit` arrays and answer with one
+  `data` entry per pair. Unlike `set_out_bits` (one `SetOutBitsEx` call), the SDK has no
+  batch bit reader, so these loop `GetInBitEx`/`GetOutBitEx` — the entries are read over
+  successive calls, not snapshotted in one cycle, and the first failing entry aborts the
+  read (`success: false`, empty `data`)
 - `set_out_bit` `data` must be `0` or `1`
 - `set_out_bytes` `data` values are decimal (e.g. `15` = `0x0F`)
 
@@ -447,10 +465,13 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
 - `scan_network` moved here from `wmx_engine_node` (`/wmx/engine/scan_network` no longer exists)
 
 **Lifecycle**
-- A service on an inactive node answers `success: false` with the current state instead of
-  touching the device; topics and timers are stopped while inactive
+- Services, topics, action servers and timers exist **only while the node is active**: they
+  are created in `on_activate` and destroyed in `on_deactivate`. An inactive node advertises
+  nothing, so a call against it fails to find the service (`ros2 service call` waits, and
+  `ros2 service list` does not show it) rather than answering "not active"
 - `deactivate` stops what the node was driving (jogging axes, wheel commands, trajectories)
-  but keeps the device attached; `cleanup` also detaches from the device
+  and drops its interfaces, but keeps the device attached; `cleanup` also detaches from
+  the device
 - Bring-up order is device-level nodes (`wmx_*`) first, then the controllers that command
   their axes; take-down is the reverse
 - `wmx/engine/set_communication false` deactivates the lifecycle nodes first, and

@@ -69,12 +69,9 @@ private:
   std::vector<int64_t> gripperAddress_;
   std::string wmxGripperTopic_;
 
-  std::atomic<bool> isNodeActive_{false};
 
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
 
-  bool isNodeActive() const;
-  std::string notActiveMessage();
 
   void setRosParameter();
 

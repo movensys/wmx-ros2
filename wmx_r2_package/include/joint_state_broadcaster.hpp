@@ -93,7 +93,6 @@ private:
   std::string isaacsimJointTopic_;
   std::string gazeboJointTopic_;
 
-  std::atomic<bool> isNodeActive_{false};
 
   rclcpp::CallbackGroup::SharedPtr axisClientCbGroup_;
   rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr clearAlarmClient_;
@@ -106,8 +105,6 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Float64MultiArray>::SharedPtr
     gazeboJointPub_;
 
-  bool isNodeActive() const;
-  std::string notActiveMessage();
 
   void setRosParameter();
 

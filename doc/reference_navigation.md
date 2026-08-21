@@ -171,15 +171,15 @@ communicates, or on demand through `wmx/lifecycle/set_node_state` /
 1. `CreateDevice(WMX3_SDK_PATH, DeviceTypeNormal, 10 s)` — any error fails the
    transition and leaves the node `unconfigured` (the engine logs it).
 2. `SetDeviceName("differential_drive_controller")`.
-3. Create publishers/subscriber and the control timer, with the timer stopped.
 
 The WMX parameter XML is not imported here — `wmx_engine_node` does that once,
 right after it creates the device, from its `wmx_param_file_path` parameter.
 
-`on_activate` re-baselines the odometry and command state (encoders may have
-moved while inactive) and starts the control timer. `on_deactivate` stops the
-timer and commands both wheels to zero. `on_cleanup` drops the interfaces and
-closes the device.
+`on_activate` creates the publishers, the `cmd_vel` subscription and the control
+timer, and re-baselines the odometry and command state (encoders may have moved
+while inactive). `on_deactivate` drops the timer, commands both wheels to zero and
+destroys those interfaces — while inactive the node publishes nothing and accepts
+no commands. `on_cleanup` closes the device.
 
 A failed `configure` is not terminal: the node stays alive and `unconfigured`,
 and the transition can be retried at any time. The process never exits

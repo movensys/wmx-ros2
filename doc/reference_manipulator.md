@@ -170,8 +170,10 @@ broadcaster activates and calls it.
 3. Build the API wrappers (`CoreMotion`, plus `AdvancedMotion` +
    `CreateSplineBuffer(0, 1000)` for the trajectory controller, `IO` for the
    broadcaster and gripper).
-4. Create the publishers / subscriptions / action server / service, with any timer
-   created stopped.
+
+The ROS interfaces are **not** created here. Publishers, subscriptions, services,
+action servers and timers are created in `on_activate` and destroyed in
+`on_deactivate`, so a configured-but-inactive node advertises nothing.
 
 Per-node activation:
 
@@ -184,10 +186,11 @@ Per-node activation:
   node `inactive`. Only then does the feedback timer start. `on_deactivate` stops
   the timer and switches the servos **off** directly through CoreMotion — so
   deactivating the broadcaster drops the arm's holding torque.
-- **`joint_trajectory_controller`** — `on_activate` publishes
-  `execution_active: false` and starts accepting goals. `on_deactivate` republishes
-  `false` and rejects further goals; a goal already running on its detached thread
-  is not interrupted.
+- **`joint_trajectory_controller`** — `on_activate` creates the action server and
+  publishes `execution_active: false`. `on_deactivate` stops the axes, republishes
+  `false` and destroys the action server, so no new goal can arrive; a goal already
+  running on its detached thread sees the deactivation, stops the axes and aborts,
+  and `on_deactivate` waits for it (warning if it outlasts the stop timeout).
 - **`joint_position_controller`** — `on_activate` just arms the callback.
   `on_deactivate` issues `Stop` + `Wait` on all `joint_axes`, so the streaming path
   never leaves an interpolation running behind it.

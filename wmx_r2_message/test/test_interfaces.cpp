@@ -15,6 +15,7 @@
 #include "wmx_r2_message/srv/ecat_start_hotconnect.hpp"
 #include "wmx_r2_message/srv/get_axis_param.hpp"
 #include "wmx_r2_message/srv/get_io_bit.hpp"
+#include "wmx_r2_message/srv/get_io_bits.hpp"
 #include "wmx_r2_message/srv/get_io_bytes.hpp"
 #include "wmx_r2_message/srv/get_node_states.hpp"
 #include "wmx_r2_message/srv/import_and_set_all.hpp"
@@ -131,6 +132,19 @@ TEST(GetIoBit, request_and_response) {
   res.success = true;
   res.data = 1;
   EXPECT_EQ(res.data, 1);
+}
+
+TEST(GetIoBits, request_arrays_pair_up) {
+  wmx_r2_message::srv::GetIoBits::Request req;
+  req.addr = {0, 0, 2};
+  req.bit = {0, 1, 5};
+  ASSERT_EQ(req.addr.size(), req.bit.size());
+
+  wmx_r2_message::srv::GetIoBits::Response res;
+  res.success = true;
+  res.data = {1, 0, 1};
+  EXPECT_EQ(res.data.size(), req.addr.size());
+  EXPECT_EQ(res.data[2], 1);
 }
 
 TEST(GetIoBytes, request_validates_size) {

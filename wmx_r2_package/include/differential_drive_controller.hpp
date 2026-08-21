@@ -301,7 +301,6 @@ private:
   std::string odomDeltasTopic_;
   std::string odomAccelTopic_;
 
-  std::atomic<bool> isNodeActive_{false};
 
   diff_drive::DiffDriveModel model_;
   diff_drive::OdometryIntegrator integrator_;
@@ -332,8 +331,6 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::AccelStamped>::SharedPtr odomAccelPub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tfBroadcaster_;
 
-  bool isNodeActive() const;
-  std::string notActiveMessage();
 
   void setRosParameter();
 
