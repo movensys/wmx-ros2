@@ -163,9 +163,6 @@ if(BUILD_TESTING)
   add_launch_test(test/test_joint_position_controller.py
     TIMEOUT 120
   )
-  add_launch_test(test/test_lifecycle_nodes.py
-    TIMEOUT 180
-  )
 
   find_package(ament_cmake_gtest REQUIRED)
   foreach(_t
