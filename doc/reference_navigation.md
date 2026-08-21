@@ -9,9 +9,10 @@ header `differential_drive_controller.hpp`; the node is the ROS/WMX wiring aroun
 ```
 /cmd_vel_safe ──────────▶ ┌──────────────────────────────┐ ──▶ /odom_enc    (Odometry)
                           │ differential_drive_controller │ ──▶ /odom_deltas (TwistStamped)
-lifecycle configure/    ─▶│  single loop @ rate (100 Hz)  │ ──▶ /odom_accel  (AccelStamped)
-activate (manager)        │  WMX3 CoreMotion StartVel /   │ ──▶ /omega_enc   (Float64MultiArray)
-                          │  GetStatus (one per cycle)    │ ──▶ /tf odom→base_link (optional)
+configure / activate ────▶│  (lifecycle node)             │ ──▶ /odom_accel  (AccelStamped)
+ from wmx_engine_node     │  single loop @ rate (100 Hz)  │ ──▶ /omega_enc   (Float64MultiArray)
+                          │  WMX3 CoreMotion StartVel /   │ ──▶ /tf odom→base_link (optional)
+                          │  GetStatus (one per cycle)    │
                           └──────────────────────────────┘
 ```
 
@@ -94,9 +95,9 @@ in the generated node config like any other value.
 **Namespaces.** The five data-topic defaults are *absolute* names, so launching
 the node in a ROS namespace does **not** namespace them — override the topic
 parameters explicitly for multi-robot/namespaced deployments. The lifecycle
-services (`~/change_state`, `~/get_state`) follow the namespace, so
-`wmx_lifecycle_manager_node` must run where it can discover the controller —
-in practice, the **same namespace** — or the controller is never brought up.
+services (`~/change_state`, `~/get_state`) do follow the namespace; the engine
+discovers the controller under its fully-qualified name, and
+`wmx/lifecycle/set_node_state` takes that same name.
 
 ### `/odom_enc` covariance (fixed, not parameterized)
 
@@ -114,7 +115,7 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 - **Long-uptime precision:** pose uses `actualPos` (a `double` user-unit); over very
   long uptime `actualPos` grows large and `actualPos − prev` loses low-order bits
   (catastrophic cancellation of two large near-equal doubles). The exact-integer
-  alternative is `CoreMotionAxisStatus.accumulatedEncoderFeedback` (`long long`)
+  alternative is `CoreMotionAxesStatus.accumulatedEncoderFeedback` (`long long`)
   differenced as integers then scaled — switch to it if this ever surfaces.
 - **`/odom_deltas` during engine downtime:** motion that happens while
   `engineState != Communicating` is not accumulated (the baseline re-anchors on
@@ -154,32 +155,39 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 
 ## Lifecycle and runtime behaviour
 
-**Startup.** The node is a managed lifecycle node: it comes up `unconfigured` and
-does nothing until `wmx_lifecycle_manager_node` transitions it (the manager waits
-for the engine to report `Communicating` first). See "Node Lifecycle" in
-`reference_wmx_r2_general_nodes.md`.
+**Startup.** This is a managed (lifecycle) node. It starts `unconfigured` and
+does nothing until `wmx_engine_node` drives it — automatically once the engine
+communicates, or on demand through `wmx/lifecycle/set_node_state` /
+`ros2 lifecycle set`.
 
 `on_configure`:
 
 1. `CreateDevice(WMX3_SDK_PATH, DeviceTypeNormal, 10 s)` — any error fails the
-   transition and leaves the node `unconfigured`.
+   transition and leaves the node `unconfigured` (the engine logs it).
 2. `SetDeviceName("differential_drive_controller")`.
 3. `ImportAndSetAll(wmx_param_file_path)` — failure is logged but non-fatal.
-4. Create publishers/subscriber and the control timer, with the timer cancelled.
+4. Create publishers/subscriber and the control timer, with the timer stopped.
 
-`on_activate` clears the odometry baselines and starts the control timer.
-`on_deactivate` stops the timer and commands both wheels to zero velocity;
-`on_cleanup` destroys the interfaces and closes the device.
+`on_activate` re-baselines the odometry and command state (encoders may have
+moved while inactive) and starts the control timer. `on_deactivate` stops the
+timer and commands both wheels to zero. `on_cleanup` drops the interfaces and
+closes the device.
 
-A failed `configure` is not terminal: the transition returns `FAILURE`, the node
-stays `unconfigured`, and the manager retries on its next discovery sweep. The
-process never exits with an error code on a failed transition — it stays alive
-and inert (no topics, no timer). Supervise via `wmx/lifecycle/get_node_states` or
-topic liveness (`/odom_enc` at `rate` Hz), not exit codes.
+A failed `configure` is not terminal: the node stays alive and `unconfigured`,
+and the transition can be retried at any time. The process never exits
+with an error code on init failure — it stays alive and inert (no topics, no
+timer). Supervise via logs or topic liveness (`/odom_enc` at `rate` Hz), not
+exit codes.
 
 The node does **not** start communication, clear alarms, or switch servos on —
 that is owned by the engine/general nodes (see
 `reference_wmx_r2_general_nodes.md` for the service sequence).
+
+**Manual vs. controller arbitration.** While this node is ACTIVE it owns the wheel
+axes: `wmx_core_motion_node` rejects `start_pos`, `start_mov`, `start_vel`, `start_jog`
+and `start_home` for as long as it stays active (it is listed in that node's
+`motion_controllers`). `wmx/axes/stop` is never blocked. See
+`reference_general_nodes.md`.
 
 **Control loop** (every `1/rate`, single `GetStatus` per cycle):
 
@@ -264,8 +272,8 @@ What the Toolkit needs to template per robot / per deployment:
   configured); otherwise two publishers would fight over `odom → base_link`.
 - **Usually defaults:** topic names (already the autonomy contract), frames, `rate`,
   `cmd_vel_timeout`, `accel_publish_rate`, `accel_alpha`, `acc_time`/`dec_time`.
-- **Not parameterized (by design):** the lifecycle gate (the manager owns it), the
-  `/odom_enc` covariance values, servo-on/alarm-clear handling (engine/general
+- **Not parameterized (by design):** the lifecycle gate (`wmx_engine_node` owns it),
+  the `/odom_enc` covariance values, servo-on/alarm-clear handling (engine/general
   nodes own these), and any gear-ratio scaling (WMX XML owns it).
 
 ## Build

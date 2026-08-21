@@ -13,6 +13,7 @@ from wmx_r2_message.srv import EcatResetStatistics
 from wmx_r2_message.srv import EcatStartHotconnect
 from wmx_r2_message.srv import GetIoBit
 from wmx_r2_message.srv import GetIoBytes
+from wmx_r2_message.srv import GetNodeStates
 from wmx_r2_message.srv import GetWmxParams
 from wmx_r2_message.srv import LoadWmxParams
 from wmx_r2_message.srv import SetAxes
@@ -20,6 +21,7 @@ from wmx_r2_message.srv import SetAxesGearRatio
 from wmx_r2_message.srv import SetEngine
 from wmx_r2_message.srv import SetIoBit
 from wmx_r2_message.srv import SetIoBytes
+from wmx_r2_message.srv import SetNodeState
 
 
 class TestAxesStatusMsg(unittest.TestCase):
@@ -90,7 +92,7 @@ class TestAxesVelocityMsg(unittest.TestCase):
             self.assertTrue(hasattr(msg, field), f'Missing field: {field}')
 
     def test_no_target_field(self):
-        """Verify AxesVelocity has no target field (unlike AxesPose)."""
+        """Verify AxesVelocity has no positions field (unlike AxesPose)."""
         msg = AxesVelocity()
         self.assertFalse(hasattr(msg, 'positions'))
 
@@ -110,7 +112,50 @@ class TestSetEngineSrv(unittest.TestCase):
         self.assertTrue(hasattr(res, 'message'))
 
 
-class TestSetAxisSrv(unittest.TestCase):
+class TestSetNodeStateSrv(unittest.TestCase):
+    """Verify SetNodeState.srv fields."""
+
+    def test_request_fields(self):
+        req = SetNodeState.Request()
+        self.assertTrue(hasattr(req, 'node_name'))
+        self.assertTrue(hasattr(req, 'transition'))
+
+    def test_response_fields(self):
+        res = SetNodeState.Response()
+        self.assertTrue(hasattr(res, 'success'))
+        self.assertTrue(hasattr(res, 'message'))
+        self.assertTrue(hasattr(res, 'node_names'))
+        self.assertTrue(hasattr(res, 'states'))
+
+    def test_response_arrays_are_index_aligned(self):
+        res = SetNodeState.Response()
+        res.node_names = ['wmx_io_node', 'wmx_ethercat_node']
+        res.states = ['active', 'inactive']
+        self.assertEqual(len(res.node_names), len(res.states))
+
+
+class TestGetNodeStatesSrv(unittest.TestCase):
+    """Verify GetNodeStates.srv fields."""
+
+    def test_request_is_empty(self):
+        req = GetNodeStates.Request()
+        self.assertFalse(hasattr(req, 'node_name'))
+
+    def test_response_fields(self):
+        res = GetNodeStates.Response()
+        self.assertTrue(hasattr(res, 'success'))
+        self.assertTrue(hasattr(res, 'message'))
+        self.assertTrue(hasattr(res, 'node_names'))
+        self.assertTrue(hasattr(res, 'states'))
+
+    def test_response_arrays_are_index_aligned(self):
+        res = GetNodeStates.Response()
+        res.node_names = ['/wmx_io_node', '/wmx_ethercat_node']
+        res.states = ['active', 'inactive']
+        self.assertEqual(len(res.node_names), len(res.states))
+
+
+class TestSetAxesSrv(unittest.TestCase):
     """Verify SetAxes.srv fields."""
 
     def test_request_fields(self):
@@ -140,7 +185,7 @@ class TestSetAxesGearRatioSrv(unittest.TestCase):
         self.assertTrue(hasattr(req, 'denominators'))
 
     def test_no_denumerator(self):
-        """Verify typo 'denumerator' was fixed to 'denominator'."""
+        """Verify typo 'denumerator' was fixed to 'denominators'."""
         req = SetAxesGearRatio.Request()
         self.assertFalse(hasattr(req, 'denumerator'))
         self.assertTrue(hasattr(req, 'denominators'))

@@ -36,10 +36,13 @@ def generate_test_description():
         name='wmx_engine_node',
         output='screen',
     )
-    joint_position_controller = launch_ros.actions.Node(
+    # The controller is a lifecycle node: the engine discovers it on the graph
+    # and activates it once the engine is communicating.
+    joint_position_controller = launch_ros.actions.LifecycleNode(
         package='wmx_r2_package',
         executable='joint_position_controller',
         name='joint_position_controller',
+        namespace='',
         parameters=[{
             'joint_axes': [0, 1, 2, 3, 4, 5],
             'joint_name': JOINT_NAMES,

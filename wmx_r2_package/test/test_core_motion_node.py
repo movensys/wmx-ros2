@@ -54,7 +54,7 @@ class TestCoreMotionNode(unittest.TestCase):
     def tearDown(self):
         self.node.destroy_node()
 
-    def test_axis_state_published(self):
+    def test_axes_status_published(self):
         """Core motion node should publish AxesStatus at 100 Hz."""
         received = []
 
@@ -74,7 +74,7 @@ class TestCoreMotionNode(unittest.TestCase):
             'Did not receive at least 5 AxesStatus messages within 20 seconds',
         )
 
-    def test_axis_state_has_header(self):
+    def test_axes_status_has_header(self):
         """Published AxesStatus should have a populated header."""
         received = []
 
@@ -94,7 +94,7 @@ class TestCoreMotionNode(unittest.TestCase):
         self.assertNotEqual(msg.header.stamp.sec, 0, 'Header stamp should be non-zero')
         self.assertEqual(msg.header.frame_id, 'base_link')
 
-    def test_axis_state_field_lengths_match(self):
+    def test_axes_status_field_lengths_match(self):
         """All AxesStatus array fields should have the same length."""
         received = []
 
@@ -116,8 +116,8 @@ class TestCoreMotionNode(unittest.TestCase):
         for field in [
             'servo_on', 'home_done', 'motion_complete',
             'negative_ls', 'positive_ls', 'home_switch',
-            'pos_cmd', 'velocity_cmd', 'actual_pos',
-            'actual_velocity', 'actual_torque',
+            'position_commands', 'velocity_commands', 'actual_positions',
+            'actual_velocities', 'actual_torques',
         ]:
             self.assertEqual(
                 len(getattr(msg, field)), n,
@@ -166,10 +166,10 @@ class TestCoreMotionNode(unittest.TestCase):
 
     def test_get_params_service_call(self):
         """Get params service should respond with axis parameters."""
-        client = self.node.create_client(GetWmxParams, 'wmx/core_motion/get_wmx_params')
+        client = self.node.create_client(GetWmxParams, 'wmx/engine/get_wmx_params')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/core_motion/get_wmx_params service not available',
+            'wmx/engine/get_wmx_params service not available',
         )
 
         req = GetWmxParams.Request()
