@@ -135,8 +135,9 @@ int WmxIoNodeApi::getInputBytes(
     return ErrorCode::DeviceIsNull;
   }
 
-  if (length <= 0) {
-    message = "Invalid length: must be > 0";
+  if (length <= 0 || length > wmx3Api::constants::maxIOInSize) {
+    message = "Invalid length: must be 1.." +
+      std::to_string(wmx3Api::constants::maxIOInSize);
     return ErrorCode::IOSizeOutOfRange;
   }
 
@@ -162,8 +163,9 @@ int WmxIoNodeApi::getOutputBytes(
     return ErrorCode::DeviceIsNull;
   }
 
-  if (length <= 0) {
-    message = "Invalid length: must be > 0";
+  if (length <= 0 || length > wmx3Api::constants::maxIOOutSize) {
+    message = "Invalid length: must be 1.." +
+      std::to_string(wmx3Api::constants::maxIOOutSize);
     return ErrorCode::IOSizeOutOfRange;
   }
 

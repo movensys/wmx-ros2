@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
@@ -31,7 +31,10 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(wmx_share, 'launch', 'wmx_r2_general_nodes.launch.py')
         ),
-        launch_arguments={'use_sim_time': use_sim_time}.items(),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'config_file': manipulator_config,
+        }.items(),
     )
 
     robot_state_publisher = Node(
@@ -56,10 +59,11 @@ def generate_launch_description():
         output='screen',
     )
 
-    joint_trajectory_controller = Node(
+    joint_trajectory_controller = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_trajectory_controller',
         name='joint_trajectory_controller',
+        namespace='',
         parameters=[
             manipulator_config,
             {
@@ -70,10 +74,11 @@ def generate_launch_description():
         output='screen',
     )
 
-    joint_position_controller = Node(
+    joint_position_controller = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_position_controller',
         name='joint_position_controller',
+        namespace='',
         parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )

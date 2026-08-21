@@ -36,7 +36,6 @@ has no effect on behaviour — restart the node to apply new values.
 | `right_axis` | int | `1` | – | WMX3 axis index of the right wheel. Same caveat as `left_axis`. |
 | `wheel_radius` | double | `0.095` | m | Drive-wheel radius `R`. Guarded: values ≤ 0 fall back to the default (warn). |
 | `wheel_to_wheel` | double | `0.55` | m | Wheel separation `L` (distance between the two drive wheels). Guarded: ≤ 0 falls back to the default (warn). |
-| `pos_unit_scale` | double | `1.0` | rad/user-unit | Converts `actualPos` (WMX user-unit) to wheel **radians** for the position-delta odometry. `1.0` when the loaded WMX param XML already scales to rad (same scaling that makes `actualVelocity` read rad/s — our config). Guarded: non-finite or `0` falls back to `1.0` (warn). |
 | `wmx_param_file_path` | string | `/diff_drive/no_param` | – | WMX parameter XML imported at init via `config->ImportAndSetAll()` (axis gear/feedback/limit setup). The default is a deliberate non-path: the import fails with an ERROR log but the node keeps running with whatever parameters the engine already has. The diffbot launch file overrides it with `config/diffbot_wmx_parameters.xml` resolved at launch time. |
 
 ### B. Motion profile / loop
@@ -121,8 +120,9 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
   `engineState != Communicating` is not accumulated (the baseline re-anchors on
   recovery). Correct — it was unobservable — but a change from the old `|v|·dt`
   accumulation that ran whenever the engine was communicating.
-- **Per-axis unit scaling:** the rad assumption (`pos_unit_scale`) requires both
-  axes to share identical WMX user-unit scaling; verify in the WMX param XML / sim.
+- **Per-axis unit scaling:** `actualPos` and `actualVelocity` are taken to be wheel
+  radians and rad/s. The loaded WMX param XML must scale both axes that way;
+  verify in the XML / sim. There is no node-side conversion.
 - **Jump-guard trip:** when the guard trips it drops that cycle's contribution to
   **both** the `/odom` pose and `/odom_deltas` (re-baselines instead of integrating
   the jump). Intended for homing/rollover; the EKF is unaffected (twist only), but
@@ -142,7 +142,7 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
   - inverse: `ωl = (2v − ωL)/(2R)`, `ωr = (2v + ωL)/(2R)`
   - forward: `v = R(ωr + ωl)/2`, `ω = R(ωr − ωl)/L`
 - **Odometry** (pose + `/odom_deltas`) is dead-reckoned from per-wheel encoder
-  **position deltas** `Δφ = (actualPos − prev)·pos_unit_scale` (dt-free; exact-arc
+  **position deltas** `Δφ = actualPos − prev` (dt-free; exact-arc
   via the sinc midpoint form). This is more precise than `velocity·dt` — no
   constant-velocity-over-`dt` assumption and no `dt`-jitter sensitivity.
 - **Twist** (`/odom_enc.twist`, `/odom_accel`, `/omega_enc`) comes from the servo's

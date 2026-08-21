@@ -537,6 +537,8 @@ hardware_interface::return_type WmxSystemHardware::write(
       std::string message;
       if (api_->startVel(joint.axis, joint.cmd, message) != ErrorCode::None) {
         RCLCPP_ERROR_THROTTLE(logger_, clock_, 1000, "%s", message.c_str());
+        joint.lastCmd = std::numeric_limits<double>::quiet_NaN();
+        continue;
       }
       joint.lastCmd = joint.cmd;
     }

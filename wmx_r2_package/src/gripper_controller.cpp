@@ -3,6 +3,10 @@
 
 #include "gripper_controller.hpp"
 
+#include <thread>
+
+#include <chrono>
+
 #include <cstdlib>
 
 using std::placeholders::_1;
@@ -82,10 +86,11 @@ void GripperControllerApi::releaseDevice()
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    isDeviceAttached_ = false;
-    RCLCPP_INFO(logger_, "Device closed");
+    return;
   }
+
+  RCLCPP_INFO(logger_, "Device closed");
+  isDeviceAttached_ = false;
 }
 
 int GripperControllerApi::setOutputBit(

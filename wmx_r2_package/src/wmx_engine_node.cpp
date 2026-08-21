@@ -292,6 +292,8 @@ int WmxEngineNodeApi::getEngineStatus(std::string & message)
 
 int WmxEngineNodeApi::engineState(wmx3Api::EngineState::T & state)
 {
+  std::lock_guard<std::recursive_mutex> lock(deviceMutex_);
+
   wmx3Api::EngineStatus engineStatus;
 
   const int err = wmx3Lib_.GetEngineStatus(&engineStatus);
@@ -327,7 +329,8 @@ WmxEngineNode::WmxEngineNode()
 
   getEngineStatusService_ = this->create_service<std_srvs::srv::Trigger>(
     "wmx/engine/get_engine_status",
-    std::bind(&WmxEngineNode::getEngineStatusCallback, this, _1, _2));
+    std::bind(&WmxEngineNode::getEngineStatusCallback, this, _1, _2),
+    servicesQos(), managerCbGroup_);
 
   loadWmxParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
     "wmx/engine/load_wmx_params",

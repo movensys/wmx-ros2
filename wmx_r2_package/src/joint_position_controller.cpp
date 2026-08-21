@@ -3,6 +3,10 @@
 
 #include "joint_position_controller.hpp"
 
+#include <thread>
+
+#include <chrono>
+
 #include <cmath>
 
 using std::placeholders::_1;
@@ -22,7 +26,7 @@ std::string errorText(int err)
   CoreMotion::ErrorToString(err, errString, sizeof(errString));
   return errString;
 }
-}
+}  // namespace
 
 JointPositionControllerApi::JointPositionControllerApi(const rclcpp::Logger & logger)
 : logger_(logger)
@@ -79,9 +83,10 @@ void JointPositionControllerApi::releaseDevice()
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    RCLCPP_INFO(logger_, "Device closed");
+    return;
   }
+
+  RCLCPP_INFO(logger_, "Device closed");
   isDeviceAttached_ = false;
 }
 
@@ -280,6 +285,13 @@ void JointPositionController::setRosParameter()
   for (size_t i = 0; i < jointAxes_.size(); ++i) {
     if (i > 0) {jointAxesText += ", ";}
     jointAxesText += std::to_string(jointAxes_[i]);
+  }
+
+  if (!std::isfinite(accelRatio_) || accelRatio_ <= 0.0) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "accel_ratio must be finite and > 0, got %f. Falling back to 0.5.", accelRatio_);
+    accelRatio_ = 0.5;
   }
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");

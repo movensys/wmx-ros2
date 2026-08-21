@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 """Evaluate the repository launch descriptions without launching anything.
-
-The WMX3 SDK is absent in CI, so the nodes themselves cannot be built there.
-Building the LaunchDescription objects still catches broken substitutions, a
-and a LifecycleNode declared without a namespace.
 """
 
 import importlib.util
@@ -16,27 +12,18 @@ from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import LifecycleNode
 
-# Importing the launch files must not litter __pycache__ into the source tree:
-# those directories end up installed by install(DIRECTORY launch ...) and break
-# a later install step when the destination is not writable. Set before load()
-# imports anything.
 sys.dont_write_bytecode = True
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LAUNCH_PACKAGES = ('wmx_r2_package', 'wmx_r2_control')
 
-# Every lifecycle node these launch files start, so a rename or a dropped node
-# does not go unnoticed.
 EXPECTED_LIFECYCLE_NODES = {
     'wmx_r2_general_nodes.launch.py': 3,
     'wmx_r2_cr3a_manipulator.launch.py': 4,
     'wmx_r2_cr5a_manipulator.launch.py': 3,
     'wmx_r2_diffbot_navigation.launch.py': 2,
-    # wmx_r2_control drives ros2_control_node plus spawners, so it declares no
-    # lifecycle nodes of its own; the count still guards against one appearing
-    # unnoticed.
-    'wmx_r2_control_cr3a_manipulator.launch.py': 0,
-    'wmx_r2_control_cr5a_manipulator.launch.py': 0,
+    'wmx_r2_control_cr3a_manipulator.launch.py': 3,
+    'wmx_r2_control_cr5a_manipulator.launch.py': 2,
     'wmx_r2_control_diffbot_navigation.launch.py': 0,
 }
 
@@ -111,7 +98,7 @@ def main():
     for name, path in launch_files:
         try:
             description = load(path)
-        except Exception as exc:  # noqa: BLE001 - report, do not abort the sweep
+        except Exception as exc: 
             failures.append(f'{name}: failed to build LaunchDescription: {exc}')
             continue
 

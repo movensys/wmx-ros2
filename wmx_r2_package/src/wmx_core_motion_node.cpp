@@ -18,6 +18,14 @@ using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
 using wmx3Api::ProfileType;
 
+namespace
+{
+std::chrono::nanoseconds periodFromRate(int rate)
+{
+  return std::chrono::nanoseconds(static_cast<int64_t>(1e9 / static_cast<double>(rate)));
+}
+}  // namespace
+
 WmxCoreMotionNodeApi::WmxCoreMotionNodeApi(
   const rclcpp::Logger & logger, const Config & config)
 : logger_(logger), config_(config)
@@ -76,6 +84,8 @@ int WmxCoreMotionNodeApi::attachDevice(std::string & message)
 
 void WmxCoreMotionNodeApi::releaseDevice()
 {
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
   cm_.reset();
 
   const int err = wmx3Lib_.CloseDevice();
@@ -442,7 +452,7 @@ int WmxCoreMotionNodeApi::setAxisPolarity(int axis, int polarity, std::string & 
 }
 
 int WmxCoreMotionNodeApi::setGearRatio(
-  int axis, int numerator, int denominator, std::string & message)
+  int axis, double numerator, double denominator, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
@@ -701,7 +711,7 @@ WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(const rclcpp_l
     std::bind(&WmxCoreMotionNode::startJogCallback, this, _1));
 
   axesStatusTimer_ = this->create_wall_timer(
-    std::chrono::milliseconds(1000 / rate_),
+    periodFromRate(rate_),
     std::bind(&WmxCoreMotionNode::axesStatusStep, this));
   axesStatusTimer_->cancel();
 
@@ -863,8 +873,20 @@ void WmxCoreMotionNode::startPosCallback(const wmx_r2_message::msg::AxesPose::Sh
     return;
   }
 
+  const size_t axis_count = msg->indices.size();
+  if (msg->positions.size() != axis_count ||
+    msg->velocities.size() != axis_count ||
+    msg->accelerations.size() != axis_count ||
+    msg->decelerations.size() != axis_count)
+  {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Position command ignored: index/position/velocity/acc/dec must be the same length.");
+    return;
+  }
+
   std::string message;
-  for (size_t i = 0; i < msg->indices.size(); i++) {
+  for (size_t i = 0; i < axis_count; i++) {
     api_->startPos(
       msg->indices[i], msg->positions[i], msg->velocities[i],
       msg->accelerations[i], msg->decelerations[i], message);
@@ -888,8 +910,20 @@ void WmxCoreMotionNode::startMovCallback(
     return;
   }
 
+  const size_t axis_count = msg->indices.size();
+  if (msg->positions.size() != axis_count ||
+    msg->velocities.size() != axis_count ||
+    msg->accelerations.size() != axis_count ||
+    msg->decelerations.size() != axis_count)
+  {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Relative move ignored: index/position/velocity/acc/dec must be the same length.");
+    return;
+  }
+
   std::string message;
-  for (size_t i = 0; i < msg->indices.size(); i++) {
+  for (size_t i = 0; i < axis_count; i++) {
     api_->startMov(
       msg->indices[i], msg->positions[i], msg->velocities[i],
       msg->accelerations[i], msg->decelerations[i], message);
@@ -912,8 +946,19 @@ void WmxCoreMotionNode::startVelCallback(const wmx_r2_message::msg::AxesVelocity
     return;
   }
 
+  const size_t axis_count = msg->indices.size();
+  if (msg->velocities.size() != axis_count ||
+    msg->accelerations.size() != axis_count ||
+    msg->decelerations.size() != axis_count)
+  {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Velocity command ignored: index/velocity/acc/dec must be the same length.");
+    return;
+  }
+
   std::string message;
-  for (size_t i = 0; i < msg->indices.size(); i++) {
+  for (size_t i = 0; i < axis_count; i++) {
     api_->startVel(
       msg->indices[i], msg->velocities[i], msg->accelerations[i],
       msg->decelerations[i], message);

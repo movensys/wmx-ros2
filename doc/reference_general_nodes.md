@@ -13,7 +13,7 @@ ros2 service call /wmx/axes/set_gear_ratio wmx_r2_message/srv/SetAxesGearRatio \
 ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
 
 # 4. Enable servos
-ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1}"
+ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
 
 # 5. Home all axes (sets current position as home)
 ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"

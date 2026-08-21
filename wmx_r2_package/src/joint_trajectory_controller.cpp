@@ -19,6 +19,9 @@ using wmx3Api::ErrorCode;
 
 namespace
 {
+constexpr int kGoalStopTimeoutMs = 2000;
+constexpr int kGoalStopPollMs = 10;
+
 struct ScopeExit
 {
   std::function<void()> fn;
@@ -98,10 +101,11 @@ void JointTrajectoryControllerApi::releaseDevice()
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    RCLCPP_INFO(logger_, "Device closed");
-    isDeviceAttached_ = false;
+    return;
   }
+
+  RCLCPP_INFO(logger_, "Device closed");
+  isDeviceAttached_ = false;
 }
 
 int JointTrajectoryControllerApi::createSplineBuffer(std::string & message)
@@ -297,6 +301,18 @@ bool JointTrajectoryController::isNodeActive() const
   return isNodeActive_.load();
 }
 
+void JointTrajectoryController::waitForGoalToFinish()
+{
+  for (int i = 0; i < kGoalStopTimeoutMs / kGoalStopPollMs && goalRunning_.load(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(kGoalStopPollMs));
+  }
+
+  if (goalRunning_.load()) {
+    RCLCPP_WARN(
+      this->get_logger(), "Trajectory execution did not stop within %d ms", kGoalStopTimeoutMs);
+  }
+}
+
 std::string JointTrajectoryController::notActiveMessage()
 {
   return "joint_trajectory_controller is not active (state: " +
@@ -370,6 +386,11 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactiva
 {
   isNodeActive_ = false;
 
+  std::string message;
+  api_->stopAxes(message);
+
+  waitForGoalToFinish();
+
   publishExecActive(false);
 
   LifecycleNode::on_deactivate(previous_state);
@@ -381,6 +402,8 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
   isNodeActive_ = false;
+
+  waitForGoalToFinish();
 
   actionServer_.reset();
   execActivePub_.reset();
@@ -510,11 +533,13 @@ void JointTrajectoryController::executeGoal(std::shared_ptr<GoalHandleFJT> goalH
   const auto goal = goalHandle->get_goal();
   const auto & trajectory = goal->trajectory;
 
+  goalRunning_ = true;
   publishExecActive(true);
   const auto servoJointNames = trajectory.joint_names;
   ScopeExit onExit{[this, servoJointNames]() {
       publishExecActive(false);
       resetServo(servoJointNames);
+      goalRunning_ = false;
     }};
 
   RCLCPP_INFO(
@@ -555,6 +580,15 @@ void JointTrajectoryController::executeGoal(std::shared_ptr<GoalHandleFJT> goalH
   }
 
   while (true) {
+    if (!isNodeActive()) {
+      api_->stopAxes(message);
+      result->error_code = FollowJointTrajectory::Result::INVALID_GOAL;
+      result->error_string = "joint_trajectory_controller was deactivated";
+      goalHandle->abort(result);
+      RCLCPP_WARN(this->get_logger(), "Goal aborted: node deactivated, axes stopped");
+      return;
+    }
+
     if (goalHandle->is_canceling()) {
       api_->stopAxes(message);
       result->error_code = FollowJointTrajectory::Result::SUCCESSFUL;

@@ -3,6 +3,8 @@
 
 #include "differential_drive_controller.hpp"
 
+#include <thread>
+
 #include <chrono>
 #include <cmath>
 #include <functional>
@@ -23,13 +25,18 @@ namespace ddl = diff_drive;
 
 namespace
 {
+std::chrono::nanoseconds periodFromRate(int rate)
+{
+  return std::chrono::nanoseconds(static_cast<int64_t>(1e9 / static_cast<double>(rate)));
+}
+
 std::string errorText(int err)
 {
   char errString[256] = {};
   CoreMotion::ErrorToString(err, errString, sizeof(errString));
   return errString;
 }
-}
+}  // namespace
 
 DifferentialDriveControllerApi::DifferentialDriveControllerApi(
   const rclcpp::Logger & logger, const Config & config)
@@ -87,9 +94,10 @@ void DifferentialDriveControllerApi::releaseDevice()
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    RCLCPP_INFO(logger_, "Device closed");
+    return;
   }
+
+  RCLCPP_INFO(logger_, "Device closed");
   isDeviceAttached_ = false;
 }
 
@@ -224,7 +232,7 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
   cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
 
-  auto period = std::chrono::milliseconds(1000 / rate_);
+  const auto period = periodFromRate(rate_);
   controlTimer_ = this->create_wall_timer(
     period, std::bind(&DifferentialDriveController::controlStep, this));
   controlTimer_->cancel();
@@ -331,8 +339,8 @@ void DifferentialDriveController::controlStep()
 
   if (havePrev_) {
     const double dt = (now - prevLoopTime_).seconds();
-    const double dPhiLeft = (left.actualPos - prevPosLeft_) * posUnitScale_;
-    const double dPhiRight = (right.actualPos - prevPosRight_) * posUnitScale_;
+    const double dPhiLeft = left.actualPos - prevPosLeft_;
+    const double dPhiRight = right.actualPos - prevPosRight_;
     const bool finiteDt = std::isfinite(dt) && dt > 0.0;
     const bool jumped = finiteDt &&
       (std::abs(dPhiLeft - left.actualVelocity * dt) > jumpGuardTol_ ||
@@ -523,7 +531,6 @@ void DifferentialDriveController::setRosParameter()
   publishTf_ = this->declare_parameter<bool>("publish_tf", false);
   odomFrame_ = this->declare_parameter<std::string>("odom_frame", "odom");
   baseFrame_ = this->declare_parameter<std::string>("base_frame", "base_link");
-  posUnitScale_ = this->declare_parameter<double>("pos_unit_scale", 1.0);
   jumpGuardTol_ = this->declare_parameter<double>("jump_guard_tol", 0.5);
 
   cmdVelTopic_ = this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel_safe");
@@ -549,12 +556,6 @@ void DifferentialDriveController::setRosParameter()
     RCLCPP_WARN(this->get_logger(), "accel_publish_rate must be >= 0; falling back to 10.0");
     accelPublishRate_ = 10.0;
   }
-  if (!std::isfinite(posUnitScale_) || posUnitScale_ == 0.0) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "pos_unit_scale must be finite and non-zero; falling back to 1.0");
-    posUnitScale_ = 1.0;
-  }
   if (!(jumpGuardTol_ > 0.0)) {
     RCLCPP_WARN(this->get_logger(), "jump_guard_tol must be > 0; falling back to 0.5");
     jumpGuardTol_ = 0.5;
@@ -574,9 +575,7 @@ void DifferentialDriveController::setRosParameter()
   RCLCPP_INFO(
     this->get_logger(), "odom_frame: %s, base_frame: %s",
     odomFrame_.c_str(), baseFrame_.c_str());
-  RCLCPP_INFO(
-    this->get_logger(), "pos_unit_scale: %f, jump_guard_tol: %f",
-    posUnitScale_, jumpGuardTol_);
+  RCLCPP_INFO(this->get_logger(), "jump_guard_tol: %f", jumpGuardTol_);
   RCLCPP_INFO(this->get_logger(), "cmd_vel_topic: %s", cmdVelTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_omega_topic: %s", encoderOmegaTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_odometry_topic: %s", encoderOdometryTopic_.c_str());

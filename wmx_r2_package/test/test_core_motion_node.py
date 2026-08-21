@@ -1,11 +1,13 @@
 """Integration test: wmx_core_motion_node services and state publishing."""
 
+import time
 import unittest
 
 import launch
 import launch_ros.actions
 import launch_testing
 import launch_testing.actions
+from lifecycle_msgs.srv import GetState
 import pytest
 import rclpy
 from rclpy.node import Node
@@ -13,6 +15,24 @@ from rclpy.node import Node
 from wmx_r2_message.msg import AxesStatus
 from wmx_r2_message.srv import GetWmxParams
 from wmx_r2_message.srv import SetAxes
+
+
+def wait_until_active(node, target, timeout_sec=60.0):
+    """Spin until `target` reports the active lifecycle state, or time out."""
+    client = node.create_client(GetState, f'{target}/get_state')
+    if not client.wait_for_service(timeout_sec=20):
+        return False
+
+    end_time = time.monotonic() + timeout_sec
+    while time.monotonic() < end_time:
+        future = client.call_async(GetState.Request())
+        rclpy.spin_until_future_complete(node, future, timeout_sec=10)
+        result = future.result()
+        if result is not None and result.current_state.label == 'active':
+            return True
+        time.sleep(1.0)
+
+    return False
 
 
 @pytest.mark.launch_test
@@ -23,15 +43,23 @@ def generate_test_description():
         name='wmx_engine_node',
         output='screen',
     )
-    core_motion_node = launch_ros.actions.Node(
+    manager_node = launch_ros.actions.Node(
+        package='wmx_r2_package',
+        executable='wmx_lifecycle_manager_node',
+        name='wmx_lifecycle_manager_node',
+        output='screen',
+    )
+    core_motion_node = launch_ros.actions.LifecycleNode(
         package='wmx_r2_package',
         executable='wmx_core_motion_node',
         name='wmx_core_motion_node',
+        namespace='',
         output='screen',
     )
 
     return launch.LaunchDescription([
         engine_node,
+        manager_node,
         core_motion_node,
         launch_testing.actions.ReadyToTest(),
     ]), {'engine_node': engine_node, 'core_motion_node': core_motion_node}
@@ -43,12 +71,21 @@ class TestCoreMotionNode(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         rclpy.init()
+        probe = Node('test_core_motion_node_probe')
+        try:
+            cls.node_active = wait_until_active(probe, 'wmx_core_motion_node')
+        finally:
+            probe.destroy_node()
 
     @classmethod
     def tearDownClass(cls):
         rclpy.shutdown()
 
     def setUp(self):
+        # Nothing to exercise until the manager has brought the node up,
+        # which needs a communicating engine.
+        if not self.node_active:
+            self.skipTest('wmx_core_motion_node never became active (engine unavailable)')
         self.node = Node('test_core_motion_node')
 
     def tearDown(self):

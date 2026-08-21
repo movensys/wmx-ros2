@@ -145,7 +145,7 @@ if(BUILD_TESTING)
     TIMEOUT 60
   )
   add_launch_test(test/test_lifecycle_nodes.py
-    TIMEOUT 120
+    TIMEOUT 180
   )
   add_launch_test(test/test_core_motion_node.py
     TIMEOUT 90

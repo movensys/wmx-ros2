@@ -97,12 +97,14 @@ private:
   std::string jointTrajectoryAction_;
 
   std::atomic<bool> isNodeActive_{false};
+  std::atomic<bool> goalRunning_{false};
 
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr actionServer_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
   rclcpp_lifecycle::LifecyclePublisher<control_msgs::msg::JointJog>::SharedPtr servoNodeResetPub_;
 
   bool isNodeActive() const;
+  void waitForGoalToFinish();
   std::string notActiveMessage();
 
   void setRosParameter();

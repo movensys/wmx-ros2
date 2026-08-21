@@ -64,7 +64,7 @@ public:
   int setAxisCommandMode(int axis, int mode, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
   int setAxisPolarity(int axis, int polarity, std::string & message);
-  int setGearRatio(int axis, int numerator, int denominator, std::string & message);
+  int setGearRatio(int axis, double numerator, double denominator, std::string & message);
   int startHome(int axis, std::string & message);
 
 private:

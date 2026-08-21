@@ -293,7 +293,6 @@ private:
   bool publishTf_ = false;
   std::string odomFrame_;
   std::string baseFrame_;
-  double posUnitScale_ = 1.0;
   double jumpGuardTol_ = 0.5;
 
   std::string cmdVelTopic_;

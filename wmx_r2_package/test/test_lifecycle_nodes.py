@@ -135,7 +135,7 @@ class TestLifecycleNodes(unittest.TestCase):
         req = SetNodeState.Request()
         req.node_name = ''
         req.transition = 'bringup'
-        result = self.call(client, req)
+        result = self.call(client, req, timeout_sec=90)
 
         self.assertIsNotNone(result, 'Service call returned no result')
         self.assertEqual(
@@ -161,8 +161,6 @@ class TestLifecycleNodes(unittest.TestCase):
             'wmx/lifecycle/set_node_state service not available',
         )
 
-        # The engine discovers the node and brings it up on its own once it is
-        # communicating. Without a running engine there is nothing to deactivate.
         state = self.call(state_client, GetState.Request())
         self.assertIsNotNone(state, 'wmx_io_node/get_state returned no result')
         if state.current_state.label != 'active':

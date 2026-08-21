@@ -17,6 +17,11 @@ using wmx3Api::IO;
 
 namespace
 {
+std::chrono::nanoseconds periodFromRate(int rate)
+{
+  return std::chrono::nanoseconds(static_cast<int64_t>(1e9 / static_cast<double>(rate)));
+}
+
 constexpr int kServiceMaxRetries = 5;
 constexpr std::chrono::seconds kServiceWaitTimeout{10};
 constexpr std::chrono::seconds kServiceCallTimeout{15};
@@ -87,9 +92,10 @@ void JointStateBroadcasterApi::releaseDevice()
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    RCLCPP_INFO(logger_, "Device closed");
+    return;
   }
+
+  RCLCPP_INFO(logger_, "Device closed");
   isDeviceAttached_ = false;
 }
 
@@ -325,7 +331,7 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_configure(
   gazeboJointPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(gazeboJointTopic_, 1);
 
   encoderJointTimer_ = this->create_wall_timer(
-    std::chrono::milliseconds(1000 / jointFeedbackRate_),
+    periodFromRate(jointFeedbackRate_),
     std::bind(&JointStateBroadcaster::publishJointState, this));
   encoderJointTimer_->cancel();
 
