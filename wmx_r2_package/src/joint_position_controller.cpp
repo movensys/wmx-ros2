@@ -171,42 +171,30 @@ int JointPositionControllerApi::stopAxes(std::string & message)
 }
 
 JointPositionController::JointPositionController()
-: Node("joint_position_controller")
+: LifecycleNode("joint_position_controller")
 {
-  RCLCPP_INFO(this->get_logger(), "start joint_position_controller");
-
   api_ = std::make_unique<JointPositionControllerApi>(this->get_logger());
 
   setRosParameter();
-
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&JointPositionController::onEngineReady, this, _1));
 
   execActiveSub_ = this->create_subscription<std_msgs::msg::Bool>(
     "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local(),
     std::bind(&JointPositionController::onExecActive, this, _1));
 
-  RCLCPP_INFO(this->get_logger(), "joint_position_controller waiting for engine...");
+  RCLCPP_INFO(
+    this->get_logger(), "joint_position_controller is unconfigured, waiting for configure...");
 }
 
 JointPositionController::~JointPositionController()
 {
-  RCLCPP_INFO(this->get_logger(), "Stop joint_position_controller");
-
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  if (initialized_) {
-    std::string message;
-    api_->stopAxes(message);
-  }
-
   api_.reset();
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller stopped");
+}
 
-  RCLCPP_INFO(this->get_logger(), "joint_position_controller is stopped");
+bool JointPositionController::isNodeActive()
+{
+  return this->get_current_state().id() ==
+         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
 }
 
 void JointPositionController::setRosParameter()
@@ -248,21 +236,6 @@ void JointPositionController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
-void JointPositionController::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  if (!msg->data || initialized_ || initializing_.exchange(true)) {
-    return;
-  }
-
-  RCLCPP_INFO(this->get_logger(), "Engine ready — starting init on dedicated thread...");
-
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  init_thread_ = std::thread(&JointPositionController::runInitSequence, this);
-}
-
 void JointPositionController::onExecActive(const std_msgs::msg::Bool::SharedPtr msg)
 {
   if (in_execution_.exchange(msg->data) == msg->data) {
@@ -273,47 +246,62 @@ void JointPositionController::onExecActive(const std_msgs::msg::Bool::SharedPtr 
     msg->data ? "blocked" : "allowed", msg->data ? "started" : "finished");
 }
 
-bool JointPositionController::attachDeviceWithRetries()
+JointPositionController::CallbackReturn JointPositionController::on_configure(
+  const rclcpp_lifecycle::State &)
 {
-  for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
-    std::string message;
-    const int err = api_->attachDevice(message);
+  RCLCPP_INFO(this->get_logger(), "Configuring joint_position_controller...");
 
-    if (err == ErrorCode::None) {
-      return true;
-    }
-
-    if (err != ErrorCode::StartProcessLockError) {
-      RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
-      return false;
-    }
-
-    RCLCPP_WARN(
-      this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-      attempt, kMaxDeviceRetries);
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::string message;
+  if (api_->attachDevice(message) != ErrorCode::None) {
+    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+    return CallbackReturn::FAILURE;
   }
 
-  RCLCPP_FATAL(
-    this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
-  return false;
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is configured");
+  return CallbackReturn::SUCCESS;
 }
 
-void JointPositionController::runInitSequence()
+JointPositionController::CallbackReturn JointPositionController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
 {
-  if (!attachDeviceWithRetries()) {
-    initializing_ = false;
-    return;
-  }
-
   jointTrajectorySub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
     jointTrajectoryTopic_, 1,
     std::bind(&JointPositionController::jointTrajectoryCallback, this, _1));
 
-  initialized_ = true;
-  engineReadySub_.reset();
+  LifecycleNode::on_activate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is active");
+  return CallbackReturn::SUCCESS;
+}
 
-  RCLCPP_INFO(this->get_logger(), "joint_position_controller is ready");
+JointPositionController::CallbackReturn JointPositionController::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  jointTrajectorySub_.reset();
+
+  std::string message;
+  api_->stopAxes(message);
+
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
+  jointTrajectorySub_.reset();
+  if (api_->isDeviceOpen()) {
+    api_->releaseDevice();
+  }
+
+  RCLCPP_INFO(this->get_logger(), "joint_position_controller is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+JointPositionController::CallbackReturn JointPositionController::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 bool JointPositionController::buildCommand(
@@ -379,7 +367,9 @@ void JointPositionController::jointTrajectoryCallback(
 {
   IntplCommand command;
 
-  if (msg->points.empty() || in_execution_.load() || !buildCommand(*msg, command)) {
+  if (!isNodeActive() || msg->points.empty() || in_execution_.load() ||
+    !buildCommand(*msg, command))
+  {
     return;
   }
 
@@ -397,7 +387,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<JointPositionController>();
-  rclcpp::spin(node);
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

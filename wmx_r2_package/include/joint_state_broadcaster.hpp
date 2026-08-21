@@ -13,9 +13,12 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
+
+#include "lifecycle_msgs/msg/state.hpp"
 
 #include "wmx_r2_message/srv/set_axes.hpp"
 
@@ -63,11 +66,20 @@ private:
   std::unique_ptr<wmx3Api::IO> io_;
 };
 
-class JointStateBroadcaster : public rclcpp::Node
+class JointStateBroadcaster : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   JointStateBroadcaster();
-  ~JointStateBroadcaster();
+  ~JointStateBroadcaster() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
   std::unique_ptr<JointStateBroadcasterApi> api_;
@@ -83,25 +95,19 @@ private:
   std::string isaacsimJointTopic_;
   std::string gazeboJointTopic_;
 
-  bool initialized_ = false;
-  std::atomic<bool> initializing_{false};
+  std::atomic<bool> isNodeActive_{false};
 
-  static constexpr int kMaxDeviceRetries = 30;
-
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr coreMotionReadySub_;
+  rclcpp::CallbackGroup::SharedPtr axisClientCbGroup_;
   rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr clearAmpAlarmClient_;
   rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr setServoOnClient_;
 
   rclcpp::TimerBase::SharedPtr encoderJointTimer_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr gazeboJointPub_;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::JointState>::SharedPtr isaacsimJointPub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Float64MultiArray>::SharedPtr
+    gazeboJointPub_;
 
-  std::thread init_thread_;
-
-  void onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg);
-  void runInitSequence();
-  bool attachDeviceWithRetries();
+  bool isNodeActive() const;
   bool callSetAxesService(
     rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
     const std::string & service_name,

@@ -11,6 +11,10 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
+
+#include "lifecycle_msgs/msg/state.hpp"
 
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "control_msgs/msg/joint_jog.hpp"
@@ -69,28 +73,33 @@ private:
   std::unique_ptr<wmx3Api::AdvancedMotion> am_;
 };
 
-class JointTrajectoryController : public rclcpp::Node
+class JointTrajectoryController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
   using GoalHandleFJT = rclcpp_action::ServerGoalHandle<FollowJointTrajectory>;
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
   JointTrajectoryController();
-  ~JointTrajectoryController();
+  ~JointTrajectoryController() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
   std::unique_ptr<JointTrajectoryControllerApi> api_;
-
-  bool initialized_ = false;
 
   std::vector<int64_t> jointAxes_;
   std::string jointTrajectoryAction_;
   std::string wmxParamFilePath_;
 
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr action_server_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
-  rclcpp::Publisher<control_msgs::msg::JointJog>::SharedPtr servoResetPub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr execActivePub_;
+  rclcpp_lifecycle::LifecyclePublisher<control_msgs::msg::JointJog>::SharedPtr servoResetPub_;
 
   rclcpp_action::GoalResponse handle_goal(
     const rclcpp_action::GoalUUID & uuid,
@@ -103,10 +112,12 @@ private:
 
   void execute(std::shared_ptr<GoalHandleFJT> goal_handle);
 
+  bool isNodeActive();
+  std::string notActiveMessage();
+
   void setRosParameter();
   void setWmxParam(const std::string & path);
   void getWmxParam();
-  void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
   void logTrajectory(const trajectory_msgs::msg::JointTrajectory & trajectory);
   void publishExecActive(bool active);
   void resetServo(const std::vector<std::string> & joint_names);

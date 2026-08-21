@@ -13,8 +13,11 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
-#include "std_msgs/msg/bool.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
+
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "geometry_msgs/msg/accel_stamped.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
@@ -264,11 +267,20 @@ private:
   std::unique_ptr<wmx3Api::CoreMotion> cm_;
 };
 
-class DifferentialDriveController : public rclcpp::Node
+class DifferentialDriveController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   DifferentialDriveController();
-  ~DifferentialDriveController();
+  ~DifferentialDriveController() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
   std::unique_ptr<DifferentialDriveControllerApi> api_;
@@ -297,10 +309,7 @@ private:
   std::string odomAccelTopic_;
   std::string wmxParamFilePath_;
 
-  std::atomic<bool> initialized_{false};
-  std::atomic<bool> initializing_{false};
-
-  static constexpr int kMaxDeviceRetries = 30;
+  std::atomic<bool> isNodeActive_{false};
 
   diff_drive::DiffDriveModel model_;
   diff_drive::OdometryIntegrator integrator_;
@@ -323,19 +332,17 @@ private:
   bool lastSentValid_ = false;
 
   rclcpp::TimerBase::SharedPtr controlTimer_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmdVelStampedSub_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr encoderOmegaPub_;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr encoderOdometryPub_;
-  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr odomDeltasPub_;
-  rclcpp::Publisher<geometry_msgs::msg::AccelStamped>::SharedPtr odomAccelPub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Float64MultiArray>::SharedPtr
+    encoderOmegaPub_;
+  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr encoderOdometryPub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::TwistStamped>::SharedPtr
+    odomDeltasPub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::AccelStamped>::SharedPtr
+    odomAccelPub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tfBroadcaster_;
 
-  std::thread init_thread_;
-
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
-  void runInitSequence();
-  bool attachDeviceWithRetries();
+  bool isNodeActive() const;
   void setRosParameter();
   void setWmxParam(const std::string & path);
 

@@ -213,14 +213,38 @@ int WmxEtherCatNodeApi::startHotconnect(int32_t masterId, std::string & message)
 }
 
 WmxEtherCatNode::WmxEtherCatNode()
-: Node("wmx_ethercat_node")
+: LifecycleNode("wmx_ethercat_node")
 {
   api_ = std::make_unique<WmxEtherCatNodeApi>(this->get_logger());
+  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is unconfigured, waiting for configure...");
+}
 
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&WmxEtherCatNode::onEngineReady, this, _1));
+WmxEtherCatNode::~WmxEtherCatNode()
+{
+  api_.reset();
+  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node stopped");
+}
+
+bool WmxEtherCatNode::isNodeActive()
+{
+  return this->get_current_state().id() ==
+         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
+}
+
+std::string WmxEtherCatNode::notActiveMessage()
+{
+  return "wmx_ethercat_node is not active (state: " +
+         this->get_current_state().label() + ").";
+}
+
+WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_configure(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring wmx_ethercat_node...");
+
+  std::string message;
+  if (api_->attachDevice(message) != ErrorCode::None) {
+    return CallbackReturn::FAILURE;
+  }
 
   getNetworkStateService_ = this->create_service<wmx_r2_message::srv::EcatGetNetworkState>(
     "wmx/ecat/get_network_state",
@@ -242,50 +266,55 @@ WmxEtherCatNode::WmxEtherCatNode()
     "wmx/ecat/start_hotconnect",
     std::bind(&WmxEtherCatNode::startHotconnectCallback, this, _1, _2));
 
-  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node waiting for engine...");
+  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is configured");
+  return CallbackReturn::SUCCESS;
 }
 
-WmxEtherCatNode::~WmxEtherCatNode()
+WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
 {
-  api_.reset();
-  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node stopped");
+  LifecycleNode::on_activate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is active");
+  return CallbackReturn::SUCCESS;
 }
 
-bool WmxEtherCatNode::isReady()
+WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
 {
-  return api_->isDeviceOpen();
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is inactive");
+  return CallbackReturn::SUCCESS;
 }
 
-std::string WmxEtherCatNode::notReadyMessage()
+WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
-  return "EtherCAT node not initialized. Engine not ready.";
-}
+  getNetworkStateService_.reset();
+  registerReadService_.reset();
+  resetStatisticsService_.reset();
+  scanNetworkService_.reset();
+  startHotconnectService_.reset();
 
-void WmxEtherCatNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  if (!msg->data || api_->isDeviceOpen()) {
-    return;
+  if (api_->isDeviceOpen()) {
+    api_->releaseDevice();
   }
 
-  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing EtherCAT node...");
+  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
 
-  std::string message;
-  if (api_->attachDevice(message) != ErrorCode::None) {
-    return;
-  }
-
-  engineReadySub_.reset();
-
-  RCLCPP_INFO(this->get_logger(), "wmx_ethercat_node is ready");
+WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void WmxEtherCatNode::getNetworkStateCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatGetNetworkState::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatGetNetworkState::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -348,9 +377,9 @@ void WmxEtherCatNode::registerReadCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatRegisterRead::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatRegisterRead::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -368,9 +397,9 @@ void WmxEtherCatNode::resetStatisticsCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatResetStatistics::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatResetStatistics::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -385,9 +414,9 @@ void WmxEtherCatNode::scanNetworkCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -402,9 +431,9 @@ void WmxEtherCatNode::startHotconnectCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -419,7 +448,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<WmxEtherCatNode>();
-  rclcpp::spin(node);
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

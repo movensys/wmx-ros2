@@ -234,14 +234,38 @@ int WmxIoNodeApi::setOutputBytes(
 }
 
 WmxIoNode::WmxIoNode()
-: Node("wmx_io_node")
+: LifecycleNode("wmx_io_node")
 {
   api_ = std::make_unique<WmxIoNodeApi>(this->get_logger());
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is unconfigured, waiting for configure...");
+}
 
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&WmxIoNode::onEngineReady, this, _1));
+WmxIoNode::~WmxIoNode()
+{
+  api_.reset();
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
+}
+
+bool WmxIoNode::isNodeActive()
+{
+  return this->get_current_state().id() ==
+         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
+}
+
+std::string WmxIoNode::notActiveMessage()
+{
+  return "wmx_io_node is not active (state: " +
+         this->get_current_state().label() + ").";
+}
+
+WmxIoNode::CallbackReturn WmxIoNode::on_configure(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring wmx_io_node...");
+
+  std::string message;
+  if (api_->attachDevice(message) != ErrorCode::None) {
+    return CallbackReturn::FAILURE;
+  }
 
   getInputBitService_ = this->create_service<wmx_r2_message::srv::GetIoBit>(
     "wmx/io/get_input_bit",
@@ -267,50 +291,53 @@ WmxIoNode::WmxIoNode()
     "wmx/io/set_output_bytes",
     std::bind(&WmxIoNode::setOutputBytesCallback, this, _1, _2));
 
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node waiting for engine...");
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is configured");
+  return CallbackReturn::SUCCESS;
 }
 
-WmxIoNode::~WmxIoNode()
+WmxIoNode::CallbackReturn WmxIoNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
-  api_.reset();
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node stopped");
+  LifecycleNode::on_activate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is active");
+  return CallbackReturn::SUCCESS;
 }
 
-bool WmxIoNode::isReady()
+WmxIoNode::CallbackReturn WmxIoNode::on_deactivate(const rclcpp_lifecycle::State & previous_state)
 {
-  return api_->isDeviceOpen();
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is inactive");
+  return CallbackReturn::SUCCESS;
 }
 
-std::string WmxIoNode::notReadyMessage()
+WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
-  return "IO not initialized. Engine not ready.";
-}
+  getInputBitService_.reset();
+  getOutputBitService_.reset();
+  getInputBytesService_.reset();
+  getOutputBytesService_.reset();
+  setOutputBitService_.reset();
+  setOutputBytesService_.reset();
 
-void WmxIoNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  if (!msg->data || api_->isDeviceOpen()) {
-    return;
+  if (api_->isDeviceOpen()) {
+    api_->releaseDevice();
   }
 
-  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing IO...");
+  RCLCPP_INFO(this->get_logger(), "wmx_io_node is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
 
-  std::string message;
-  if (api_->attachDevice(message) != ErrorCode::None) {
-    return;
-  }
-
-  engineReadySub_.reset();
-
-  RCLCPP_INFO(this->get_logger(), "wmx_io_node is ready");
+WmxIoNode::CallbackReturn WmxIoNode::on_shutdown(const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void WmxIoNode::getInputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -327,9 +354,9 @@ void WmxIoNode::getOutputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBit::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -346,9 +373,9 @@ void WmxIoNode::getInputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -365,9 +392,9 @@ void WmxIoNode::getOutputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetIoBytes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -384,9 +411,9 @@ void WmxIoNode::setOutputBitCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBit::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBit::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -401,9 +428,9 @@ void WmxIoNode::setOutputBytesCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetIoBytes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -418,7 +445,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<WmxIoNode>();
-  rclcpp::spin(node);
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

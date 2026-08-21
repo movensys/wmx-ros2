@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
@@ -22,26 +22,37 @@ def generate_launch_description():
         }],
     )
 
-    start_wmx_core_motion_node = Node(
+    start_wmx_lifecycle_manager_node = Node(
+        package='wmx_r2_package',
+        executable='wmx_lifecycle_manager_node',
+        name='wmx_lifecycle_manager_node',
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen',
+    )
+
+    start_wmx_core_motion_node = LifecycleNode(
         package='wmx_r2_package',
         executable='wmx_core_motion_node',
         name='wmx_core_motion_node',
+        namespace='',
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
     )
 
-    start_wmx_io_node = Node(
+    start_wmx_io_node = LifecycleNode(
         package='wmx_r2_package',
         executable='wmx_io_node',
         name='wmx_io_node',
+        namespace='',
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
     )
 
-    start_wmx_ethercat_node = Node(
+    start_wmx_ethercat_node = LifecycleNode(
         package='wmx_r2_package',
         executable='wmx_ethercat_node',
         name='wmx_ethercat_node',
+        namespace='',
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}],
     )
@@ -65,6 +76,7 @@ def generate_launch_description():
         ),
 
         start_wmx_engine_node,
+        start_wmx_lifecycle_manager_node,
         start_wmx_core_motion_node,
         start_wmx_io_node,
         start_wmx_ethercat_node

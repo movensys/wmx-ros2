@@ -39,7 +39,7 @@ colcon build --packages-select wmx_ros2_message
 source install/setup.bash
 colcon build && source install/setup.bash
 
-# 2. Launch the low-level nodes (engine, core motion, IO, EtherCAT)
+# 2. Launch the low-level nodes (engine, lifecycle manager, core motion, IO, EtherCAT)
 ros2 launch wmx_ros2_package wmx_ros2_general_nodes.launch.py
 
 # 3. Bring axes online and command a move
@@ -61,9 +61,13 @@ title: Low-level Control
 ---
 flowchart LR;
     A[ROS2 Services/Topics] --> B[wmx_engine_node];
+    A --> H[wmx_lifecycle_manager_node];
     A --> C[wmx_core_motion_node];
     A --> D[wmx_io_node];
     A --> E[wmx_ethercat_node];
+    H -.->|configure / activate| C;
+    H -.->|configure / activate| D;
+    H -.->|configure / activate| E;
     B --> F[WMX3 API];
     C --> F;
     D --> F;
@@ -103,6 +107,7 @@ flowchart LR;
 | Node | Role |
 |------|------|
 | `wmx_engine_node` | Engine and device initialization, overall state management |
+| `wmx_lifecycle_manager_node` | Discovers the managed lifecycle nodes and drives them up once the engine is communicating, down when it stops |
 | `wmx_core_motion_node` | Core motion control and trajectory execution |
 | `wmx_io_node` | IO control for input/output bits and bytes |
 | `wmx_ethercat_node` | EtherCAT master operations and slave management |
@@ -115,7 +120,7 @@ flowchart LR;
 
 | Launch file | Purpose | Nodes started |
 |-------------|---------|---------------|
-| [wmx_r2_general_nodes.launch.py](wmx_r2_package/launch/wmx_r2_general_nodes.launch.py) | Low-level axis / IO / EtherCAT control | `wmx_engine_node`, `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` |
+| [wmx_r2_general_nodes.launch.py](wmx_r2_package/launch/wmx_r2_general_nodes.launch.py) | Low-level axis / IO / EtherCAT control | `wmx_engine_node`, `wmx_lifecycle_manager_node`, `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` |
 | [wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py) | Dobot CR3A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller`, `joint_position_controller`, `gripper_controller` |
 | [wmx_r2_cr5a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr5a_manipulator.launch.py) | Dobot CR5A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller` |
 

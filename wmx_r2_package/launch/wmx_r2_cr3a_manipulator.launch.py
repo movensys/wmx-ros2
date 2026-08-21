@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode
 
 
 def generate_launch_description():
@@ -22,18 +22,20 @@ def generate_launch_description():
         launch_arguments={'use_sim_time': use_sim_time}.items(),
     )
 
-    start_joint_state_broadcaster = Node(
+    start_joint_state_broadcaster = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_state_broadcaster',
         name='joint_state_broadcaster',
+        namespace='',
         parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
 
-    start_joint_trajectory_controller = Node(
+    start_joint_trajectory_controller = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_trajectory_controller',
         name='joint_trajectory_controller',
+        namespace='',
         parameters=[
             manipulator_config,
             {
@@ -44,18 +46,20 @@ def generate_launch_description():
         output='screen',
     )
 
-    start_joint_position_controller = Node(
+    start_joint_position_controller = LifecycleNode(
         package='wmx_r2_package',
         executable='joint_position_controller',
         name='joint_position_controller',
+        namespace='',
         parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
 
-    start_gripper_controller = Node(
+    start_gripper_controller = LifecycleNode(
         package='wmx_r2_package',
         executable='gripper_controller',
         name='gripper_controller',
+        namespace='',
         parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         additional_env={'MANIPULATOR_MODEL': 'dobot_cr3a'},
         output='screen',
