@@ -81,9 +81,10 @@ target_link_directories(gripper_controller PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(gripper_controller PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
 add_executable(wmx_engine_node src/wmx_engine_node.cpp)
-ament_target_dependencies(wmx_engine_node rclcpp std_msgs std_srvs wmx_r2_message)
+ament_target_dependencies(wmx_engine_node
+  rclcpp lifecycle_msgs std_msgs std_srvs wmx_r2_message)
 target_include_directories(wmx_engine_node PRIVATE include ${WMX3_SDK_PATH}/include ${WMX3_SDK_PATH}/sample/Header)
-target_link_libraries(wmx_engine_node ecapi wmx3api imdll)
+target_link_libraries(wmx_engine_node coremotionapi wmx3api imdll)
 target_link_directories(wmx_engine_node PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(wmx_engine_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
 
@@ -94,10 +95,6 @@ target_include_directories(wmx_core_motion_node PRIVATE include ${WMX3_SDK_PATH}
 target_link_libraries(wmx_core_motion_node coremotionapi wmx3api imdll)
 target_link_directories(wmx_core_motion_node PRIVATE ${WMX3_SDK_PATH}/lib)
 target_compile_definitions(wmx_core_motion_node PRIVATE WMX3_SDK_PATH="${WMX3_SDK_PATH}/")
-
-# Keyboard jog teleop. Input node only: no WMX3 include or link.
-add_executable(jog_keyboard_node src/jog_keyboard_node.cpp)
-ament_target_dependencies(jog_keyboard_node rclcpp wmx_r2_message)
 
 add_executable(wmx_io_node src/wmx_io_node.cpp)
 ament_target_dependencies(wmx_io_node
@@ -132,7 +129,6 @@ install(TARGETS
   wmx_core_motion_node
   wmx_io_node
   wmx_ethercat_node
-  jog_keyboard_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
