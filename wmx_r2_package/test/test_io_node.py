@@ -90,84 +90,84 @@ class TestIoNode(unittest.TestCase):
     def tearDown(self):
         self.node.destroy_node()
 
-    def test_get_input_bit_service(self):
-        """get_input_bit service should be available and respond."""
-        client = self.node.create_client(GetIoBit, 'wmx/io/get_input_bit')
+    def test_get_in_bit_service(self):
+        """get_in_bit service should be available and respond."""
+        client = self.node.create_client(GetIoBit, 'wmx/io/get_in_bit')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/io/get_input_bit service not available',
+            'wmx/io/get_in_bit service not available',
         )
 
         req = GetIoBit.Request()
-        req.byte = 0
+        req.addr = 0
         req.bit = 0
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
 
         self.assertIsNotNone(future.result(), 'Service call returned no result')
 
-    def test_get_output_bit_service(self):
-        """get_output_bit service should be available and respond."""
-        client = self.node.create_client(GetIoBit, 'wmx/io/get_output_bit')
+    def test_get_out_bit_service(self):
+        """get_out_bit service should be available and respond."""
+        client = self.node.create_client(GetIoBit, 'wmx/io/get_out_bit')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/io/get_output_bit service not available',
+            'wmx/io/get_out_bit service not available',
         )
 
         req = GetIoBit.Request()
-        req.byte = 0
+        req.addr = 0
         req.bit = 0
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
 
         self.assertIsNotNone(future.result(), 'Service call returned no result')
 
-    def test_get_input_bytes_service(self):
-        """get_input_bytes service should be available and respond."""
-        client = self.node.create_client(GetIoBytes, 'wmx/io/get_input_bytes')
+    def test_get_in_bytes_service(self):
+        """get_in_bytes service should be available and respond."""
+        client = self.node.create_client(GetIoBytes, 'wmx/io/get_in_bytes')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/io/get_input_bytes service not available',
+            'wmx/io/get_in_bytes service not available',
         )
 
         req = GetIoBytes.Request()
-        req.byte = 0
-        req.length = 1
+        req.addr = 0
+        req.size = 1
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
 
         self.assertIsNotNone(future.result(), 'Service call returned no result')
 
-    def test_get_output_bytes_service(self):
-        """get_output_bytes service should be available and respond."""
-        client = self.node.create_client(GetIoBytes, 'wmx/io/get_output_bytes')
+    def test_get_out_bytes_service(self):
+        """get_out_bytes service should be available and respond."""
+        client = self.node.create_client(GetIoBytes, 'wmx/io/get_out_bytes')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/io/get_output_bytes service not available',
+            'wmx/io/get_out_bytes service not available',
         )
 
         req = GetIoBytes.Request()
-        req.byte = 0
-        req.length = 1
+        req.addr = 0
+        req.size = 1
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
 
         self.assertIsNotNone(future.result(), 'Service call returned no result')
 
-    def test_set_output_bit_service(self):
-        """set_output_bit service should be available."""
-        client = self.node.create_client(SetIoBit, 'wmx/io/set_output_bit')
+    def test_set_out_bit_service(self):
+        """set_out_bit service should be available."""
+        client = self.node.create_client(SetIoBit, 'wmx/io/set_out_bit')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/io/set_output_bit service not available',
+            'wmx/io/set_out_bit service not available',
         )
 
-    def test_set_output_bytes_service(self):
-        """set_output_bytes service should be available."""
-        client = self.node.create_client(SetIoBytes, 'wmx/io/set_output_bytes')
+    def test_set_out_bytes_service(self):
+        """set_out_bytes service should be available."""
+        client = self.node.create_client(SetIoBytes, 'wmx/io/set_out_bytes')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/io/set_output_bytes service not available',
+            'wmx/io/set_out_bytes service not available',
         )
 
 

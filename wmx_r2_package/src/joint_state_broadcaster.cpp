@@ -27,7 +27,7 @@ constexpr std::chrono::seconds kServiceWaitTimeout{10};
 constexpr std::chrono::seconds kServiceCallTimeout{15};
 constexpr std::chrono::seconds kServiceRetryDelay{2};
 
-std::string errorText(int err)
+std::string errorToString(int err)
 {
   char errString[256] = {};
   CoreMotion::ErrorToString(err, errString, sizeof(errString));
@@ -42,14 +42,14 @@ JointStateBroadcasterApi::JointStateBroadcasterApi(const rclcpp::Logger & logger
 
 JointStateBroadcasterApi::~JointStateBroadcasterApi()
 {
-  releaseDevice();
+  closeDevice();
 }
 
-int JointStateBroadcasterApi::attachDevice(std::string & message)
+int JointStateBroadcasterApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (isDeviceAttached_) {
+  if (isDeviceCreated_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
@@ -60,7 +60,7 @@ int JointStateBroadcasterApi::attachDevice(std::string & message)
       message = "Failed to attach to device (lock busy). Is the engine communicating?";
     } else {
       message = "Failed to attach to device. Error=" + std::to_string(err) +
-        " (" + errorText(err) + ")";
+        " (" + errorToString(err) + ")";
     }
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
@@ -69,7 +69,7 @@ int JointStateBroadcasterApi::attachDevice(std::string & message)
   err = wmx3Lib_.SetDeviceName(deviceName_);
   if (err != ErrorCode::None) {
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
+      std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     // The device exists but is unnamed: close it so the next attempt starts clean.
     wmx3Lib_.CloseDevice();
@@ -78,25 +78,25 @@ int JointStateBroadcasterApi::attachDevice(std::string & message)
 
   cm_ = CoreMotion(&wmx3Lib_);
   io_ = IO(&wmx3Lib_);
-  isDeviceAttached_ = true;
+  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
   return ErrorCode::None;
 }
 
-void JointStateBroadcasterApi::releaseDevice()
+void JointStateBroadcasterApi::closeDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
-    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorToString(err).c_str());
     return;
   }
 
   RCLCPP_INFO(logger_, "Device closed");
-  isDeviceAttached_ = false;
+  isDeviceCreated_ = false;
 }
 
 int JointStateBroadcasterApi::getStatus(
@@ -107,7 +107,7 @@ int JointStateBroadcasterApi::getStatus(
 
   feedback.clear();
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -115,7 +115,7 @@ int JointStateBroadcasterApi::getStatus(
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
   if (err != ErrorCode::None) {
-    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     return err;
   }
 
@@ -134,46 +134,44 @@ int JointStateBroadcasterApi::getStatus(
   return ErrorCode::None;
 }
 
-int JointStateBroadcasterApi::getOutputBit(
-  int32_t byte, int32_t bit, int32_t & value, std::string & message)
+int JointStateBroadcasterApi::getOutBit(
+  int32_t addr, int32_t bit, uint8_t & data, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
-    message = "Cannot read the output bit. Device is not attached.";
+  if (!isDeviceCreated_) {
+    message = "Cannot read the output bit. Device is not created.";
     return ErrorCode::DeviceIsNull;
   }
 
-  unsigned char raw = 0;
-  const int err = io_.GetOutBit(byte, bit, &raw);
+  const int err = io_.GetOutBit(addr, bit, &data);
   if (err != ErrorCode::None) {
-    message = "GetOutBit failed. byte=" + std::to_string(byte) + " bit=" + std::to_string(bit) +
-      ". Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "GetOutBit failed. addr=" + std::to_string(addr) + " bit=" + std::to_string(bit) +
+      ". Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     return err;
   }
 
-  value = raw;
   return ErrorCode::None;
 }
 
-int JointStateBroadcasterApi::setServoOn(int axis, int on, std::string & message)
+int JointStateBroadcasterApi::setServoOn(int axis, int newStatus, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot set servo on axis " + std::to_string(axis) + ". Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  const int err = cm_.axisControl->SetServoOn(axis, on);
+  const int err = cm_.axisControl->SetServoOn(axis, newStatus);
   if (err != ErrorCode::None) {
-    message = "Servo " + std::to_string(axis) + " error to " + (on ? "on" : "off") +
-      ". Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "Servo " + std::to_string(axis) + " error to " + (newStatus ? "on" : "off") +
+      ". Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  message = "Servo " + std::to_string(axis) + " " + (on ? "on" : "off");
+  message = "Servo " + std::to_string(axis) + " " + (newStatus ? "on" : "off");
   RCLCPP_INFO(logger_, "%s", message.c_str());
   return ErrorCode::None;
 }
@@ -193,8 +191,8 @@ JointStateBroadcaster::JointStateBroadcaster()
   setAxisOnClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
     "wmx/axes/set_servo_on", servicesQos(), axisClientCbGroup_);
 
-  getWmxParamsClient_ = this->create_client<wmx_r2_message::srv::GetWmxParams>(
-    "wmx/engine/get_wmx_params", servicesQos(), axisClientCbGroup_);
+  getAxisParamClient_ = this->create_client<wmx_r2_message::srv::GetAxisParam>(
+    "wmx/engine/get_axis_param", servicesQos(), axisClientCbGroup_);
 
   RCLCPP_INFO(
     this->get_logger(), "joint_state_broadcaster is unconfigured, waiting for configure...");
@@ -300,7 +298,7 @@ void JointStateBroadcaster::setRosParameter()
 
 void JointStateBroadcaster::servoOff()
 {
-  if (!isNodeActive() || !api_ || !api_->isDeviceOpen()) {
+  if (!isNodeActive() || !api_ || !api_->isDeviceCreated()) {
     return;
   }
 
@@ -316,11 +314,11 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_configure(
   RCLCPP_INFO(this->get_logger(), "Configuring joint_state_broadcaster...");
 
   std::string message;
-  if (api_->attachDevice(message) != ErrorCode::None) {
+  if (api_->createDevice(message) != ErrorCode::None) {
     return CallbackReturn::FAILURE;
   }
 
-  if (getWmxParams(message)) {
+  if (getAxisParam(message)) {
     RCLCPP_INFO(this->get_logger(), "WMX parameters read: %s", message.c_str());
   } else {
     RCLCPP_WARN(this->get_logger(), "Could not read WMX parameters: %s", message.c_str());
@@ -385,7 +383,7 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_cleanup(
   isaacsimJointPub_.reset();
   gazeboJointPub_.reset();
 
-  api_->releaseDevice();
+  api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is cleaned up");
   return CallbackReturn::SUCCESS;
@@ -400,7 +398,7 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_shutdown(
 bool JointStateBroadcaster::callSetAxesService(
   rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
   const std::string & serviceName,
-  const std::vector<int64_t> & indices,
+  const std::vector<int64_t> & axes,
   const std::vector<int64_t> & data)
 {
   if (!client->wait_for_service(kServiceWaitTimeout)) {
@@ -410,7 +408,7 @@ bool JointStateBroadcaster::callSetAxesService(
 
   for (int attempt = 1; attempt <= kServiceMaxRetries; attempt++) {
     auto request = std::make_shared<wmx_r2_message::srv::SetAxes::Request>();
-    request->indices.assign(indices.begin(), indices.end());
+    request->axis.assign(axes.begin(), axes.end());
     request->data.assign(data.begin(), data.end());
 
     RCLCPP_INFO(
@@ -456,27 +454,27 @@ bool JointStateBroadcaster::callSetAxesService(
   return false;
 }
 
-bool JointStateBroadcaster::getWmxParams(std::string & message)
+bool JointStateBroadcaster::getAxisParam(std::string & message)
 {
-  if (!getWmxParamsClient_->wait_for_service(kServiceWaitTimeout)) {
-    message = std::string(getWmxParamsClient_->get_service_name()) + " is not available";
+  if (!getAxisParamClient_->wait_for_service(kServiceWaitTimeout)) {
+    message = std::string(getAxisParamClient_->get_service_name()) + " is not available";
     return false;
   }
 
-  auto request = std::make_shared<wmx_r2_message::srv::GetWmxParams::Request>();
-  request->indices.assign(jointAxes_.begin(), jointAxes_.end());
+  auto request = std::make_shared<wmx_r2_message::srv::GetAxisParam::Request>();
+  request->axis.assign(jointAxes_.begin(), jointAxes_.end());
 
-  auto future = getWmxParamsClient_->async_send_request(request);
+  auto future = getAxisParamClient_->async_send_request(request);
   if (future.wait_for(kServiceCallTimeout) != std::future_status::ready) {
-    getWmxParamsClient_->remove_pending_request(future);
-    message = std::string(getWmxParamsClient_->get_service_name()) + " timed out";
+    getAxisParamClient_->remove_pending_request(future);
+    message = std::string(getAxisParamClient_->get_service_name()) + " timed out";
     return false;
   }
 
   const auto response = future.get();
   message = response->message;
 
-  for (const std::string & line : response->params_dump) {
+  for (const std::string & line : response->axis_param) {
     RCLCPP_INFO(this->get_logger(), "%s", line.c_str());
   }
 
@@ -503,8 +501,8 @@ void JointStateBroadcaster::publishJointState()
   }
 
   if (gripperAddress_.size() >= 2) {
-    int32_t gripperData = 0;
-    const bool gripperRead = api_->getOutputBit(
+    uint8_t gripperData = 0;
+    const bool gripperRead = api_->getOutBit(
       static_cast<int32_t>(gripperAddress_[0]), static_cast<int32_t>(gripperAddress_[1]),
       gripperData, message) == ErrorCode::None;
 

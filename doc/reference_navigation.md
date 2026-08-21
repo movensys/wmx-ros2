@@ -36,7 +36,12 @@ has no effect on behaviour — restart the node to apply new values.
 | `right_axis` | int | `1` | – | WMX3 axis index of the right wheel. Same caveat as `left_axis`. |
 | `wheel_radius` | double | `0.095` | m | Drive-wheel radius `R`. Guarded: values ≤ 0 fall back to the default (warn). |
 | `wheel_to_wheel` | double | `0.55` | m | Wheel separation `L` (distance between the two drive wheels). Guarded: ≤ 0 falls back to the default (warn). |
-| `wmx_param_file_path` | string | `/diff_drive/no_param` | – | WMX parameter XML imported at init via `config->ImportAndSetAll()` (axis gear/feedback/limit setup). The default is a deliberate non-path: the import fails with an ERROR log but the node keeps running with whatever parameters the engine already has. The diffbot launch file overrides it with `config/diffbot_wmx_parameters.xml` resolved at launch time. |
+
+The WMX parameter XML (axis gear/feedback/limit setup) is **not** a parameter of
+this node: it is imported once by `wmx_engine_node` through its
+`wmx_param_file_path` parameter, which the diffbot launch file fills in with
+`config/diffbot_wmx_parameters.xml` resolved at launch time (launch argument
+`wmx_param_file`).
 
 ### B. Motion profile / loop
 
@@ -135,7 +140,8 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 - Command: `linear.x` [m/s], `angular.z` [rad/s]; positive `angular.z` = CCW (REP-103).
 - Wheel velocity (`StartVel` target and `actualVelocity` feedback) is the wheel
   angular velocity in **rad/s**. The WMX axis user-unit scaling (encoder counts,
-  gear ratio) must be configured WMX-side — via the `wmx_param_file_path` XML —
+  gear ratio) must be configured WMX-side — via the engine's
+  `wmx_param_file_path` XML —
   so that one axis velocity unit = 1 rad/s at the wheel. There is no gear-ratio
   parameter in the node.
 - Kinematics (`diff_drive::DiffDriveModel`):
@@ -165,8 +171,10 @@ communicates, or on demand through `wmx/lifecycle/set_node_state` /
 1. `CreateDevice(WMX3_SDK_PATH, DeviceTypeNormal, 10 s)` — any error fails the
    transition and leaves the node `unconfigured` (the engine logs it).
 2. `SetDeviceName("differential_drive_controller")`.
-3. `ImportAndSetAll(wmx_param_file_path)` — failure is logged but non-fatal.
-4. Create publishers/subscriber and the control timer, with the timer stopped.
+3. Create publishers/subscriber and the control timer, with the timer stopped.
+
+The WMX parameter XML is not imported here — `wmx_engine_node` does that once,
+right after it creates the device, from its `wmx_param_file_path` parameter.
 
 `on_activate` re-baselines the odometry and command state (encoders may have
 moved while inactive) and starts the control timer. `on_deactivate` stops the
@@ -227,13 +235,16 @@ A deployment consists of two files plus the launch wiring
 (example: `launch/wmx_r2_diffbot_navigation.launch.py`):
 
 1. **ROS parameter YAML** — `config/diffbot_navigation_config.yaml`, key
-   `differential_drive_controller.ros__parameters` (all tables above).
+   `differential_drive_controller.ros__parameters` (all tables above), plus the
+   `wmx_engine_node` key (`core`, `affinity_mask`, `wmx_param_file_path`) and
+   the other general-node keys.
 2. **WMX parameter XML** — `config/diffbot_wmx_parameters.xml`: axis-level
    gear/feedback/limit/e-stop setup imported at node init. This is where the
    "axis unit = wheel rad/s" scaling and the hardware-level motion limits live.
 3. **Launch** — starts the general WMX nodes (engine etc.), the
-   `joint_state_broadcaster`, and this node; injects `wmx_param_file_path`
-   (resolved from the package share at launch time) and `use_sim_time`.
+   `joint_state_broadcaster`, and this node; injects the engine's
+   `wmx_param_file_path` (resolved from the package share at launch time) and
+   `use_sim_time`.
 
 ```yaml
 differential_drive_controller:
@@ -256,7 +267,12 @@ differential_drive_controller:
     encoder_omega_topic: /omega_enc
     odom_deltas_topic: /odom_deltas
     odom_accel_topic: /odom_accel
-    wmx_param_file_path: ""  # injected by launch
+
+wmx_engine_node:
+  ros__parameters:
+    core: -1                # RT engine CPU core (-1 = SDK default)
+    affinity_mask: 0        # CPU affinity bitmask (0 = SDK default)
+    wmx_param_file_path: "" # injected by launch
 ```
 
 ---
@@ -266,7 +282,8 @@ differential_drive_controller:
 What the Toolkit needs to template per robot / per deployment:
 
 - **Always per robot:** `left_axis`, `right_axis`, `wheel_radius`,
-  `wheel_to_wheel`, and the WMX parameter XML (`wmx_param_file_path`).
+  `wheel_to_wheel`, and the WMX parameter XML (the engine's
+  `wmx_param_file_path`).
 - **Per deployment config:** `publish_tf` — must be `true` exactly when the
   localization EKF is *not* running (the EKF launches only with an IMU
   configured); otherwise two publishers would fight over `odom → base_link`.

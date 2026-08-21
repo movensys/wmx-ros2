@@ -30,7 +30,7 @@ std::chrono::nanoseconds periodFromRate(int rate)
   return std::chrono::nanoseconds(static_cast<int64_t>(1e9 / static_cast<double>(rate)));
 }
 
-std::string errorText(int err)
+std::string errorToString(int err)
 {
   char errString[256] = {};
   CoreMotion::ErrorToString(err, errString, sizeof(errString));
@@ -46,14 +46,14 @@ DifferentialDriveControllerApi::DifferentialDriveControllerApi(
 
 DifferentialDriveControllerApi::~DifferentialDriveControllerApi()
 {
-  releaseDevice();
+  closeDevice();
 }
 
-int DifferentialDriveControllerApi::attachDevice(std::string & message)
+int DifferentialDriveControllerApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (isDeviceAttached_) {
+  if (isDeviceCreated_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
@@ -64,7 +64,7 @@ int DifferentialDriveControllerApi::attachDevice(std::string & message)
       message = "Failed to attach to device (lock busy). Is the engine communicating?";
     } else {
       message = "Failed to attach to device. Error=" + std::to_string(err) +
-        " (" + errorText(err) + ")";
+        " (" + errorToString(err) + ")";
     }
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
@@ -73,32 +73,32 @@ int DifferentialDriveControllerApi::attachDevice(std::string & message)
   err = wmx3Lib_.SetDeviceName(deviceName_);
   if (err != ErrorCode::None) {
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
+      std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     wmx3Lib_.CloseDevice();
     return err;
   }
 
   cm_ = CoreMotion(&wmx3Lib_);
-  isDeviceAttached_ = true;
+  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
   return ErrorCode::None;
 }
 
-void DifferentialDriveControllerApi::releaseDevice()
+void DifferentialDriveControllerApi::closeDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
-    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorToString(err).c_str());
     return;
   }
 
   RCLCPP_INFO(logger_, "Device closed");
-  isDeviceAttached_ = false;
+  isDeviceCreated_ = false;
 }
 
 int DifferentialDriveControllerApi::getStatus(
@@ -110,7 +110,7 @@ int DifferentialDriveControllerApi::getStatus(
 
   communicating = false;
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -127,7 +127,7 @@ int DifferentialDriveControllerApi::getStatus(
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
   if (err != ErrorCode::None) {
-    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     return err;
   }
 
@@ -145,7 +145,7 @@ int DifferentialDriveControllerApi::startVel(int axis, double omega, std::string
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot move axis " + std::to_string(axis) + ". Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -160,7 +160,7 @@ int DifferentialDriveControllerApi::startVel(int axis, double omega, std::string
   const int err = cm_.velocity->StartVel(&velCommand);
   if (err != ErrorCode::None) {
     message = "Failed to move motor " + std::to_string(axis) + ". Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
+      std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -213,7 +213,7 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
   RCLCPP_INFO(this->get_logger(), "Configuring differential_drive_controller...");
 
   std::string message;
-  if (api_->attachDevice(message) != ErrorCode::None) {
+  if (api_->createDevice(message) != ErrorCode::None) {
     return CallbackReturn::FAILURE;
   }
 
@@ -263,8 +263,8 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_deac
   isNodeActive_ = false;
   controlTimer_->cancel();
 
-  setVelocity(leftAxis_, 0.0);
-  setVelocity(rightAxis_, 0.0);
+  startVel(leftAxis_, 0.0);
+  startVel(rightAxis_, 0.0);
   lastSentValid_ = false;
 
   LifecycleNode::on_deactivate(previous_state);
@@ -285,7 +285,7 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_clea
   odomDeltasPub_.reset();
   odomAccelPub_.reset();
 
-  api_->releaseDevice();
+  api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is cleaned up");
   return CallbackReturn::SUCCESS;
@@ -395,8 +395,8 @@ void DifferentialDriveController::commandWheels(double omegaLeft, double omegaRi
     return;
   }
 
-  const bool okLeft = setVelocity(leftAxis_, omegaLeft);
-  const bool okRight = setVelocity(rightAxis_, omegaRight);
+  const bool okLeft = startVel(leftAxis_, omegaLeft);
+  const bool okRight = startVel(rightAxis_, omegaRight);
   if (okLeft && okRight) {
     lastSentLeft_ = omegaLeft;
     lastSentRight_ = omegaRight;
@@ -406,7 +406,7 @@ void DifferentialDriveController::commandWheels(double omegaLeft, double omegaRi
   }
 }
 
-bool DifferentialDriveController::setVelocity(int axis, double omega)
+bool DifferentialDriveController::startVel(int axis, double omega)
 {
   std::string message;
   return api_->startVel(axis, omega, message) == ErrorCode::None;

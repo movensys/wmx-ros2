@@ -27,8 +27,8 @@ public:
   explicit JointPositionControllerApi(const rclcpp::Logger & logger);
   ~JointPositionControllerApi();
 
-  int attachDevice(std::string & message);
-  void releaseDevice();
+  int createDevice(std::string & message);
+  void closeDevice();
 
   int startLinearIntplPos(
     const std::vector<int> & axes,
@@ -37,11 +37,11 @@ public:
     const std::vector<double> & maxAcc,
     std::string & message);
 
-  int stopAxes(std::string & message);
-  int setAxes(const std::vector<int64_t> & axes, std::string & message);
+  int stop(std::string & message);
+  int setAxisSelection(const std::vector<int64_t> & axes, std::string & message);
   int getPosCmd(
     const std::vector<int> & axes, std::vector<double> & posCmd, std::string & message);
-  bool isDeviceOpen() const {return isDeviceAttached_;}
+  bool isDeviceCreated() const {return isDeviceCreated_;}
 
 private:
   rclcpp::Logger logger_;
@@ -50,7 +50,7 @@ private:
   unsigned int timeout_ = 10000;
 
   mutable std::mutex deviceMutex_;
-  bool isDeviceAttached_ = false;
+  bool isDeviceCreated_ = false;
 
   wmx3Api::AxisSelection axisSel_;
 

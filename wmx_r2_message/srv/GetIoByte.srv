@@ -1,5 +1,5 @@
-int32 byte      # IO byte address
+int32 addr      # IO byte address
 ---
 bool success    # true if the read succeeded
-int32 value     # byte value: 0-255
+uint8 data      # byte value: 0-255
 string message  # response or error description

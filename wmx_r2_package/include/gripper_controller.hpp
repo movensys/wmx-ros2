@@ -25,15 +25,15 @@ public:
   explicit GripperControllerApi(const rclcpp::Logger & logger);
   ~GripperControllerApi();
 
-  int attachDevice(std::string & message);
-  void releaseDevice();
+  int createDevice(std::string & message);
+  void closeDevice();
 
-  int setOutputBit(int32_t byte, int32_t bit, int32_t value, std::string & message);
-  int setOutputByte(int32_t byte, int32_t value, std::string & message);
-  int getOutputByte(int32_t byte, int32_t & value, std::string & message);
-  int getInputBit(int32_t byte, int32_t bit, int32_t & value, std::string & message);
+  int setOutBit(int32_t addr, int32_t bit, uint8_t data, std::string & message);
+  int setOutByte(int32_t addr, uint8_t data, std::string & message);
+  int getOutByte(int32_t addr, uint8_t & data, std::string & message);
+  int getInBit(int32_t addr, int32_t bit, uint8_t & data, std::string & message);
 
-  bool isDeviceOpen() const {return isDeviceAttached_;}
+  bool isDeviceCreated() const {return isDeviceCreated_;}
 
 private:
   rclcpp::Logger logger_;
@@ -42,7 +42,7 @@ private:
   unsigned int timeout_ = 10000;
 
   mutable std::mutex deviceMutex_;
-  bool isDeviceAttached_ = false;
+  bool isDeviceCreated_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
   wmx3Api::IO io_;

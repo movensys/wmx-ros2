@@ -7,16 +7,16 @@ ros2 service call /wmx/engine/get_engine_status std_srvs/srv/Trigger "{}"
 
 # 2. Set Gear Ratio 
 ros2 service call /wmx/axes/set_gear_ratio wmx_r2_message/srv/SetAxesGearRatio \
-  "{indices: [0, 1], numerators: [8388608.0, 8388608.0], denominators: [360.0, 360.0]}"
+  "{axis: [0, 1], numerator: [8388608.0, 8388608.0], denominator: [360.0, 360.0]}"
 
 # 3. Clear any amp alarms
-ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
+ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 
 # 4. Enable servos
-ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
+ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [1,1]}"
 
 # 5. Home all axes (sets current position as home)
-ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
+ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 ```
 ---
 
@@ -24,20 +24,20 @@ ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{indices: [0,
 ### Send Axis Absolute Position
 ```
 ros2 topic pub --once /wmx/axes/start_pos wmx_r2_message/msg/AxesPose \
-    "{indices: [0,1], positions: [45, -90 ], velocities: [10, 20], accelerations: [10, 20], decelerations: [10, 20]}" 
+    "{axis: [0,1], target: [45, -90 ], velocity: [10, 20], acc: [10, 20], dec: [10, 20]}" 
 ```
 
 ### Send Axis Relative Position
 ```
 ros2 topic pub --once /wmx/axes/start_mov wmx_r2_message/msg/AxesPose \
-    "{indices: [0, 1], positions: [10, -10], velocities: [10, 20], accelerations: [10, 10], decelerations: [10, 20]}"
+    "{axis: [0, 1], target: [10, -10], velocity: [10, 20], acc: [10, 10], dec: [10, 20]}"
 ```
 
 
 ### Send Axis Velocity
 ```
 ros2 topic pub --once /wmx/axes/start_vel wmx_r2_message/msg/AxesVelocity \
-    "{indices: [0, 1], velocities: [10, -10], accelerations: [10, 20], decelerations: [10, 20]}"  
+    "{axis: [0, 1], velocity: [10, -10], acc: [10, 20], dec: [10, 20]}"  
 ```
 
 
@@ -51,23 +51,23 @@ Jog requires the axis to be in **Position mode**, on top of the usual startup
 sequence above:
 ```
 ros2 service call /wmx/axes/set_axis_command_mode wmx_r2_message/srv/SetAxes \
-    "{indices: [0], data: [0]}"
+    "{axis: [0], data: [0]}"
 ```
 
 #### Jog from the CLI
 ```
 # Positive direction. Ctrl-C acts as the release.
 ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
-    "{indices: [0], velocities: [10000], accelerations: [100000], decelerations: [100000]}"
+    "{axis: [0], velocity: [10000], acc: [100000], dec: [100000]}"
 
 # Negative direction
 ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
-    "{indices: [0], velocities: [-10000], accelerations: [100000], decelerations: [100000]}"
+    "{axis: [0], velocity: [-10000], acc: [100000], dec: [100000]}"
 ```
 
 #### Stop
 ```
-ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{indices: [0], data: [0]}"
+ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{axis: [0], data: [0]}"
 ```
 
 `wmx_core_motion_node`'s jog tuning (`jog_timeout_ms`, `jog_run_time_ms`,
@@ -85,10 +85,10 @@ ros2 service call /wmx/engine/get_engine_status std_srvs/srv/Trigger "{}"
 ### Set Communication (start/stop EtherCAT comms)
 ```
 # Start communication
-ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: true}"
+ros2 service call /wmx/engine/set_communication std_srvs/srv/SetBool "{data: true}"
 
 # Stop communication
-ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: false}"
+ros2 service call /wmx/engine/set_communication std_srvs/srv/SetBool "{data: false}"
 ```
 
 ### Set Engine Device (create/close WMX3 device)
@@ -195,21 +195,21 @@ automatically once communication starts.
 ### Load Parameters from File
 ```
 # Dobot CR3A
-ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
-  "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
+ros2 service call /wmx/engine/import_and_set_all wmx_r2_message/srv/ImportAndSetAll \
+  "{path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
 
 # Diffbot
-ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
-  "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/diffbot_wmx_parameters.xml'}"
+ros2 service call /wmx/engine/import_and_set_all wmx_r2_message/srv/ImportAndSetAll \
+  "{path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/diffbot_wmx_parameters.xml'}"
 ```
 
 ### Get Parameters (inspect active axis config)
 ```
 # Single axis
-ros2 service call /wmx/engine/get_wmx_params wmx_r2_message/srv/GetWmxParams "{indices: [0]}"
+ros2 service call /wmx/engine/get_axis_param wmx_r2_message/srv/GetAxisParam "{axis: [0]}"
 
 # Multiple axes
-ros2 service call /wmx/engine/get_wmx_params wmx_r2_message/srv/GetWmxParams "{indices: [0,1,2,3,4,5]}"
+ros2 service call /wmx/engine/get_axis_param wmx_r2_message/srv/GetAxisParam "{axis: [0,1,2,3,4,5]}"
 ```
 
 ---
@@ -218,52 +218,52 @@ ros2 service call /wmx/engine/get_wmx_params wmx_r2_message/srv/GetWmxParams "{i
 
 ### Clear Alarm
 ```
-ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
+ros2 service call /wmx/axes/clear_amp_alarm wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 ```
 
 ### Set Servo On / Off
 ```
 # Servo On
-ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
+ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [1,1]}"
 
 # Servo Off
-ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
+ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 ```
 
 ### Set Command Mode
 ```
 # Position mode (0)
-ros2 service call /wmx/axes/set_axis_command_mode wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
+ros2 service call /wmx/axes/set_axis_command_mode wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 
 # Velocity mode (1)
-ros2 service call /wmx/axes/set_axis_command_mode wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
+ros2 service call /wmx/axes/set_axis_command_mode wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [1,1]}"
 ```
 
 ### Set Polarity
 ```
 # Normal (1)
-ros2 service call /wmx/axes/set_axis_polarity wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
+ros2 service call /wmx/axes/set_axis_polarity wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [1,1]}"
 
 # Reversed (-1)
-ros2 service call /wmx/axes/set_axis_polarity wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [-1,-1]}"
+ros2 service call /wmx/axes/set_axis_polarity wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [-1,-1]}"
 ```
 
 ### Set Gear Ratio
 ```
 ros2 service call /wmx/axes/set_gear_ratio wmx_r2_message/srv/SetAxesGearRatio \
-  "{indices: [0,1], numerators: [1.0,1.0], denominators: [1.0,1.0]}"
+  "{axis: [0,1], numerator: [1.0,1.0], denominator: [1.0,1.0]}"
 ```
 
 
 
 ### Homing (sets current position as home)
 ```
-ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
+ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 ```
 
 ### Stop (decelerate to a stop)
 ```
-ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{indices: [0,1], data: [0,0]}"
+ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 ```
 
 ---
@@ -272,61 +272,61 @@ ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{indices: [0,1], da
 
 ### Read Input Bit
 ```
-ros2 service call /wmx/io/get_input_bit wmx_r2_message/srv/GetIoBit "{byte: 0, bit: 0}"
+ros2 service call /wmx/io/get_in_bit wmx_r2_message/srv/GetIoBit "{addr: 0, bit: 0}"
 ```
 
 ### Read Output Bit
 ```
-ros2 service call /wmx/io/get_output_bit wmx_r2_message/srv/GetIoBit "{byte: 0, bit: 0}"
+ros2 service call /wmx/io/get_out_bit wmx_r2_message/srv/GetIoBit "{addr: 0, bit: 0}"
 ```
 
 ### Read Input Byte
 ```
-ros2 service call /wmx/io/get_input_byte wmx_r2_message/srv/GetIoByte "{byte: 0}"
+ros2 service call /wmx/io/get_in_byte wmx_r2_message/srv/GetIoByte "{addr: 0}"
 ```
 
 ### Read Output Byte
 ```
-ros2 service call /wmx/io/get_output_byte wmx_r2_message/srv/GetIoByte "{byte: 0}"
+ros2 service call /wmx/io/get_out_byte wmx_r2_message/srv/GetIoByte "{addr: 0}"
 ```
 
 ### Read Input Bytes
 ```
-ros2 service call /wmx/io/get_input_bytes wmx_r2_message/srv/GetIoBytes "{byte: 0, length: 4}"
+ros2 service call /wmx/io/get_in_bytes wmx_r2_message/srv/GetIoBytes "{addr: 0, size: 4}"
 ```
 
 ### Read Output Bytes
 ```
-ros2 service call /wmx/io/get_output_bytes wmx_r2_message/srv/GetIoBytes "{byte: 0, length: 4}"
+ros2 service call /wmx/io/get_out_bytes wmx_r2_message/srv/GetIoBytes "{addr: 0, size: 4}"
 ```
 
 ### Set Output Bit
 ```
 # Set bit
-ros2 service call /wmx/io/set_output_bit wmx_r2_message/srv/SetIoBit "{byte: 0, bit: 0, value: 1}"
+ros2 service call /wmx/io/set_out_bit wmx_r2_message/srv/SetIoBit "{addr: 0, bit: 0, data: 1}"
 
 # Clear bit
-ros2 service call /wmx/io/set_output_bit wmx_r2_message/srv/SetIoBit "{byte: 0, bit: 0, value: 0}"
+ros2 service call /wmx/io/set_out_bit wmx_r2_message/srv/SetIoBit "{addr: 0, bit: 0, data: 0}"
 ```
 
 ### Set Output Bits
 ```
 # Several scattered bits in one call: byte 0 bit 1 -> 1, byte 2 bit 5 -> 0.
 # They are written together in a single SDK call, not one cycle apart.
-ros2 service call /wmx/io/set_output_bits wmx_r2_message/srv/SetIoBits \
-  "{byte: [0, 2], bit: [1, 5], value: [1, 0]}"
+ros2 service call /wmx/io/set_out_bits wmx_r2_message/srv/SetIoBits \
+  "{addr: [0, 2], bit: [1, 5], data: [1, 0]}"
 ```
 
 ### Set Output Byte
 ```
 # Set output byte 2 to 0x0F
-ros2 service call /wmx/io/set_output_byte wmx_r2_message/srv/SetIoByte "{byte: 2, value: 15}"
+ros2 service call /wmx/io/set_out_byte wmx_r2_message/srv/SetIoByte "{addr: 2, data: 15}"
 ```
 
 ### Set Output Bytes
 ```
 # Set output byte 2 to 0x0F, byte 3 to 0x0E
-ros2 service call /wmx/io/set_output_bytes wmx_r2_message/srv/SetIoBytes "{byte: 2, data: [15, 14]}"
+ros2 service call /wmx/io/set_out_bytes wmx_r2_message/srv/SetIoBytes "{addr: 2, data: [15, 14]}"
 ```
 
 ---
@@ -336,25 +336,25 @@ ros2 service call /wmx/io/set_output_bytes wmx_r2_message/srv/SetIoBytes "{byte:
 ### Get Network State
 ```
 # Master 0
-ros2 service call /wmx/ecat/get_network_state wmx_r2_message/srv/EcatGetNetworkState "{master_id: 0}"
+ros2 service call /wmx/ecat/get_master_info wmx_r2_message/srv/EcatGetMasterInfo "{master_id: 0}"
 
 # Master 1
-ros2 service call /wmx/ecat/get_network_state wmx_r2_message/srv/EcatGetNetworkState "{master_id: 1}"
+ros2 service call /wmx/ecat/get_master_info wmx_r2_message/srv/EcatGetMasterInfo "{master_id: 1}"
 ```
 
 ### Register Read
 ```
 # 1 byte from slave 0, register 0x000 (type register)
 ros2 service call /wmx/ecat/register_read wmx_r2_message/srv/EcatRegisterRead \
-  "{master_id: 0, slave_id: 0, reg_address: 0, length: 1}"
+  "{master_id: 0, slave_id: 0, reg_addr: 0, len: 1}"
 
 # 4 bytes from slave 0, register 0x010 (vendor ID)
 ros2 service call /wmx/ecat/register_read wmx_r2_message/srv/EcatRegisterRead \
-  "{master_id: 0, slave_id: 0, reg_address: 16, length: 4}"
+  "{master_id: 0, slave_id: 0, reg_addr: 16, len: 4}"
 
 # 16 bytes from slave 1, register 0x100 (DL status)
 ros2 service call /wmx/ecat/register_read wmx_r2_message/srv/EcatRegisterRead \
-  "{master_id: 0, slave_id: 1, reg_address: 256, length: 16}"
+  "{master_id: 0, slave_id: 1, reg_addr: 256, len: 16}"
 ```
 
 ### Reset Statistics
@@ -379,7 +379,16 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
 **General**
 - Use `ros2 service list` to see all available services
 - Use `ros2 service type <service_name>` to verify service types
-- `indices` and `data` arrays must be the same length
+- `axis` and `data` arrays must be the same length
+
+**Engine** (`wmx_engine_node` parameters, read once at construction)
+- `core` (default `-1`) — CPU core the RT engine is pinned to,
+  passed straight to `CreateDevice`; `-1` leaves the SDK default
+- `affinity_mask` (default `0`) — CPU affinity bitmask for the engine
+  threads, also passed to `CreateDevice`; `0` leaves the SDK default
+- `wmx_param_file_path` (default `""`) — WMX parameter XML imported right after
+  the device is created (same path as `wmx/engine/import_and_set_all`); empty skips
+  the import
 
 **Axis**
 - `data` for `set_on`: `1` = servo on, `0` = servo off
@@ -418,22 +427,22 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
   and releases the latch if a controller dies while active without announcing it
 
 **WMX Parameters**
-- `params/load` requires an absolute path to a valid WMX3 XML file; engine must be ready first
-- `params/get` returns a structured dump in `params_dump` per requested axis
+- `import_and_set_all` requires an absolute path to a valid WMX3 XML file; engine must be ready first
+- `get_axis_param` returns a structured dump in `axis_param` per requested axis
 - `CommandMode`: `0`=Position, `1`=Velocity, `2`=Torque
 - `HomeType`: `0`=CurrentPos, `1`=ZPulse, `2`=HS, `4`=HSZPulse
 - `HomeDirection`: `0`=Positive, `1`=Negative
 
 **IO**
-- `byte` is the IO byte address; `bit` is the indices within that byte (0–7)
-- `set_output_bit` value must be `0` or `1`
-- `set_output_bytes` data values are decimal (e.g. `15` = `0x0F`)
+- `addr` is the IO byte address; `bit` is the bit index within that byte (0–7)
+- `set_out_bit` `data` must be `0` or `1`
+- `set_out_bytes` `data` values are decimal (e.g. `15` = `0x0F`)
 
 **EtherCAT**
 - Master state values: `None`=0, `Init`=1, `Preop`=2, `Boot`=4, `Safeop`=8, `Op`=16
 - Master mode values: `CyclicMode`=0, `PPMode`=1, `MonitorMode`=2
-- `reg_address` is a 12-bit ESC register address (decimal), valid range `0x000`–`0xFFF`
-- `reg_address + length` must not exceed `0x1000` (4096 bytes)
+- `reg_addr` is a 12-bit ESC register address (decimal), valid range `0x000`–`0xFFF`
+- `reg_addr + len` must not exceed `0x1000` (4096 bytes)
 - `reset_statistics` calls `ResetRefClockInfo` + `ResetTransmitStatisticsInfo` + `ScanNetwork` in sequence
 - `scan_network` moved here from `wmx_engine_node` (`/wmx/engine/scan_network` no longer exists)
 
@@ -444,6 +453,6 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
   but keeps the device attached; `cleanup` also detaches from the device
 - Bring-up order is device-level nodes (`wmx_*`) first, then the controllers that command
   their axes; take-down is the reverse
-- `wmx/engine/set_comm false` deactivates the lifecycle nodes first, and
+- `wmx/engine/set_communication false` deactivates the lifecycle nodes first, and
   `wmx/engine/set_engine false` cleans them up, so no node holds a handle to a device
   the engine is about to close

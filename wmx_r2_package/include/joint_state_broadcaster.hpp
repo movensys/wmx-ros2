@@ -18,7 +18,7 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 
-#include "wmx_r2_message/srv/get_wmx_params.hpp"
+#include "wmx_r2_message/srv/get_axis_param.hpp"
 #include "wmx_r2_message/srv/set_axes.hpp"
 
 #include "WMX3Api.h"
@@ -37,18 +37,18 @@ public:
   explicit JointStateBroadcasterApi(const rclcpp::Logger & logger);
   ~JointStateBroadcasterApi();
 
-  int attachDevice(std::string & message);
-  void releaseDevice();
+  int createDevice(std::string & message);
+  void closeDevice();
 
   int getStatus(
     const std::vector<int64_t> & axes, std::vector<AxisFeedback> & feedback,
     std::string & message);
 
-  int getOutputBit(int32_t byte, int32_t bit, int32_t & value, std::string & message);
+  int getOutBit(int32_t addr, int32_t bit, uint8_t & data, std::string & message);
 
-  int setServoOn(int axis, int on, std::string & message);
+  int setServoOn(int axis, int newStatus, std::string & message);
 
-  bool isDeviceOpen() const {return isDeviceAttached_;}
+  bool isDeviceCreated() const {return isDeviceCreated_;}
 
 private:
   rclcpp::Logger logger_;
@@ -57,7 +57,7 @@ private:
   unsigned int timeout_ = 10000;
 
   mutable std::mutex deviceMutex_;
-  bool isDeviceAttached_ = false;
+  bool isDeviceCreated_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
   wmx3Api::CoreMotion cm_;
@@ -98,7 +98,7 @@ private:
   rclcpp::CallbackGroup::SharedPtr axisClientCbGroup_;
   rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr clearAlarmClient_;
   rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr setAxisOnClient_;
-  rclcpp::Client<wmx_r2_message::srv::GetWmxParams>::SharedPtr getWmxParamsClient_;
+  rclcpp::Client<wmx_r2_message::srv::GetAxisParam>::SharedPtr getAxisParamClient_;
 
   rclcpp::TimerBase::SharedPtr encoderJointTimer_;
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
@@ -116,10 +116,10 @@ private:
   bool callSetAxesService(
     rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
     const std::string & serviceName,
-    const std::vector<int64_t> & indices,
+    const std::vector<int64_t> & axes,
     const std::vector<int64_t> & data);
 
-  bool getWmxParams(std::string & message);
+  bool getAxisParam(std::string & message);
 
   void publishJointState();
 };

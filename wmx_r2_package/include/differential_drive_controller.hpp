@@ -235,8 +235,8 @@ public:
   DifferentialDriveControllerApi(const rclcpp::Logger & logger, const Config & config);
   ~DifferentialDriveControllerApi();
 
-  int attachDevice(std::string & message);
-  void releaseDevice();
+  int createDevice(std::string & message);
+  void closeDevice();
 
   int getStatus(
     int leftAxis, int rightAxis,
@@ -245,7 +245,7 @@ public:
 
   int startVel(int axis, double omega, std::string & message);
 
-  bool isDeviceOpen() const {return isDeviceAttached_;}
+  bool isDeviceCreated() const {return isDeviceCreated_;}
 
 private:
   rclcpp::Logger logger_;
@@ -255,7 +255,7 @@ private:
   unsigned int timeout_ = 10000;
 
   mutable std::mutex deviceMutex_;
-  bool isDeviceAttached_ = false;
+  bool isDeviceCreated_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
   wmx3Api::CoreMotion cm_;
@@ -340,7 +340,7 @@ private:
   void cmdStampedCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
   void controlStep();
   void commandWheels(double omegaLeft, double omegaRight);
-  bool setVelocity(int axis, double omega);
+  bool startVel(int axis, double omega);
 
   void publishOmega(const diff_drive::WheelOmega & enc);
   void publishOdometry(const rclcpp::Time & stamp, const diff_drive::BodyVel & body);

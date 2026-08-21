@@ -1,7 +1,7 @@
 wmx_engine_node:
   ros__parameters:
-    engine_core: -1
-    engine_affinity_mask: 0
+    core: -1
+    affinity_mask: 0
     wmx_param_file_path: ""
 
 wmx_lifecycle_manager_node:

@@ -13,7 +13,7 @@ import rclpy
 from rclpy.node import Node
 
 from wmx_r2_message.msg import AxesStatus
-from wmx_r2_message.srv import GetWmxParams
+from wmx_r2_message.srv import GetAxisParam
 from wmx_r2_message.srv import SetAxes
 
 
@@ -148,13 +148,13 @@ class TestCoreMotionNode(unittest.TestCase):
 
         self.assertTrue(received, 'No AxesStatus received')
         msg = received[0]
-        n = len(msg.amp_alarms)
+        n = len(msg.amp_alarm)
         self.assertGreater(n, 0, 'AxesStatus should have at least 1 axis')
         for field in [
             'servo_on', 'home_done', 'motion_complete',
             'negative_ls', 'positive_ls', 'home_switch',
-            'position_commands', 'velocity_commands', 'actual_positions',
-            'actual_velocities', 'actual_torques',
+            'pos_cmd', 'velocity_cmd', 'actual_pos',
+            'actual_velocity', 'actual_torque',
         ]:
             self.assertEqual(
                 len(getattr(msg, field)), n,
@@ -203,21 +203,21 @@ class TestCoreMotionNode(unittest.TestCase):
 
     def test_get_params_service_call(self):
         """Get params service should respond with axis parameters."""
-        client = self.node.create_client(GetWmxParams, 'wmx/engine/get_wmx_params')
+        client = self.node.create_client(GetAxisParam, 'wmx/engine/get_axis_param')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/engine/get_wmx_params service not available',
+            'wmx/engine/get_axis_param service not available',
         )
 
-        req = GetWmxParams.Request()
-        req.indices = [0]
+        req = GetAxisParam.Request()
+        req.axis = [0]
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
 
         self.assertIsNotNone(future.result(), 'Service call returned no result')
         result = future.result()
         self.assertTrue(result.success)
-        self.assertGreater(len(result.params_dump), 0, 'params_dump should not be empty')
+        self.assertGreater(len(result.axis_param), 0, 'axis_param should not be empty')
 
 
 @launch_testing.post_shutdown_test()

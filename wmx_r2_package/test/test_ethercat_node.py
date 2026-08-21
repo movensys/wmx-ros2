@@ -12,7 +12,7 @@ import pytest
 import rclpy
 from rclpy.node import Node
 
-from wmx_r2_message.srv import EcatGetNetworkState
+from wmx_r2_message.srv import EcatGetMasterInfo
 from wmx_r2_message.srv import EcatRegisterRead
 from wmx_r2_message.srv import EcatResetStatistics
 from wmx_r2_message.srv import EcatStartHotconnect
@@ -92,16 +92,16 @@ class TestEthercatNode(unittest.TestCase):
     def tearDown(self):
         self.node.destroy_node()
 
-    def test_get_network_state_service(self):
-        """get_network_state service should be available and respond."""
+    def test_get_master_info_service(self):
+        """get_master_info service should be available and respond."""
         client = self.node.create_client(
-            EcatGetNetworkState, 'wmx/ecat/get_network_state')
+            EcatGetMasterInfo, 'wmx/ecat/get_master_info')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/ecat/get_network_state service not available',
+            'wmx/ecat/get_master_info service not available',
         )
 
-        req = EcatGetNetworkState.Request()
+        req = EcatGetMasterInfo.Request()
         req.master_id = 0
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
@@ -110,16 +110,16 @@ class TestEthercatNode(unittest.TestCase):
         # Note: result.success may be false if no EtherCAT network is
         # connected; we only verify the service responds correctly.
 
-    def test_get_network_state_has_master_fields(self):
-        """get_network_state response should populate master status fields."""
+    def test_get_master_info_has_master_fields(self):
+        """get_master_info response should populate master status fields."""
         client = self.node.create_client(
-            EcatGetNetworkState, 'wmx/ecat/get_network_state')
+            EcatGetMasterInfo, 'wmx/ecat/get_master_info')
         self.assertTrue(
             client.wait_for_service(timeout_sec=20),
-            'wmx/ecat/get_network_state service not available',
+            'wmx/ecat/get_master_info service not available',
         )
 
-        req = EcatGetNetworkState.Request()
+        req = EcatGetMasterInfo.Request()
         req.master_id = 0
         future = client.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10)
@@ -127,8 +127,8 @@ class TestEthercatNode(unittest.TestCase):
         self.assertIsNotNone(future.result())
         result = future.result()
         # Fields exist and are populated (values depend on hardware state)
-        self.assertIsNotNone(result.master_state)
-        self.assertIsNotNone(result.total_axes)
+        self.assertIsNotNone(result.state)
+        self.assertIsNotNone(result.total_axes_num)
         self.assertIsNotNone(result.num_of_slaves)
 
     def test_register_read_service(self):

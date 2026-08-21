@@ -113,7 +113,7 @@ output byte 28 and input bit 0.1). Any other value skips it with an INFO log.
 | `/gazebo_position_controller/commands` | pub | `std_msgs/Float64MultiArray` | default, depth 1 | `joint_feedback_rate` | `data` = the position vector above (joints then gripper). |
 | `/wmx/set_gripper` | service | `std_srvs/SetBool` | services QoS | on call | Name from `wmx_gripper_topic`. `data: true` = close (bit 1), `false` = open (bit 0). Returns `success: false` when the node is not `active`. |
 | `wmx/axes/clear_amp_alarm`, `wmx/axes/set_servo_on` | client (broadcaster) | `wmx_r2_message/SetAxes` | services QoS | at activate | Served by `wmx_core_motion_node`. See the lifecycle section. |
-| `wmx/engine/get_wmx_params` | client (broadcaster) | `wmx_r2_message/GetWmxParams` | services QoS | at configure | Served by `wmx_engine_node`. The dump for `joint_axes` is logged at INFO so the axis setup is captured in the startup log; a missing engine service only warns, configuration still succeeds. |
+| `wmx/engine/get_axis_param` | client (broadcaster) | `wmx_r2_message/GetAxisParam` | services QoS | at configure | Served by `wmx_engine_node`. The dump for `joint_axes` is logged at INFO so the axis setup is captured in the startup log; a missing engine service only warns, configuration still succeeds. |
 
 **Namespaces.** The data-topic defaults resolve to *absolute* names in the shipped
 configs, so launching in a ROS namespace does **not** namespace them — override the
@@ -175,7 +175,7 @@ broadcaster activates and calls it.
 
 Per-node activation:
 
-- **`joint_state_broadcaster`** — `on_configure` reads `wmx/engine/get_wmx_params`
+- **`joint_state_broadcaster`** — `on_configure` reads `wmx/engine/get_axis_param`
   for its `joint_axes` and logs the dump (informational: a failure only warns).
   `on_activate` is the only place in the stack that touches servo power. It calls `wmx/axes/clear_amp_alarm` then
   `wmx/axes/set_servo_on` for every `joint_axes` entry, with up to 5 attempts
@@ -274,13 +274,14 @@ A deployment is one YAML plus the launch wiring
    `cr5a_...`), with one key per node (all tables above) **plus** the
    `wmx_engine_node` and `wmx_lifecycle_manager_node` keys: the manipulator launch
    passes this same file down to the included general-nodes launch as
-   `config_file`, so engine core/affinity, the WMX parameter XML path, and the
-   bring-up order all live in it.
+   `config_file`, so engine core/affinity (`core`, `affinity_mask`), the WMX
+   parameter XML path (`wmx_param_file_path`), and the bring-up order all live
+   in it.
 2. **WMX parameter XML** — `config/cr3a_wmx_parameters.xml`: axis-level
    gear/feedback/limit/`inPos` setup. This is where the "axis user unit = joint
    rad" scaling and the hardware-level motion limits live. Loaded by
    `wmx_engine_node` via `wmx_param_file_path`, or on demand through
-   `wmx/engine/load_wmx_params`.
+   `wmx/engine/import_and_set_all`.
 3. **Launch** — includes the general nodes, then starts the manipulator nodes as
    `LifecycleNode`s (unconfigured; the manager drives them) and injects
    `use_sim_time` and, for CR3A, `MANIPULATOR_MODEL=dobot_cr3a`.
@@ -317,6 +318,12 @@ gripper_controller:                   # CR3A only
   ros__parameters:
     wmx_gripper_topic: /wmx/set_gripper
     gripper_address: [0, 0]
+
+wmx_engine_node:
+  ros__parameters:
+    core: -1                          # RT engine CPU core (-1 = SDK default)
+    affinity_mask: 0                  # CPU affinity bitmask (0 = SDK default)
+    wmx_param_file_path: ""           # injected by launch
 
 wmx_lifecycle_manager_node:
   ros__parameters:
