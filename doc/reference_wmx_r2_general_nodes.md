@@ -195,6 +195,67 @@ ros2 service call /wmx/axes/stop wmx_r2_message/srv/SetAxes "{indices: [0,1], da
 
 ---
 
+## Node Lifecycle
+
+Every node except `wmx_engine_node` is a managed
+[lifecycle node](https://design.ros2.org/articles/node_lifecycle.html). It starts
+`unconfigured` and only opens its WMX3 device — and only advertises its own topics,
+services and actions — once it is configured and activated.
+
+`wmx_lifecycle_manager_node` does that for you. It polls
+`wmx/engine/get_engine_status`, and once the engine reports `Communicating` it
+discovers every lifecycle node on the graph and brings it up (`configure` then
+`activate`), device-level `wmx_*` nodes first. If the engine stops communicating it
+takes them back down (`deactivate` then `cleanup`) and brings them up again when it
+returns.
+
+### List Node States
+```
+ros2 service call /wmx/lifecycle/get_node_states wmx_r2_message/srv/GetNodeStates "{}"
+```
+
+### Drive a Single Node
+```
+# Take the IO node out of service without stopping the process
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: 'wmx_io_node', transition: 'deactivate'}"
+
+# Put it back
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: 'wmx_io_node', transition: 'activate'}"
+```
+
+### Drive Every Node
+```
+# An empty node_name applies the transition to every discovered lifecycle node
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: '', transition: 'bringdown'}"
+
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: '', transition: 'bringup'}"
+```
+
+### Transitions
+| `transition` | Effect |
+|--------------|--------|
+| `configure` | `unconfigured` -> `inactive`: opens the WMX3 device, creates the interfaces |
+| `activate` | `inactive` -> `active`: starts the timers, the node serves requests |
+| `deactivate` | `active` -> `inactive`: stops the timers and the motion it owns |
+| `cleanup` | `inactive` -> `unconfigured`: destroys the interfaces, closes the device |
+| `shutdown` | any state -> `finalized`, whatever the current state is |
+| `bringup` | `configure` and `activate` as needed to reach `active` |
+| `bringdown` | `deactivate` if active, otherwise a no-op |
+
+### Node Parameters
+| Parameter | Default | Meaning |
+|-----------|---------|---------|
+| `managed_nodes` | `[]` | Restrict the manager to these node names. Empty manages everything it discovers |
+| `engine_status_service` | `wmx/engine/get_engine_status` | Service polled for the engine state |
+| `require_engine` | `true` | Set `false` to bring nodes up without waiting for the engine |
+| `discovery_period` | `2.0` | Seconds between discovery sweeps |
+
+---
+
 ## IO Services
 
 ### Read Input Bit
@@ -286,6 +347,8 @@ ros2 service call /wmx/ecat/start_hotconnect wmx_r2_message/srv/EcatStartHotconn
 > `ros2 param list|get|set <node_name>`.
 
 **General**
+- A node's services only exist while it is configured; if `ros2 service list` does not
+  show them, check `wmx/lifecycle/get_node_states` first
 - Use `ros2 service list` to see all available services
 - Use `ros2 service type <service_name>` to verify service types
 - `index` and `data` arrays must be the same length

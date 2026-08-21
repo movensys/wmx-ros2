@@ -5,6 +5,8 @@
 
 #include <chrono>
 
+#include "wmx_qos_compat.hpp"
+
 using std::placeholders::_1;
 
 using wmx3Api::CoreMotion;
@@ -138,117 +140,58 @@ int JointStateBroadcasterApi::setServoOn(int axis, int on, std::string & message
 }
 
 JointStateBroadcaster::JointStateBroadcaster()
-: Node("joint_state_broadcaster")
+: LifecycleNode("joint_state_broadcaster")
 {
-  RCLCPP_INFO(this->get_logger(), "start joint_state_broadcaster");
-
   api_ = std::make_unique<JointStateBroadcasterApi>(this->get_logger());
 
   setRosParameter();
 
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  coreMotionReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/core_motion/ready", ready_qos,
-    std::bind(&JointStateBroadcaster::onCoreMotionReady, this, _1));
+  axisClientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   clearAmpAlarmClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/clear_amp_alarm");
+    "wmx/axes/clear_amp_alarm", servicesQos(), axisClientCbGroup_);
 
   setServoOnClient_ = this->create_client<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/set_servo_on");
+    "wmx/axes/set_servo_on", servicesQos(), axisClientCbGroup_);
 
-  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster waiting for core_motion...");
+  RCLCPP_INFO(
+    this->get_logger(), "joint_state_broadcaster is unconfigured, waiting for configure...");
 }
 
 JointStateBroadcaster::~JointStateBroadcaster()
 {
-  RCLCPP_INFO(this->get_logger(), "Stop joint_state_broadcaster");
-
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  if (initialized_) {
-    if (encoderJointTimer_) {
-      encoderJointTimer_->cancel();
-    }
-    servoOff();
-  }
-
+  servoOff();
   api_.reset();
 
-  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is stopped");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster stopped");
+}
+
+bool JointStateBroadcaster::isNodeActive() const
+{
+  return isNodeActive_.load();
 }
 
 void JointStateBroadcaster::servoOff()
 {
+  if (!isNodeActive() || !api_ || !api_->isDeviceOpen()) {
+    return;
+  }
+
   for (const int64_t axis : jointAxes_) {
     std::string message;
     api_->setServoOn(static_cast<int>(axis), 0, message);
   }
 }
 
-void JointStateBroadcaster::onCoreMotionReady(const std_msgs::msg::Bool::SharedPtr msg)
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_configure(
+  const rclcpp_lifecycle::State &)
 {
-  if (!msg->data || initialized_ || initializing_.exchange(true)) {
-    return;
-  }
+  RCLCPP_INFO(this->get_logger(), "Configuring joint_state_broadcaster...");
 
-  RCLCPP_INFO(this->get_logger(), "CoreMotion ready — starting init on dedicated thread...");
-
-  if (init_thread_.joinable()) {
-    init_thread_.join();
-  }
-
-  init_thread_ = std::thread(&JointStateBroadcaster::runInitSequence, this);
-}
-
-bool JointStateBroadcaster::attachDeviceWithRetries()
-{
-  for (int attempt = 1; attempt <= kMaxDeviceRetries; ++attempt) {
-    std::string message;
-    const int err = api_->attachDevice(message);
-
-    if (err == ErrorCode::None) {
-      return true;
-    }
-
-    if (err != ErrorCode::StartProcessLockError) {
-      RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
-      return false;
-    }
-
-    RCLCPP_WARN(
-      this->get_logger(), "Device lock busy, retrying in 1s... (%d/%d)",
-      attempt, kMaxDeviceRetries);
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-  }
-
-  RCLCPP_FATAL(
-    this->get_logger(), "Device lock busy after %d retries, giving up", kMaxDeviceRetries);
-  return false;
-}
-
-void JointStateBroadcaster::runInitSequence()
-{
-  if (!attachDeviceWithRetries()) {
-    initializing_ = false;
-    return;
-  }
-
-  std::vector<int64_t> zeroData(jointAxes_.size(), 0);
-  std::vector<int64_t> onData(jointAxes_.size(), 1);
-
-  if (!callSetAxesService(clearAmpAlarmClient_, "wmx/axes/clear_amp_alarm", jointAxes_, zeroData)) {
-    RCLCPP_ERROR(this->get_logger(), "Init failed at clear_amp_alarm — node will not retry");
-    initializing_ = false;
-    return;
-  }
-
-  if (!callSetAxesService(setServoOnClient_, "wmx/axes/set_servo_on", jointAxes_, onData)) {
-    RCLCPP_ERROR(this->get_logger(), "Init failed at set_servo_on — node will not retry");
-    initializing_ = false;
-    return;
+  std::string message;
+  if (api_->attachDevice(message) != ErrorCode::None) {
+    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+    return CallbackReturn::FAILURE;
   }
 
   encoderJointPub_ = this->create_publisher<sensor_msgs::msg::JointState>(encoderJointTopic_, 1);
@@ -258,10 +201,72 @@ void JointStateBroadcaster::runInitSequence()
   encoderJointTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / jointFeedbackRate_),
     std::bind(&JointStateBroadcaster::publishJointState, this));
+  encoderJointTimer_->cancel();
 
-  initialized_ = true;
-  coreMotionReadySub_.reset();
-  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is ready");
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  std::vector<int64_t> zeroData(jointAxes_.size(), 0);
+  std::vector<int64_t> onData(jointAxes_.size(), 1);
+
+  if (!callSetAxesService(
+      clearAmpAlarmClient_, "wmx/axes/clear_amp_alarm", jointAxes_, zeroData))
+  {
+    RCLCPP_ERROR(this->get_logger(), "Activation failed at clear_amp_alarm");
+    return CallbackReturn::FAILURE;
+  }
+
+  if (!callSetAxesService(setServoOnClient_, "wmx/axes/set_servo_on", jointAxes_, onData)) {
+    RCLCPP_ERROR(this->get_logger(), "Activation failed at set_servo_on");
+    return CallbackReturn::FAILURE;
+  }
+
+  LifecycleNode::on_activate(previous_state);
+  isNodeActive_ = true;
+  encoderJointTimer_->reset();
+
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is active");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  encoderJointTimer_->cancel();
+  servoOff();
+  isNodeActive_ = false;
+
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
+  isNodeActive_ = false;
+
+  encoderJointTimer_.reset();
+  encoderJointPub_.reset();
+  isaacsimJointPub_.reset();
+  gazeboJointPub_.reset();
+
+  if (api_->isDeviceOpen()) {
+    api_->releaseDevice();
+  }
+
+  RCLCPP_INFO(this->get_logger(), "joint_state_broadcaster is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 bool JointStateBroadcaster::callSetAxesService(
@@ -290,6 +295,7 @@ bool JointStateBroadcaster::callSetAxesService(
 
     auto future = client->async_send_request(request);
     if (future.wait_for(call_timeout) != std::future_status::ready) {
+      client->remove_pending_request(future);
       RCLCPP_WARN(
         this->get_logger(), "Service call %s timed out (attempt %d/%d)",
         service_name.c_str(), attempt, max_retries);
@@ -349,6 +355,13 @@ void JointStateBroadcaster::setRosParameter()
   this->get_parameter("encoder_joint_topic", encoderJointTopic_);
   this->get_parameter("isaacsim_joint_topic", isaacsimJointTopic_);
   this->get_parameter("gazebo_joint_topic", gazeboJointTopic_);
+
+  if (jointFeedbackRate_ <= 0) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "joint_feedback_rate must be > 0, got %d. Falling back to 100 Hz.", jointFeedbackRate_);
+    jointFeedbackRate_ = 100;
+  }
 
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "joint_feedback_rate: %d", jointFeedbackRate_);
@@ -433,7 +446,9 @@ int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<JointStateBroadcaster>();
-  rclcpp::spin(node);
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(node->get_node_base_interface());
+  executor.spin();
   rclcpp::shutdown();
   return 0;
 }

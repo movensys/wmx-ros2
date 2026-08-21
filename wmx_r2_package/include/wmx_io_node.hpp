@@ -10,7 +10,9 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/bool.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+
+#include "lifecycle_msgs/msg/state.hpp"
 
 #include "wmx_r2_message/srv/get_io_bit.hpp"
 #include "wmx_r2_message/srv/get_io_bytes.hpp"
@@ -51,16 +53,23 @@ private:
   std::unique_ptr<wmx3Api::IO> wmxIo_;
 };
 
-class WmxIoNode : public rclcpp::Node
+class WmxIoNode : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   WmxIoNode();
-  ~WmxIoNode();
+  ~WmxIoNode() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
   std::unique_ptr<WmxIoNodeApi> api_;
-
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
 
   rclcpp::Service<wmx_r2_message::srv::GetIoBit>::SharedPtr getInputBitService_;
   rclcpp::Service<wmx_r2_message::srv::GetIoBit>::SharedPtr getOutputBitService_;
@@ -69,10 +78,8 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetIoBit>::SharedPtr setOutputBitService_;
   rclcpp::Service<wmx_r2_message::srv::SetIoBytes>::SharedPtr setOutputBytesService_;
 
-  bool isReady();
-  std::string notReadyMessage();
-
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
+  bool isNodeActive();
+  std::string notActiveMessage();
 
   void getInputBitCallback(
     const std::shared_ptr<wmx_r2_message::srv::GetIoBit::Request> request,

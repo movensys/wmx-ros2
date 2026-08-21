@@ -162,39 +162,41 @@ int GripperControllerApi::getInputBit(
 }
 
 GripperController::GripperController()
-: Node("gripper_controller")
+: LifecycleNode("gripper_controller")
 {
   api_ = std::make_unique<GripperControllerApi>(this->get_logger());
 
   setRosParameter();
 
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "/wmx/engine/ready", 1,
-    std::bind(&GripperController::onEngineReady, this, std::placeholders::_1));
-
-  RCLCPP_INFO(this->get_logger(), "gripper_controller waiting for engine...");
+  RCLCPP_INFO(this->get_logger(), "gripper_controller is unconfigured, waiting for configure...");
 }
 
 GripperController::~GripperController()
 {
-  RCLCPP_INFO(this->get_logger(), "Stop gripper_controller");
-
   api_.reset();
-
-  RCLCPP_INFO(this->get_logger(), "gripper_controller is stopped");
+  RCLCPP_INFO(this->get_logger(), "gripper_controller stopped");
 }
 
-void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg)
+bool GripperController::isNodeActive()
 {
-  if (!msg->data || initialized_) {
-    return;
-  }
+  return this->get_current_state().id() ==
+         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
+}
 
-  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing Gripper Controller");
+std::string GripperController::notActiveMessage()
+{
+  return "gripper_controller is not active (state: " +
+         this->get_current_state().label() + ").";
+}
+
+GripperController::CallbackReturn GripperController::on_configure(const rclcpp_lifecycle::State &)
+{
+  RCLCPP_INFO(this->get_logger(), "Configuring gripper_controller...");
 
   std::string message;
   if (api_->attachDevice(message) != ErrorCode::None) {
-    return;
+    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+    return CallbackReturn::FAILURE;
   }
 
   const char * manipulatorModel = std::getenv("MANIPULATOR_MODEL");
@@ -213,10 +215,41 @@ void GripperController::onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg)
       &GripperController::setGripper, this,
       std::placeholders::_1, std::placeholders::_2));
 
-  initialized_ = true;
-  engineReadySub_.reset();
+  RCLCPP_INFO(this->get_logger(), "gripper_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
 
-  RCLCPP_INFO(this->get_logger(), "gripper_controller is ready");
+GripperController::CallbackReturn GripperController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  LifecycleNode::on_activate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "gripper_controller is active");
+  return CallbackReturn::SUCCESS;
+}
+
+GripperController::CallbackReturn GripperController::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "gripper_controller is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+GripperController::CallbackReturn GripperController::on_cleanup(const rclcpp_lifecycle::State &)
+{
+  setGripperService_.reset();
+  if (api_->isDeviceOpen()) {
+    api_->releaseDevice();
+  }
+
+  RCLCPP_INFO(this->get_logger(), "gripper_controller is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+GripperController::CallbackReturn GripperController::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void GripperController::dobotCR3AGripperSetup()
@@ -279,6 +312,12 @@ void GripperController::setGripper(
 {
   const char * action = request->data ? "Close" : "Open";
 
+  if (!isNodeActive()) {
+    response->success = false;
+    response->message = notActiveMessage();
+    return;
+  }
+
   std::string message;
   const int err = api_->setOutputBit(
     gripperAddress_[0], gripperAddress_[1], request->data ? 1 : 0, message);
@@ -299,7 +338,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<GripperController>();
-  rclcpp::spin(node);
+  rclcpp::spin(node->get_node_base_interface());
   rclcpp::shutdown();
   return 0;
 }

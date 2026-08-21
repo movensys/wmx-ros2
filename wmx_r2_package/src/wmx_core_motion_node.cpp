@@ -6,6 +6,8 @@
 #include <cmath>
 #include <sstream>
 
+#include "wmx_qos_compat.hpp"
+
 using std::placeholders::_1;
 using std::placeholders::_2;
 
@@ -435,7 +437,7 @@ int WmxCoreMotionNodeApi::setAxisPolarity(int axis, int polarity, std::string & 
 }
 
 int WmxCoreMotionNodeApi::setGearRatio(
-  int axis, int numerator, int denominator, std::string & message)
+  int axis, double numerator, double denominator, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
@@ -606,7 +608,7 @@ int WmxCoreMotionNodeApi::getWmxParams(
 }
 
 WmxCoreMotionNode::WmxCoreMotionNode()
-: Node("wmx_core_motion_node")
+: LifecycleNode("wmx_core_motion_node")
 {
   WmxCoreMotionNodeApi::Config config;
   config.jogTimeoutMs = this->declare_parameter("jog_timeout_ms", 200.0);
@@ -615,59 +617,10 @@ WmxCoreMotionNode::WmxCoreMotionNode()
 
   api_ = std::make_unique<WmxCoreMotionNodeApi>(this->get_logger(), config);
 
-  init_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-
   homing_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-  rclcpp::SubscriptionOptions sub_opts;
-  sub_opts.callback_group = init_cb_group_;
-
-  auto ready_qos = rclcpp::QoS(1).reliable().transient_local();
-  engineReadySub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "wmx/engine/ready", ready_qos,
-    std::bind(&WmxCoreMotionNode::onEngineReady, this, _1), sub_opts);
-
-  coreMotionReadyPub_ = this->create_publisher<std_msgs::msg::Bool>(
-    "wmx/core_motion/ready", ready_qos);
-
-  setServoOnService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/set_servo_on",
-    std::bind(&WmxCoreMotionNode::setServoOnCallback, this, _1, _2));
-
-  clearAmpAlarmService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/clear_amp_alarm",
-    std::bind(&WmxCoreMotionNode::clearAmpAlarmCallback, this, _1, _2));
-
-  setAxisCommandModeService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/set_axis_command_mode",
-    std::bind(&WmxCoreMotionNode::setAxisCommandModeCallback, this, _1, _2));
-
-  setAxisPolarityService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/set_axis_polarity",
-    std::bind(&WmxCoreMotionNode::setAxisPolarityCallback, this, _1, _2));
-
-  setGearRatioService_ = this->create_service<wmx_r2_message::srv::SetAxesGearRatio>(
-    "wmx/axes/set_gear_ratio",
-    std::bind(&WmxCoreMotionNode::setGearRatioCallback, this, _1, _2));
-
-  startHomeService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/start_home",
-    std::bind(&WmxCoreMotionNode::startHomeCallback, this, _1, _2),
-    rclcpp::ServicesQoS(), homing_cb_group_);
-
-  stopAxisService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
-    "wmx/axes/stop",
-    std::bind(&WmxCoreMotionNode::stopAxisCallback, this, _1, _2));
-
-  loadWmxParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
-    "wmx/core_motion/load_wmx_params",
-    std::bind(&WmxCoreMotionNode::loadWmxParamsCallback, this, _1, _2));
-
-  getWmxParamsService_ = this->create_service<wmx_r2_message::srv::GetWmxParams>(
-    "wmx/core_motion/get_wmx_params",
-    std::bind(&WmxCoreMotionNode::getWmxParamsCallback, this, _1, _2));
-
-  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node waiting for engine...");
+  RCLCPP_INFO(
+    this->get_logger(), "wmx_core_motion_node is unconfigured, waiting for configure...");
 }
 
 WmxCoreMotionNode::~WmxCoreMotionNode()
@@ -682,27 +635,26 @@ WmxCoreMotionNode::~WmxCoreMotionNode()
   RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node stopped");
 }
 
-bool WmxCoreMotionNode::isReady()
+bool WmxCoreMotionNode::isNodeActive()
 {
-  return initialized_.load();
+  return this->get_current_state().id() ==
+         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
 }
 
-std::string WmxCoreMotionNode::notReadyMessage()
+std::string WmxCoreMotionNode::notActiveMessage()
 {
-  return "CoreMotion not initialized. Engine not ready.";
+  return "wmx_core_motion_node is not active (state: " +
+         this->get_current_state().label() + ").";
 }
 
-void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_configure(
+  const rclcpp_lifecycle::State &)
 {
-  if (!msg->data || initialized_) {
-    return;
-  }
-
-  RCLCPP_INFO(this->get_logger(), "Engine ready — initializing CoreMotion...");
+  RCLCPP_INFO(this->get_logger(), "Configuring wmx_core_motion_node...");
 
   std::string message;
   if (api_->attachDevice(message) != ErrorCode::None) {
-    return;
+    return CallbackReturn::FAILURE;
   }
 
   axisCount_ = api_->readAxisCount();
@@ -729,24 +681,118 @@ void WmxCoreMotionNode::onEngineReady(const std_msgs::msg::Bool::SharedPtr msg)
     "wmx/axes/start_jog", 1,
     std::bind(&WmxCoreMotionNode::startJogCallback, this, _1));
 
+  setServoOnService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/set_servo_on",
+    std::bind(&WmxCoreMotionNode::setServoOnCallback, this, _1, _2));
+
+  clearAmpAlarmService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/clear_amp_alarm",
+    std::bind(&WmxCoreMotionNode::clearAmpAlarmCallback, this, _1, _2));
+
+  setAxisCommandModeService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/set_axis_command_mode",
+    std::bind(&WmxCoreMotionNode::setAxisCommandModeCallback, this, _1, _2));
+
+  setAxisPolarityService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/set_axis_polarity",
+    std::bind(&WmxCoreMotionNode::setAxisPolarityCallback, this, _1, _2));
+
+  setGearRatioService_ = this->create_service<wmx_r2_message::srv::SetAxesGearRatio>(
+    "wmx/axes/set_gear_ratio",
+    std::bind(&WmxCoreMotionNode::setGearRatioCallback, this, _1, _2));
+
+  startHomeService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/start_home",
+    std::bind(&WmxCoreMotionNode::startHomeCallback, this, _1, _2),
+    servicesQos(), homing_cb_group_);
+
+  stopAxisService_ = this->create_service<wmx_r2_message::srv::SetAxes>(
+    "wmx/axes/stop",
+    std::bind(&WmxCoreMotionNode::stopAxisCallback, this, _1, _2));
+
+  loadWmxParamsService_ = this->create_service<wmx_r2_message::srv::LoadWmxParams>(
+    "wmx/core_motion/load_wmx_params",
+    std::bind(&WmxCoreMotionNode::loadWmxParamsCallback, this, _1, _2));
+
+  getWmxParamsService_ = this->create_service<wmx_r2_message::srv::GetWmxParams>(
+    "wmx/core_motion/get_wmx_params",
+    std::bind(&WmxCoreMotionNode::getWmxParamsCallback, this, _1, _2));
+
   axesStatusTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(1000 / rate_),
     std::bind(&WmxCoreMotionNode::axesStatusStep, this));
+  axesStatusTimer_->cancel();
 
   jogWatchdogTimer_ = this->create_wall_timer(
     std::chrono::milliseconds(20),
     std::bind(&WmxCoreMotionNode::jogWatchdogStep, this));
-
-  initialized_ = true;
-
-  auto ready_msg = std_msgs::msg::Bool();
-  ready_msg.data = true;
-  coreMotionReadyPub_->publish(ready_msg);
-
-  engineReadySub_.reset();
+  jogWatchdogTimer_->cancel();
 
   RCLCPP_INFO(
-    this->get_logger(), "wmx_core_motion_node is ready (%d axes, %d Hz)", axisCount_, rate_);
+    this->get_logger(), "wmx_core_motion_node is configured (%d axes, %d Hz)",
+    axisCount_, rate_);
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  LifecycleNode::on_activate(previous_state);
+
+  axesStatusTimer_->reset();
+  jogWatchdogTimer_->reset();
+
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is active");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  axesStatusTimer_->cancel();
+  jogWatchdogTimer_->cancel();
+
+  api_->stopAllJogs();
+
+  LifecycleNode::on_deactivate(previous_state);
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_cleanup(const rclcpp_lifecycle::State &)
+{
+  axesStatusTimer_.reset();
+  jogWatchdogTimer_.reset();
+
+  startVelSub_.reset();
+  startPosSub_.reset();
+  startMovSub_.reset();
+  startJogSub_.reset();
+  axesStatusPub_.reset();
+
+  setServoOnService_.reset();
+  clearAmpAlarmService_.reset();
+  setAxisCommandModeService_.reset();
+  setAxisPolarityService_.reset();
+  setGearRatioService_.reset();
+  startHomeService_.reset();
+  stopAxisService_.reset();
+  loadWmxParamsService_.reset();
+  getWmxParamsService_.reset();
+
+  axisCount_ = 0;
+  if (api_->isDeviceOpen()) {
+    api_->releaseDevice();
+  }
+
+  RCLCPP_INFO(this->get_logger(), "wmx_core_motion_node is cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+WmxCoreMotionNode::CallbackReturn WmxCoreMotionNode::on_shutdown(
+  const rclcpp_lifecycle::State & previous_state)
+{
+  return on_cleanup(previous_state);
 }
 
 void WmxCoreMotionNode::axesStatusStep()
@@ -819,10 +865,10 @@ void WmxCoreMotionNode::startVelCallback(const wmx_r2_message::msg::AxesVelocity
 
 void WmxCoreMotionNode::startJogCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
-      "Jog ignored: CoreMotion not initialized.");
+      "Jog ignored: %s", notActiveMessage().c_str());
     return;
   }
 
@@ -849,7 +895,7 @@ void WmxCoreMotionNode::startJogCallback(const wmx_r2_message::msg::AxesVelocity
 
 void WmxCoreMotionNode::jogWatchdogStep()
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     return;
   }
   api_->stopExpiredJogs(this->now());
@@ -859,9 +905,9 @@ void WmxCoreMotionNode::stopAxisCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -888,9 +934,9 @@ void WmxCoreMotionNode::setServoOnCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -913,9 +959,9 @@ void WmxCoreMotionNode::setAxisCommandModeCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -940,9 +986,9 @@ void WmxCoreMotionNode::clearAmpAlarmCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -965,9 +1011,9 @@ void WmxCoreMotionNode::setAxisPolarityCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -990,9 +1036,9 @@ void WmxCoreMotionNode::setGearRatioCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxesGearRatio::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxesGearRatio::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -1018,9 +1064,9 @@ void WmxCoreMotionNode::startHomeCallback(
   const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
   std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -1043,9 +1089,9 @@ void WmxCoreMotionNode::loadWmxParamsCallback(
   const std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Request> request,
   std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -1060,9 +1106,9 @@ void WmxCoreMotionNode::getWmxParamsCallback(
   const std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Request> request,
   std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Response> response)
 {
-  if (!isReady()) {
+  if (!isNodeActive()) {
     response->success = false;
-    response->message = notReadyMessage();
+    response->message = notActiveMessage();
     return;
   }
 
@@ -1078,7 +1124,7 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   auto node = std::make_shared<WmxCoreMotionNode>();
   rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(node);
+  executor.add_node(node->get_node_base_interface());
   executor.spin();
   rclcpp::shutdown();
   return 0;

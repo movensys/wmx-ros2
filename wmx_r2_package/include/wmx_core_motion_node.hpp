@@ -13,8 +13,11 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/bool.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "std_srvs/srv/set_bool.hpp"
+
+#include "lifecycle_msgs/msg/state.hpp"
 
 #include "wmx_r2_message/srv/set_axes.hpp"
 #include "wmx_r2_message/srv/set_axes_gear_ratio.hpp"
@@ -64,7 +67,7 @@ public:
   int setAxisCommandMode(int axis, int mode, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
   int setAxisPolarity(int axis, int polarity, std::string & message);
-  int setGearRatio(int axis, int numerator, int denominator, std::string & message);
+  int setGearRatio(int axis, double numerator, double denominator, std::string & message);
   int startHome(int axis, std::string & message);
 
   int loadWmxParams(const std::string & path, std::string & message);
@@ -98,16 +101,24 @@ private:
   std::unique_ptr<wmx3Api::CoreMotion> cm_;
 };
 
-class WmxCoreMotionNode : public rclcpp::Node
+class WmxCoreMotionNode : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   WmxCoreMotionNode();
-  ~WmxCoreMotionNode();
+  ~WmxCoreMotionNode() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
   std::unique_ptr<WmxCoreMotionNodeApi> api_;
 
-  std::atomic<bool> initialized_{false};
   int axisCount_ = 0;
   const int rate_ = 100;
 
@@ -115,11 +126,8 @@ private:
   rclcpp::TimerBase::SharedPtr jogWatchdogTimer_;
   wmx_r2_message::msg::AxesStatus axesStatusMsg_;
 
-  rclcpp::CallbackGroup::SharedPtr init_cb_group_;
   rclcpp::CallbackGroup::SharedPtr homing_cb_group_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr coreMotionReadyPub_;
-  rclcpp::Publisher<wmx_r2_message::msg::AxesStatus>::SharedPtr axesStatusPub_;
+  rclcpp_lifecycle::LifecyclePublisher<wmx_r2_message::msg::AxesStatus>::SharedPtr axesStatusPub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxesVelocity>::SharedPtr startVelSub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxesVelocity>::SharedPtr startJogSub_;
   rclcpp::Subscription<wmx_r2_message::msg::AxesPose>::SharedPtr startPosSub_;
@@ -135,10 +143,9 @@ private:
   rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadWmxParamsService_;
   rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getWmxParamsService_;
 
-  bool isReady();
-  std::string notReadyMessage();
+  bool isNodeActive();
+  std::string notActiveMessage();
 
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
   void axesStatusStep();
 
   void startPosCallback(const wmx_r2_message::msg::AxesPose::SharedPtr msg);

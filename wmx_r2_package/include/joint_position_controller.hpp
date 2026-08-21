@@ -13,8 +13,11 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
+
+#include "lifecycle_msgs/msg/state.hpp"
 
 #include "WMX3Api.h"
 #include "CoreMotionApi.h"
@@ -60,17 +63,24 @@ private:
   std::unique_ptr<wmx3Api::CoreMotion> cm_;
 };
 
-class JointPositionController : public rclcpp::Node
+class JointPositionController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   JointPositionController();
-  ~JointPositionController();
+  ~JointPositionController() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
   std::unique_ptr<JointPositionControllerApi> api_;
 
-  bool initialized_ = false;
-  std::atomic<bool> initializing_{false};
   std::atomic<bool> in_execution_{false};
 
   std::vector<int64_t> jointAxes_;
@@ -80,15 +90,10 @@ private:
   double defaultVelocity_ = 0.0;
   double minStep_ = 0.0;
 
-  static constexpr int kMaxDeviceRetries = 30;
-
   std::map<std::string, int> axisByName_;
 
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr execActiveSub_;
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr jointTrajectorySub_;
-
-  std::thread init_thread_;
 
   struct IntplCommand
   {
@@ -98,11 +103,10 @@ private:
     std::vector<double> maxAcc;
   };
 
+  bool isNodeActive();
+
   void setRosParameter();
-  void onEngineReady(const std_msgs::msg::Bool::SharedPtr msg);
   void onExecActive(const std_msgs::msg::Bool::SharedPtr msg);
-  void runInitSequence();
-  bool attachDeviceWithRetries();
   void jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
   bool buildCommand(
     const trajectory_msgs::msg::JointTrajectory & traj, IntplCommand & command);

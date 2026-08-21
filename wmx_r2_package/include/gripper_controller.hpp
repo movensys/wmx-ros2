@@ -11,8 +11,10 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/bool.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "std_srvs/srv/set_bool.hpp"
+
+#include "lifecycle_msgs/msg/state.hpp"
 
 #include "WMX3Api.h"
 #include "IOApi.h"
@@ -47,11 +49,20 @@ private:
   std::unique_ptr<wmx3Api::IO> io_;
 };
 
-class GripperController : public rclcpp::Node
+class GripperController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
+  using CallbackReturn =
+    rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
   GripperController();
-  ~GripperController();
+  ~GripperController() override;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & previous_state) override;
 
 private:
   std::unique_ptr<GripperControllerApi> api_;
@@ -59,17 +70,16 @@ private:
   std::vector<int64_t> gripperAddress_;
   std::string wmxGripperTopic_;
 
-  bool initialized_ = false;
-
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr setGripperService_;
+
+  bool isNodeActive();
+  std::string notActiveMessage();
 
   void setGripper(
     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
     std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
   void setRosParameter();
-  void onEngineReady(std_msgs::msg::Bool::ConstSharedPtr msg);
   void dobotCR3AGripperSetup();
 };
 
