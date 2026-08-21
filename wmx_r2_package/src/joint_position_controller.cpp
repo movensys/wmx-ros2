@@ -29,7 +29,7 @@ std::string errorToString(int err)
 }  // namespace
 
 JointPositionControllerApi::JointPositionControllerApi(const rclcpp::Logger & logger)
-: logger_(logger)
+: logger_(logger), cm_(&wmx3Lib_)
 {
 }
 
@@ -41,11 +41,6 @@ JointPositionControllerApi::~JointPositionControllerApi()
 int JointPositionControllerApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (isDeviceCreated_) {
-    message = "Already attached to the WMX3 device";
-    return ErrorCode::None;
-  }
 
   int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
   if (err != ErrorCode::None) {
@@ -69,7 +64,6 @@ int JointPositionControllerApi::createDevice(std::string & message)
   }
 
   cm_ = CoreMotion(&wmx3Lib_);
-  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
@@ -87,7 +81,6 @@ void JointPositionControllerApi::closeDevice()
   }
 
   RCLCPP_INFO(logger_, "Device closed");
-  isDeviceCreated_ = false;
 }
 
 int JointPositionControllerApi::setAxisSelection(
@@ -131,11 +124,6 @@ int JointPositionControllerApi::getPosCmd(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceCreated_) {
-    message = "Cannot read the axis status. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
   if (err != ErrorCode::None) {
@@ -166,11 +154,6 @@ int JointPositionControllerApi::startLinearIntplPos(
   std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!isDeviceCreated_) {
-    message = "Cannot start the interpolation. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
 
   if (axes.empty() || axes.size() > static_cast<size_t>(wmx3Api::constants::maxAxes)) {
     message = "Invalid axis count " + std::to_string(axes.size()) + ": must be in [1, " +
@@ -214,11 +197,6 @@ int JointPositionControllerApi::startLinearIntplPos(
 int JointPositionControllerApi::stop(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!isDeviceCreated_) {
-    message = "Cannot stop the axes. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
 
   int err = cm_.motion->Stop(&axisSel_);
   if (err != ErrorCode::None) {

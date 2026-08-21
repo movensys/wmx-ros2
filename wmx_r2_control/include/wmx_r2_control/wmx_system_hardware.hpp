@@ -66,8 +66,6 @@ public:
   int setServoOn(int axis, int newStatus, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
 
-  bool isDeviceCreated() const {return isDeviceCreated_;}
-
 private:
   rclcpp::Logger logger_;
   Config config_;
@@ -76,7 +74,6 @@ private:
   unsigned int servoOnTimeout_ = 2000;
 
   mutable std::mutex deviceMutex_;
-  bool isDeviceCreated_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
   wmx3Api::CoreMotion cm_;

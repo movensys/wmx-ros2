@@ -33,7 +33,7 @@ std::string masterIdText(int32_t masterId)
 }  // namespace
 
 WmxEtherCatNodeApi::WmxEtherCatNodeApi(const rclcpp::Logger & logger)
-: logger_(logger)
+: logger_(logger), wmxEcat_(&wmx3Lib_)
 {
 }
 
@@ -44,11 +44,6 @@ WmxEtherCatNodeApi::~WmxEtherCatNodeApi()
 
 int WmxEtherCatNodeApi::createDevice(std::string & message)
 {
-  if (wmxEcat_) {
-    message = "Already attached to the WMX3 device";
-    return ErrorCode::None;
-  }
-
   int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
   if (err != ErrorCode::None) {
     if (err == ErrorCode::StartProcessLockError) {
@@ -66,12 +61,11 @@ int WmxEtherCatNodeApi::createDevice(std::string & message)
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
       std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
-    // The device exists but is unnamed: close it so the next attempt starts clean.
     wmx3Lib_.CloseDevice();
     return err;
   }
 
-  wmxEcat_ = std::make_unique<Ecat>(&wmx3Lib_);
+  wmxEcat_ = Ecat(&wmx3Lib_);
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
@@ -80,8 +74,6 @@ int WmxEtherCatNodeApi::createDevice(std::string & message)
 
 void WmxEtherCatNodeApi::closeDevice()
 {
-  wmxEcat_.reset();
-
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorToString(err).c_str());
@@ -93,12 +85,7 @@ void WmxEtherCatNodeApi::closeDevice()
 int WmxEtherCatNodeApi::getMasterInfo(
   int32_t masterId, wmx3Api::ecApi::EcMasterInfo & info, std::string & message)
 {
-  if (!wmxEcat_) {
-    message = "Cannot read master info. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
-  const int err = wmxEcat_->GetMasterInfo(masterId, &info);
+  const int err = wmxEcat_.GetMasterInfo(masterId, &info);
   if (err != ErrorCode::None) {
     message = failureText("GetMasterInfo", masterIdText(masterId), err);
     RCLCPP_ERROR(logger_, "%s", message.c_str());
@@ -115,11 +102,6 @@ int WmxEtherCatNodeApi::registerRead(
   int32_t masterId, int32_t slaveId, int32_t regAddr, int32_t len,
   std::vector<uint8_t> & data, std::string & message)
 {
-  if (!wmxEcat_) {
-    message = "Cannot read register. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
   if (regAddr < 0 || regAddr > 0xFFF) {
     message = "Invalid reg_addr: must be in [0x000, 0xFFF].";
     return ErrorCode::ArgumentOutOfRange;
@@ -137,7 +119,7 @@ int WmxEtherCatNodeApi::registerRead(
 
   std::vector<unsigned char> raw(len, 0);
 
-  const int err = wmxEcat_->RegisterRead(masterId, slaveId, regAddr, len, raw.data());
+  const int err = wmxEcat_.RegisterRead(masterId, slaveId, regAddr, len, raw.data());
   if (err != ErrorCode::None) {
     message = failureText(
       "RegisterRead",
@@ -156,26 +138,21 @@ int WmxEtherCatNodeApi::registerRead(
 
 int WmxEtherCatNodeApi::resetStatistics(int32_t masterId, std::string & message)
 {
-  if (!wmxEcat_) {
-    message = "Cannot reset statistics. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
-  int err = wmxEcat_->ResetRefClockInfo(masterId);
+  int err = wmxEcat_.ResetRefClockInfo(masterId);
   if (err != ErrorCode::None) {
     message = failureText("ResetRefClockInfo", masterIdText(masterId), err);
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  err = wmxEcat_->ResetTransmitStatisticsInfo(masterId);
+  err = wmxEcat_.ResetTransmitStatisticsInfo(masterId);
   if (err != ErrorCode::None) {
     message = failureText("ResetTransmitStatisticsInfo", masterIdText(masterId), err);
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  err = wmxEcat_->ScanNetwork(masterId);
+  err = wmxEcat_.ScanNetwork(masterId);
   if (err != ErrorCode::None) {
     message = failureText("ScanNetwork", masterIdText(masterId), err);
     RCLCPP_ERROR(logger_, "%s", message.c_str());
@@ -189,12 +166,7 @@ int WmxEtherCatNodeApi::resetStatistics(int32_t masterId, std::string & message)
 
 int WmxEtherCatNodeApi::scanNetwork(int32_t masterId, std::string & message)
 {
-  if (!wmxEcat_) {
-    message = "Cannot scan network. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
-  const int err = wmxEcat_->ScanNetwork(masterId);
+  const int err = wmxEcat_.ScanNetwork(masterId);
   if (err != ErrorCode::None) {
     message = failureText("ScanNetwork", masterIdText(masterId), err);
     RCLCPP_ERROR(logger_, "%s", message.c_str());
@@ -208,12 +180,7 @@ int WmxEtherCatNodeApi::scanNetwork(int32_t masterId, std::string & message)
 
 int WmxEtherCatNodeApi::startHotconnect(int32_t masterId, std::string & message)
 {
-  if (!wmxEcat_) {
-    message = "Cannot start hotconnect. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
-  const int err = wmxEcat_->StartHotconnect(masterId);
+  const int err = wmxEcat_.StartHotconnect(masterId);
   if (err != ErrorCode::None) {
     message = failureText("StartHotconnect", masterIdText(masterId), err);
     RCLCPP_ERROR(logger_, "%s", message.c_str());

@@ -77,8 +77,6 @@ public:
 private:
   std::unique_ptr<LifecycleManager> lifecycle_;
 
-  std::string engineStatusService_;
-  bool requireEngine_ = true;
   bool nodesAreUp_ = false;
 
   rclcpp::CallbackGroup::SharedPtr oneCbOnlyGroup_;

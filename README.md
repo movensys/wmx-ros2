@@ -44,7 +44,7 @@ ros2 launch wmx_r2_package wmx_r2_general_nodes.launch.py
 
 # 3. Bring axes online and command a move
 ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [1,1]}"
-ros2 topic pub --once /wmx/axes/start_pos wmx_r2_message/msg/AxesPose \
+ros2 service call /wmx/axes/start_pos wmx_r2_message/srv/StartAxesPose \
   "{axis: [0,1], target: [8388608, 10000], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"
 ```
 

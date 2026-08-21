@@ -205,7 +205,7 @@ lifecycle state, or topic liveness (`/joint_states` at `joint_feedback_rate`), n
 exit codes.
 
 **Manual vs. controller arbitration.** `wmx_core_motion_node` refuses its own motion
-commands (`start_pos`, `start_mov`, `start_vel`, `start_jog`, `start_home`) while any
+services (`start_pos`, `start_mov`, `start_vel`, `start_jog`, `start_home`) while any
 node in its `motion_controllers` list is ACTIVE, so a manual jog cannot fight a running
 controller. `wmx/axes/stop` is never blocked, and the servo/config services stay open —
 the broadcaster needs `set_servo_on` to activate. See `reference_general_nodes.md`.

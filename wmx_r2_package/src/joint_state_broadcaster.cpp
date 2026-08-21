@@ -36,7 +36,7 @@ std::string errorToString(int err)
 }  // namespace
 
 JointStateBroadcasterApi::JointStateBroadcasterApi(const rclcpp::Logger & logger)
-: logger_(logger)
+: logger_(logger), cm_(&wmx3Lib_), io_(&wmx3Lib_)
 {
 }
 
@@ -48,11 +48,6 @@ JointStateBroadcasterApi::~JointStateBroadcasterApi()
 int JointStateBroadcasterApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (isDeviceCreated_) {
-    message = "Already attached to the WMX3 device";
-    return ErrorCode::None;
-  }
 
   int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
   if (err != ErrorCode::None) {
@@ -78,7 +73,6 @@ int JointStateBroadcasterApi::createDevice(std::string & message)
 
   cm_ = CoreMotion(&wmx3Lib_);
   io_ = IO(&wmx3Lib_);
-  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
@@ -96,7 +90,6 @@ void JointStateBroadcasterApi::closeDevice()
   }
 
   RCLCPP_INFO(logger_, "Device closed");
-  isDeviceCreated_ = false;
 }
 
 int JointStateBroadcasterApi::getStatus(
@@ -106,11 +99,6 @@ int JointStateBroadcasterApi::getStatus(
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
   feedback.clear();
-
-  if (!isDeviceCreated_) {
-    message = "Cannot read the axis status. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
 
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
@@ -139,11 +127,6 @@ int JointStateBroadcasterApi::getOutBit(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceCreated_) {
-    message = "Cannot read the output bit. Device is not created.";
-    return ErrorCode::DeviceIsNull;
-  }
-
   const int err = io_.GetOutBit(addr, bit, &data);
   if (err != ErrorCode::None) {
     message = "GetOutBit failed. addr=" + std::to_string(addr) + " bit=" + std::to_string(bit) +
@@ -157,11 +140,6 @@ int JointStateBroadcasterApi::getOutBit(
 int JointStateBroadcasterApi::setServoOn(int axis, int newStatus, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!isDeviceCreated_) {
-    message = "Cannot set servo on axis " + std::to_string(axis) + ". Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
 
   const int err = cm_.axisControl->SetServoOn(axis, newStatus);
   if (err != ErrorCode::None) {
@@ -287,7 +265,7 @@ void JointStateBroadcaster::setRosParameter()
 
 void JointStateBroadcaster::servoOff()
 {
-  if (!api_ || !api_->isDeviceCreated()) {
+  if (!api_) {
     return;
   }
 

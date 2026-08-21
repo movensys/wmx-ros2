@@ -20,7 +20,6 @@
 
 namespace wmx_r2_control
 {
-
 using wmx3Api::CoreMotion;
 using wmx3Api::CoreMotionAxisStatus;
 using wmx3Api::CoreMotionStatus;
@@ -44,7 +43,7 @@ std::string errorToString(int err)
 
 WmxSystemHardwareApi::WmxSystemHardwareApi(
   const rclcpp::Logger & logger, const Config & config)
-: logger_(logger), config_(config)
+: logger_(logger), config_(config), cm_(&wmx3Lib_)
 {
 }
 
@@ -56,11 +55,6 @@ WmxSystemHardwareApi::~WmxSystemHardwareApi()
 int WmxSystemHardwareApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (isDeviceCreated_) {
-    message = "Already attached to the WMX3 device";
-    return ErrorCode::None;
-  }
 
   int err = ErrorCode::None;
   for (int attempt = 1; attempt <= config_.maxDeviceRetries; ++attempt) {
@@ -99,7 +93,6 @@ int WmxSystemHardwareApi::createDevice(std::string & message)
   }
 
   cm_ = CoreMotion(&wmx3Lib_);
-  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device as '" + config_.deviceName + "'";
   RCLCPP_INFO(logger_, "%s", message.c_str());
@@ -110,10 +103,6 @@ void WmxSystemHardwareApi::closeDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceCreated_) {
-    return;
-  }
-
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(
@@ -121,17 +110,11 @@ void WmxSystemHardwareApi::closeDevice()
   } else {
     RCLCPP_INFO(logger_, "WMX device closed");
   }
-  isDeviceCreated_ = false;
 }
 
 int WmxSystemHardwareApi::importAndSetAll(const std::string & path, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!isDeviceCreated_) {
-    message = "Cannot import WMX params. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
 
   const int err = cm_.config->ImportAndSetAll(const_cast<char *>(path.c_str()));
   if (err != ErrorCode::None) {
@@ -154,11 +137,6 @@ int WmxSystemHardwareApi::getStatus(
 
   communicating = false;
   feedback.clear();
-
-  if (!isDeviceCreated_) {
-    message = "Cannot read the axis status. Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
 
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
@@ -187,11 +165,6 @@ int WmxSystemHardwareApi::startVel(int axis, double omega, std::string & message
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceCreated_) {
-    message = "Cannot move axis " + std::to_string(axis) + ". Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
   Velocity::VelCommand command;
   command.axis = axis;
   command.profile.velocity = omega;
@@ -214,11 +187,6 @@ int WmxSystemHardwareApi::setServoOn(int axis, int newStatus, std::string & mess
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceCreated_) {
-    message = "Cannot set servo on axis " + std::to_string(axis) + ". Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
   const int err = cm_.axisControl->SetServoOn(axis, newStatus, servoOnTimeout_);
   if (err != ErrorCode::None) {
     message = "Failed to servo-" + std::string(newStatus ? "on" : "off") + " axis " +
@@ -234,12 +202,6 @@ int WmxSystemHardwareApi::setServoOn(int axis, int newStatus, std::string & mess
 int WmxSystemHardwareApi::clearAmpAlarm(int axis, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!isDeviceCreated_) {
-    message = "Cannot clear the alarm on axis " + std::to_string(axis) +
-      ". Device is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
 
   const int err = cm_.axisControl->ClearAmpAlarm(axis);
   if (err != ErrorCode::None) {

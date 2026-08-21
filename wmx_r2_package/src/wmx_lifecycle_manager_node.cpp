@@ -13,6 +13,8 @@ using lifecycle_msgs::msg::Transition;
 
 namespace
 {
+constexpr const char * kEngineStatusService = "wmx/engine/get_engine_status";
+
 constexpr std::chrono::seconds kServiceWaitTimeout{5};
 constexpr std::chrono::seconds kTransitionTimeout{30};
 constexpr std::chrono::seconds kQueryServiceWaitTimeout{1};
@@ -309,7 +311,6 @@ bool LifecycleManager::applyTransitionToAll(
 
     if (applyTransition(node, transition, nodeMessage)) {
       RCLCPP_INFO(logger_, "%s", nodeMessage.c_str());
-      // Whatever the operator set stands: the discovery sweep leaves it alone.
       markHandled(node);
     } else {
       RCLCPP_ERROR(logger_, "%s", nodeMessage.c_str());
@@ -385,9 +386,6 @@ WmxLifecycleManagerNode::WmxLifecycleManagerNode()
 {
   const auto managedNodes = this->declare_parameter<std::vector<std::string>>(
     "managed_nodes", std::vector<std::string>{});
-  engineStatusService_ = this->declare_parameter<std::string>(
-    "engine_status_service", "wmx/engine/get_engine_status");
-  requireEngine_ = this->declare_parameter<bool>("require_engine", true);
   const double period = this->declare_parameter<double>("discovery_period", 2.0);
 
   lifecycle_ = std::make_unique<LifecycleManager>(this, managedNodes);
@@ -396,7 +394,7 @@ WmxLifecycleManagerNode::WmxLifecycleManagerNode()
   clientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   engineStatusClient_ = this->create_client<std_srvs::srv::Trigger>(
-    engineStatusService_, servicesQos(), clientCbGroup_);
+    kEngineStatusService, servicesQos(), clientCbGroup_);
 
   setNodeStateService_ = this->create_service<wmx_r2_message::srv::SetNodeState>(
     "wmx/lifecycle/set_node_state",
@@ -436,11 +434,6 @@ bool WmxLifecycleManagerNode::isEngineCommunicating()
 
 void WmxLifecycleManagerNode::discoveryStep()
 {
-  if (!requireEngine_) {
-    lifecycle_->bringUpDiscovered();
-    return;
-  }
-
   if (isEngineCommunicating()) {
     nodesAreUp_ = true;
     lifecycle_->bringUpDiscovered();
@@ -466,6 +459,7 @@ void WmxLifecycleManagerNode::setNodeStateCallback(
     response->success = false;
     response->message = "Unknown transition '" + transition + "'. Use " +
       LifecycleManager::knownTransitions() + ".";
+    RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
     return;
   }
 

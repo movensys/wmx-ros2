@@ -245,8 +245,6 @@ public:
 
   int startVel(int axis, double omega, std::string & message);
 
-  bool isDeviceCreated() const {return isDeviceCreated_;}
-
 private:
   rclcpp::Logger logger_;
   Config config_;
@@ -255,7 +253,6 @@ private:
   unsigned int timeout_ = 10000;
 
   mutable std::mutex deviceMutex_;
-  bool isDeviceCreated_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
   wmx3Api::CoreMotion cm_;
@@ -301,7 +298,6 @@ private:
   std::string odomDeltasTopic_;
   std::string odomAccelTopic_;
 
-
   diff_drive::DiffDriveModel model_;
   diff_drive::OdometryIntegrator integrator_;
   diff_drive::OdomDeltaAccumulator deltas_;
@@ -330,7 +326,6 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::TwistStamped>::SharedPtr odomDeltasPub_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::AccelStamped>::SharedPtr odomAccelPub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tfBroadcaster_;
-
 
   void setRosParameter();
 
