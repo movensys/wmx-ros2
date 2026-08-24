@@ -145,7 +145,9 @@ To quickly set up the WMX ROS2 package and explore its key features, follow thes
 | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) | Launch the WMX general nodes |
 | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) | Launch the Dobot CR3A manipulator |
 | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) | Launch the Dobot CR5A manipulator |
+| [doc/launch_single_servo_streamer.md](doc/launch_single_servo_streamer.md) | Bring up and test the buffered Servo streamer on a single axis |
 | [doc/reference_wmx_r2_general_nodes.md](doc/reference_wmx_r2_general_nodes.md) | ROS2 service/topic reference with startup sequence |
+| [doc/reference_servo_stream_controller.md](doc/reference_servo_stream_controller.md) | Buffered MoveIt Servo streaming path: what it is and how to run it |
 | [doc/system_test.md](doc/system_test.md) | System-level test procedures |
 
 For the complete and up-to-date documentation, please visit the official site:
