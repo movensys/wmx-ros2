@@ -26,11 +26,12 @@ This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, 
 - EtherCAT-capable hardware (servo drives / IO reachable from the WMX3 master).
 - ROS2 **Humble** or **Jazzy**.
 - `rmw_cyclonedds` as the RMW implementation.
-- Manipulator launches require **root** (real-time scheduling), started via `sudo --preserve-env`.
+- Manipulator launches require **root** (real-time scheduling), started via `sudo --preserve-env` on the host or `wros` in the container.
 
 ## Quickstart
 
 Full environment setup, dependencies, and `~/.bashrc` configuration are in [doc/first_setup.md](doc/first_setup.md).
+To build and run the packages in a container instead, follow the Docker setup in [doc/first_setup.md](doc/first_setup.md#2-docker-setup).
 
 ```bash
 # 1. Build (messages first, then the rest)
@@ -180,7 +181,7 @@ To quickly set up the WMX ROS2 package and explore its key features, follow thes
 
 | Doc | Description |
 |-----|-------------|
-| [doc/first_setup.md](doc/first_setup.md) | Environment setup, dependencies, build |
+| [doc/first_setup.md](doc/first_setup.md) | Environment setup, Docker setup, dependencies, build |
 | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) | Launch the WMX general nodes |
 | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) | Launch the Dobot CR3A manipulator |
 | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) | Launch the Dobot CR5A manipulator |
