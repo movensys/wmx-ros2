@@ -264,10 +264,6 @@ void JointStateBroadcaster::setRosParameter()
 
 void JointStateBroadcaster::servoOff()
 {
-  if (!api_) {
-    return;
-  }
-
   for (const int64_t axis : jointAxes_) {
     std::string message;
     api_->setServoOn(static_cast<int>(axis), 0, message);
