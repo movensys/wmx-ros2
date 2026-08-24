@@ -30,8 +30,6 @@
 namespace wmx_r2_control
 {
 
-/// Owns the WMX3 device handle behind the ros2_control system interface.
-/// Knows nothing about hardware_interface beyond its logger.
 class WmxSystemHardwareApi
 {
 public:
@@ -55,13 +53,11 @@ public:
   WmxSystemHardwareApi(const rclcpp::Logger & logger, const Config & config);
   ~WmxSystemHardwareApi();
 
-  /// Retries while the device lock is busy, up to Config::maxDeviceRetries.
   int attachDevice(std::string & message);
   void releaseDevice();
 
   int importAndSetAll(const std::string & path, std::string & message);
 
-  /// One status read per control cycle, projected onto the requested axes.
   int getStatus(
     const std::vector<int> & axes, std::vector<AxisFeedback> & feedback,
     bool & communicating, std::string & message);
@@ -70,21 +66,20 @@ public:
   int setServoOn(int axis, int on, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
 
-  bool isDeviceOpen() const {return cm_ != nullptr;}
+  bool isDeviceOpen() const {return isDeviceAttached_;}
 
 private:
-  std::string errorText(int err);
-
   rclcpp::Logger logger_;
   Config config_;
 
   unsigned int timeout_ = 10000;
   unsigned int servoOnTimeout_ = 2000;
 
-  std::mutex deviceMutex_;
+  mutable std::mutex deviceMutex_;
+  bool isDeviceAttached_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::CoreMotion> cm_;
+  wmx3Api::CoreMotion cm_;
 };
 
 enum class JointMode
@@ -99,11 +94,11 @@ struct WmxJoint
   int axis = -1;
   JointMode mode = JointMode::Velocity;
 
-  double pos_state = 0.0;
-  double vel_state = 0.0;
+  double posState = 0.0;
+  double velState = 0.0;
 
   double cmd = 0.0;
-  double last_cmd = 0.0;
+  double lastCmd = 0.0;
 };
 
 class WmxSystemHardware : public hardware_interface::SystemInterface
@@ -147,25 +142,19 @@ private:
 
   std::unique_ptr<WmxSystemHardwareApi> api_;
 
-  // Joints
   std::vector<WmxJoint> joints_;
   std::vector<int> axes_;
 
-  // Last status read, shared between read() and write().
   std::vector<WmxSystemHardwareApi::AxisFeedback> feedback_;
   bool communicating_ = false;
 
-  // Hardware parameters (from <hardware><param> in the ros2_control xacro)
-  std::string wmx_param_file_;
-  int max_device_retries_ = 30;
-  bool auto_servo_on_ = true;   ///< clear alarms + servo-on in on_activate, servo-off on deactivate
-
-  // Helpers
+  std::string wmxParamFile_;
+  int maxDeviceRetries_ = 30;
+  bool autoServoOn_ = true;
   hardware_interface::CallbackReturn initImpl();
+  std::string getHwParam(const std::string & key, const std::string & def) const;
   bool waitForCommunicating();
   void seedJointStates();
-  void startVelocity(const WmxJoint & joint, double omega);
-  std::string getHwParam(const std::string & key, const std::string & def) const;
 };
 
 }  // namespace wmx_r2_control

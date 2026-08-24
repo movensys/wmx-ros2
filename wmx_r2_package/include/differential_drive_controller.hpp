@@ -1,5 +1,5 @@
 // Copyright 2026 Movensys Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT License. See LICENSE.txt for details.
 
 #ifndef DIFFERENTIAL_DRIVE_CONTROLLER_HPP_
 #define DIFFERENTIAL_DRIVE_CONTROLLER_HPP_
@@ -10,18 +10,15 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
-
 #include "lifecycle_msgs/msg/state.hpp"
 
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "geometry_msgs/msg/accel_stamped.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
-#include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -32,7 +29,6 @@
 
 namespace diff_drive
 {
-
 struct BodyVel
 {
   double linear = 0.0;
@@ -60,7 +56,7 @@ struct DiffDriveModel
 
   BodyVel forward(const WheelOmega & omega) const
   {
-    assert(wheel_radius > 0.0 && wheel_separation > 0.0);  // see inverse()
+    assert(wheel_radius > 0.0 && wheel_separation > 0.0);
     return {
       (omega.right * wheel_radius + omega.left * wheel_radius) / 2.0,
       (omega.right * wheel_radius - omega.left * wheel_radius) / wheel_separation};
@@ -68,6 +64,7 @@ struct DiffDriveModel
 
   BodyVel forwardDelta(double d_phi_left, double d_phi_right) const
   {
+    // DiffDriveModel::forward, not std::forward (cpplint IWYU false positive):
     return forward({d_phi_left, d_phi_right});  // NOLINT(build/include_what_you_use)
   }
 };
@@ -87,7 +84,7 @@ public:
 
   void odometryPoseCalculation(const BodyVel & vel, double dt)
   {
-    if (!std::isfinite(dt) || dt <= 0.0) {return;}  // ignore invalid/zero timesteps
+    if (!std::isfinite(dt) || dt <= 0.0) {return;}
     const double next_theta = pose_.theta + vel.angular * dt;
     if (std::abs(vel.angular) < straight_eps_) {
       const double dist = vel.linear * dt;
@@ -103,7 +100,7 @@ public:
 
   void odometryPoseCalculation(double ds, double dtheta)
   {
-    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}
+    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}  // ignore invalid steps
     const double half = 0.5 * dtheta;
     const double mid = pose_.theta + half;
     const double k = ds * sinc(half);
@@ -241,8 +238,6 @@ public:
   int attachDevice(std::string & message);
   void releaseDevice();
 
-  int importAndSetAll(const std::string & path, std::string & message);
-
   int getStatus(
     int leftAxis, int rightAxis,
     AxisFeedback & left, AxisFeedback & right, bool & communicating,
@@ -250,21 +245,20 @@ public:
 
   int startVel(int axis, double omega, std::string & message);
 
-  bool isDeviceOpen() const {return cm_ != nullptr;}
+  bool isDeviceOpen() const {return isDeviceAttached_;}
 
 private:
-  std::string errorText(int err);
-
   rclcpp::Logger logger_;
   Config config_;
 
   const char * deviceName_ = "differential_drive_controller";
   unsigned int timeout_ = 10000;
 
-  std::mutex deviceMutex_;
+  mutable std::mutex deviceMutex_;
+  bool isDeviceAttached_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::CoreMotion> cm_;
+  wmx3Api::CoreMotion cm_;
 };
 
 class DifferentialDriveController : public rclcpp_lifecycle::LifecycleNode
@@ -285,29 +279,28 @@ public:
 private:
   std::unique_ptr<DifferentialDriveControllerApi> api_;
 
-  int leftAxis_;
-  int rightAxis_;
-  int rate_;
-  double accTime_;
-  double decTime_;
-  double wheelRadius_;
-  double wheelToWheel_;
+  int leftAxis_ = 0;
+  int rightAxis_ = 1;
+  int rate_ = 100;
+  double accTime_ = 1.0;
+  double decTime_ = 1.0;
+  double wheelRadius_ = 0.095;
+  double wheelToWheel_ = 0.55;
 
-  double cmdVelTimeout_;
-  double accelPublishRate_;
-  double accelAlpha_;
-  bool publishTf_;
+  double cmdVelTimeout_ = 0.25;
+  double accelPublishRate_ = 10.0;
+  double accelAlpha_ = 0.3;
+  bool publishTf_ = false;
   std::string odomFrame_;
   std::string baseFrame_;
-  double posUnitScale_;
-  double jumpGuardTol_;
+  double posUnitScale_ = 1.0;
+  double jumpGuardTol_ = 0.5;
 
   std::string cmdVelTopic_;
   std::string encoderOmegaTopic_;
   std::string encoderOdometryTopic_;
   std::string odomDeltasTopic_;
   std::string odomAccelTopic_;
-  std::string wmxParamFilePath_;
 
   std::atomic<bool> isNodeActive_{false};
 
@@ -336,15 +329,14 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Float64MultiArray>::SharedPtr
     encoderOmegaPub_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr encoderOdometryPub_;
-  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::TwistStamped>::SharedPtr
-    odomDeltasPub_;
-  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::AccelStamped>::SharedPtr
-    odomAccelPub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::TwistStamped>::SharedPtr odomDeltasPub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::AccelStamped>::SharedPtr odomAccelPub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tfBroadcaster_;
 
   bool isNodeActive() const;
+  std::string notActiveMessage();
+
   void setRosParameter();
-  void setWmxParam(const std::string & path);
 
   void cmdStampedCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
   void controlStep();

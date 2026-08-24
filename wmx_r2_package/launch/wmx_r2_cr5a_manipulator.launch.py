@@ -13,13 +13,17 @@ def generate_launch_description():
 
     pkg_share = get_package_share_directory('wmx_r2_package')
     manipulator_config = os.path.join(pkg_share, 'config', 'cr5a_manipulator_config.yaml')
-    wmx_param_file_path = os.path.join(pkg_share, 'config', 'cr5a_wmx_parameters.xml')
+    wmx_param_file = os.path.join(pkg_share, 'config', 'cr5a_wmx_parameters.xml')
 
     start_wmx_r2_general_nodes = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_share, 'launch', 'wmx_r2_general_nodes.launch.py')
         ),
-        launch_arguments={'use_sim_time': use_sim_time}.items(),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'config_file': manipulator_config,
+            'wmx_param_file': wmx_param_file,
+        }.items(),
     )
 
     start_joint_state_broadcaster = LifecycleNode(
@@ -36,13 +40,7 @@ def generate_launch_description():
         executable='joint_trajectory_controller',
         name='joint_trajectory_controller',
         namespace='',
-        parameters=[
-            manipulator_config,
-            {
-                'use_sim_time': use_sim_time,
-                'wmx_param_file_path': wmx_param_file_path,
-            },
-        ],
+        parameters=[manipulator_config, {'use_sim_time': use_sim_time}],
         output='screen',
     )
 

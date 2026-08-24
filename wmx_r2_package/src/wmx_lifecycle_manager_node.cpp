@@ -4,12 +4,6 @@
 #include "wmx_lifecycle_manager_node.hpp"
 
 #include <algorithm>
-#include <chrono>
-#include <map>
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
 
 #include "wmx_qos_compat.hpp"
 

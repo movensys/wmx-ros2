@@ -3,14 +3,15 @@
 
 #include "differential_drive_controller.hpp"
 
-#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <vector>
 
 using std::placeholders::_1;
 
 using wmx3Api::CoreMotion;
+using wmx3Api::CoreMotionAxisStatus;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
 using wmx3Api::EngineState;
@@ -20,6 +21,16 @@ using wmx3Api::Velocity;
 
 namespace ddl = diff_drive;
 
+namespace
+{
+std::string errorText(int err)
+{
+  char errString[256] = {};
+  CoreMotion::ErrorToString(err, errString, sizeof(errString));
+  return errString;
+}
+}
+
 DifferentialDriveControllerApi::DifferentialDriveControllerApi(
   const rclcpp::Logger & logger, const Config & config)
 : logger_(logger), config_(config)
@@ -28,36 +39,41 @@ DifferentialDriveControllerApi::DifferentialDriveControllerApi(
 
 DifferentialDriveControllerApi::~DifferentialDriveControllerApi()
 {
-  if (cm_) {
-    releaseDevice();
-  }
-}
-
-std::string DifferentialDriveControllerApi::errorText(int err)
-{
-  char errString[256] = {};
-  wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
-  return errString;
+  releaseDevice();
 }
 
 int DifferentialDriveControllerApi::attachDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (cm_) {
+  if (isDeviceAttached_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
 
-  const int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
+  int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
   if (err != ErrorCode::None) {
-    message = "Failed to attach to device. Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
+    if (err == ErrorCode::StartProcessLockError) {
+      message = "Failed to attach to device (lock busy). Is the engine communicating?";
+    } else {
+      message = "Failed to attach to device. Error=" + std::to_string(err) +
+        " (" + errorText(err) + ")";
+    }
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  wmx3Lib_.SetDeviceName(deviceName_);
-  cm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
+  err = wmx3Lib_.SetDeviceName(deviceName_);
+  if (err != ErrorCode::None) {
+    message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
+      std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    wmx3Lib_.CloseDevice();
+    return err;
+  }
+
+  cm_ = CoreMotion(&wmx3Lib_);
+  isDeviceAttached_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
@@ -68,38 +84,13 @@ void DifferentialDriveControllerApi::releaseDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  cm_.reset();
-
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
   } else {
     RCLCPP_INFO(logger_, "Device closed");
   }
-}
-
-int DifferentialDriveControllerApi::importAndSetAll(
-  const std::string & path, std::string & message)
-{
-  std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!cm_) {
-    message = "Cannot set WMX params. Core motion is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
-  std::vector<char> pathBuffer(path.begin(), path.end());
-  pathBuffer.push_back('\0');
-
-  const int err = cm_->config->ImportAndSetAll(pathBuffer.data());
-  if (err != ErrorCode::None) {
-    message = "Failed to set WMX params. Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
-    return err;
-  }
-
-  message = "Success to set WMX params";
-  return ErrorCode::None;
+  isDeviceAttached_ = false;
 }
 
 int DifferentialDriveControllerApi::getStatus(
@@ -109,37 +100,45 @@ int DifferentialDriveControllerApi::getStatus(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot read status. Core motion is not attached.";
+  communicating = false;
+
+  if (!isDeviceAttached_) {
+    message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
+  if (leftAxis < 0 || leftAxis >= wmx3Api::constants::maxAxes ||
+    rightAxis < 0 || rightAxis >= wmx3Api::constants::maxAxes)
+  {
+    message = "Invalid wheel axes " + std::to_string(leftAxis) + "/" +
+      std::to_string(rightAxis) + ": must be in [0, " +
+      std::to_string(wmx3Api::constants::maxAxes) + ").";
+    return ErrorCode::ArgumentOutOfRange;
+  }
+
   CoreMotionStatus status;
-  const int err = cm_->GetStatus(&status);
+  const int err = cm_.GetStatus(&status);
+  if (err != ErrorCode::None) {
+    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    return err;
+  }
 
-  communicating = (status.engineState == EngineState::T::Communicating);
+  const CoreMotionAxisStatus & rawLeft = status.axesStatus[leftAxis];
+  const CoreMotionAxisStatus & rawRight = status.axesStatus[rightAxis];
 
-  const auto & rawLeft = status.axesStatus[leftAxis];
-  left.actualPos = rawLeft.actualPos;
-  left.actualVelocity = rawLeft.actualVelocity;
-  left.servoOn = rawLeft.servoOn;
-  left.ampAlarm = rawLeft.ampAlarm;
+  left = {rawLeft.actualPos, rawLeft.actualVelocity, rawLeft.servoOn, rawLeft.ampAlarm};
+  right = {rawRight.actualPos, rawRight.actualVelocity, rawRight.servoOn, rawRight.ampAlarm};
+  communicating = status.engineState == EngineState::T::Communicating;
 
-  const auto & rawRight = status.axesStatus[rightAxis];
-  right.actualPos = rawRight.actualPos;
-  right.actualVelocity = rawRight.actualVelocity;
-  right.servoOn = rawRight.servoOn;
-  right.ampAlarm = rawRight.ampAlarm;
-
-  return err;
+  return ErrorCode::None;
 }
 
 int DifferentialDriveControllerApi::startVel(int axis, double omega, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot move axis " + std::to_string(axis) + ". Core motion is not attached.";
+  if (!isDeviceAttached_) {
+    message = "Cannot move axis " + std::to_string(axis) + ". Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
@@ -150,7 +149,7 @@ int DifferentialDriveControllerApi::startVel(int axis, double omega, std::string
   velCommand.profile.accTimeMilliseconds = config_.accTimeMilliseconds;
   velCommand.profile.decTimeMilliseconds = config_.decTimeMilliseconds;
 
-  const int err = cm_->velocity->StartVel(&velCommand);
+  const int err = cm_.velocity->StartVel(&velCommand);
   if (err != ErrorCode::None) {
     message = "Failed to move motor " + std::to_string(axis) + ". Error=" +
       std::to_string(err) + " (" + errorText(err) + ")";
@@ -194,6 +193,12 @@ bool DifferentialDriveController::isNodeActive() const
   return isNodeActive_.load();
 }
 
+std::string DifferentialDriveController::notActiveMessage()
+{
+  return "differential_drive_controller is not active (state: " +
+         this->get_current_state().label() + ").";
+}
+
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_configure(
   const rclcpp_lifecycle::State &)
 {
@@ -201,11 +206,8 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
 
   std::string message;
   if (api_->attachDevice(message) != ErrorCode::None) {
-    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
     return CallbackReturn::FAILURE;
   }
-
-  setWmxParam(wmxParamFilePath_);
 
   encoderOmegaPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
     encoderOmegaTopic_, 1);
@@ -222,9 +224,9 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
   cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
 
+  auto period = std::chrono::milliseconds(1000 / rate_);
   controlTimer_ = this->create_wall_timer(
-    std::chrono::milliseconds(1000 / rate_),
-    std::bind(&DifferentialDriveController::controlStep, this));
+    period, std::bind(&DifferentialDriveController::controlStep, this));
   controlTimer_->cancel();
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is configured");
@@ -239,7 +241,6 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_acti
 
   havePrev_ = false;
   haveCmd_ = false;
-  haveAccelClock_ = false;
   lastSentValid_ = false;
 
   controlTimer_->reset();
@@ -251,12 +252,12 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_acti
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
+  isNodeActive_ = false;
   controlTimer_->cancel();
 
   setVelocity(leftAxis_, 0.0);
   setVelocity(rightAxis_, 0.0);
-
-  isNodeActive_ = false;
+  lastSentValid_ = false;
 
   LifecycleNode::on_deactivate(previous_state);
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is inactive");
@@ -270,15 +271,13 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_clea
 
   controlTimer_.reset();
   cmdVelStampedSub_.reset();
+  tfBroadcaster_.reset();
   encoderOmegaPub_.reset();
   encoderOdometryPub_.reset();
   odomDeltasPub_.reset();
   odomAccelPub_.reset();
-  tfBroadcaster_.reset();
 
-  if (api_->isDeviceOpen()) {
-    api_->releaseDevice();
-  }
+  api_->releaseDevice();
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is cleaned up");
   return CallbackReturn::SUCCESS;
@@ -293,10 +292,6 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_shut
 void DifferentialDriveController::cmdStampedCallback(
   const geometry_msgs::msg::TwistStamped::SharedPtr msg)
 {
-  if (!isNodeActive()) {
-    return;
-  }
-
   cmdVelMsg_ = msg->twist;
   const rclcpp::Time stamp(msg->header.stamp, RCL_ROS_TIME);
   lastCmdTime_ = (stamp.nanoseconds() > 0) ? stamp : this->get_clock()->now();
@@ -312,7 +307,15 @@ void DifferentialDriveController::controlStep()
   bool communicating = false;
   std::string message;
 
-  api_->getStatus(leftAxis_, rightAxis_, left, right, communicating, message);
+  if (api_->getStatus(leftAxis_, rightAxis_, left, right, communicating, message) !=
+    ErrorCode::None)
+  {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000, "%s", message.c_str());
+    havePrev_ = false;
+    lastSentValid_ = false;
+    return;
+  }
 
   if (!communicating) {
     RCLCPP_WARN_THROTTLE(
@@ -383,6 +386,7 @@ void DifferentialDriveController::commandWheels(double omegaLeft, double omegaRi
   if (lastSentValid_ && omegaLeft == lastSentLeft_ && omegaRight == lastSentRight_) {
     return;
   }
+
   const bool okLeft = setVelocity(leftAxis_, omegaLeft);
   const bool okRight = setVelocity(rightAxis_, omegaRight);
   if (okLeft && okRight) {
@@ -502,67 +506,32 @@ geometry_msgs::msg::Quaternion DifferentialDriveController::yawToQuaternion(doub
   return q;
 }
 
-void DifferentialDriveController::setWmxParam(const std::string & path)
-{
-  std::string message;
-  if (api_->importAndSetAll(path, message) != ErrorCode::None) {
-    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
-  } else {
-    RCLCPP_INFO(this->get_logger(), "%s", message.c_str());
-  }
-}
-
 void DifferentialDriveController::setRosParameter()
 {
-  this->declare_parameter<int>("left_axis", 0);
-  this->declare_parameter<int>("right_axis", 1);
+  leftAxis_ = this->declare_parameter<int>("left_axis", 0);
+  rightAxis_ = this->declare_parameter<int>("right_axis", 1);
 
-  this->declare_parameter<int>("rate", 100);
-  this->declare_parameter<double>("acc_time", 1.0);
-  this->declare_parameter<double>("dec_time", 1.0);
-  this->declare_parameter<double>("wheel_radius", 0.095);
-  this->declare_parameter<double>("wheel_to_wheel", 0.55);
+  rate_ = this->declare_parameter<int>("rate", 100);
+  accTime_ = this->declare_parameter<double>("acc_time", 1.0);
+  decTime_ = this->declare_parameter<double>("dec_time", 1.0);
+  wheelRadius_ = this->declare_parameter<double>("wheel_radius", 0.095);
+  wheelToWheel_ = this->declare_parameter<double>("wheel_to_wheel", 0.55);
 
-  this->declare_parameter<double>("cmd_vel_timeout", 0.25);
-  this->declare_parameter<double>("accel_publish_rate", 10.0);
-  this->declare_parameter<double>("accel_alpha", 0.3);
-  this->declare_parameter<bool>("publish_tf", false);
-  this->declare_parameter<std::string>("odom_frame", "odom");
-  this->declare_parameter<std::string>("base_frame", "base_link");
-  this->declare_parameter<double>("pos_unit_scale", 1.0);
-  this->declare_parameter<double>("jump_guard_tol", 0.5);
+  cmdVelTimeout_ = this->declare_parameter<double>("cmd_vel_timeout", 0.25);
+  accelPublishRate_ = this->declare_parameter<double>("accel_publish_rate", 10.0);
+  accelAlpha_ = this->declare_parameter<double>("accel_alpha", 0.3);
+  publishTf_ = this->declare_parameter<bool>("publish_tf", false);
+  odomFrame_ = this->declare_parameter<std::string>("odom_frame", "odom");
+  baseFrame_ = this->declare_parameter<std::string>("base_frame", "base_link");
+  posUnitScale_ = this->declare_parameter<double>("pos_unit_scale", 1.0);
+  jumpGuardTol_ = this->declare_parameter<double>("jump_guard_tol", 0.5);
 
-  this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel_safe");
-  this->declare_parameter<std::string>("encoder_omega_topic", "/omega_enc");
-  this->declare_parameter<std::string>("encoder_odometry_topic", "/odom_enc");
-  this->declare_parameter<std::string>("odom_deltas_topic", "/odom_deltas");
-  this->declare_parameter<std::string>("odom_accel_topic", "/odom_accel");
-  this->declare_parameter<std::string>("wmx_param_file_path", "/diff_drive/no_param");
-
-  this->get_parameter("left_axis", leftAxis_);
-  this->get_parameter("right_axis", rightAxis_);
-
-  this->get_parameter("rate", rate_);
-  this->get_parameter("acc_time", accTime_);
-  this->get_parameter("dec_time", decTime_);
-  this->get_parameter("wheel_radius", wheelRadius_);
-  this->get_parameter("wheel_to_wheel", wheelToWheel_);
-
-  this->get_parameter("cmd_vel_timeout", cmdVelTimeout_);
-  this->get_parameter("accel_publish_rate", accelPublishRate_);
-  this->get_parameter("accel_alpha", accelAlpha_);
-  this->get_parameter("publish_tf", publishTf_);
-  this->get_parameter("odom_frame", odomFrame_);
-  this->get_parameter("base_frame", baseFrame_);
-  this->get_parameter("pos_unit_scale", posUnitScale_);
-  this->get_parameter("jump_guard_tol", jumpGuardTol_);
-
-  this->get_parameter("cmd_vel_topic", cmdVelTopic_);
-  this->get_parameter("encoder_omega_topic", encoderOmegaTopic_);
-  this->get_parameter("encoder_odometry_topic", encoderOdometryTopic_);
-  this->get_parameter("odom_deltas_topic", odomDeltasTopic_);
-  this->get_parameter("odom_accel_topic", odomAccelTopic_);
-  this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
+  cmdVelTopic_ = this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel_safe");
+  encoderOmegaTopic_ = this->declare_parameter<std::string>("encoder_omega_topic", "/omega_enc");
+  encoderOdometryTopic_ = this->declare_parameter<std::string>(
+    "encoder_odometry_topic", "/odom_enc");
+  odomDeltasTopic_ = this->declare_parameter<std::string>("odom_deltas_topic", "/odom_deltas");
+  odomAccelTopic_ = this->declare_parameter<std::string>("odom_accel_topic", "/odom_accel");
 
   if (rate_ <= 0) {
     RCLCPP_WARN(this->get_logger(), "rate must be > 0; falling back to 100 Hz");
@@ -613,7 +582,6 @@ void DifferentialDriveController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "encoder_odometry_topic: %s", encoderOdometryTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "odom_deltas_topic: %s", odomDeltasTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "odom_accel_topic: %s", odomAccelTopic_.c_str());
-  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 

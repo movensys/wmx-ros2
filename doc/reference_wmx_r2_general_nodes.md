@@ -10,10 +10,10 @@ ros2 service call /wmx/engine/get_engine_status std_srvs/srv/Trigger "{}"
 # 2. Load axis parameters from file
 ## 2-1. Predefined robot case
 ## Dobot CR3a, CR5a, Diffbot AMR
-ros2 service call /wmx/core_motion/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
 ## 2-2. User's own robot or arbitary motors
-ros2 service call /wmx/core_motion/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/default_wmx_parameters.xml'}"
 
 ## 3. Set Gear Ratio (2-1 stage can skip this stage)
@@ -71,23 +71,6 @@ ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
     "{indices: [0], velocities: [-10000], accelerations: [100000], decelerations: [100000]}"
 ```
 
-#### Jog with keyboard teleop
-- Increase the sensitivity of keyboard.
-- This command should be ran on keyboard connected PC. It can be different via SSH connection.
-```
-xset r rate 150 30
-```
-
-- Run Jog node for keyboard teleop (`a` = negative, `d` = positive, `q` = quit):
-```
-ros2 run wmx_r2_package jog_keyboard_node --ros-args \
-    -p axis:=0 -p velocity:=1000.0 -p acc:=10000.0 -p dec:=100000.0
-```
-
-- Rollback to default sensitivity
-```
-xset r rate 660 25
-```
 ---
 
 ## Engine Services
@@ -106,14 +89,13 @@ ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: false}"
 ```
 
 ### Set Engine (create/close WMX3 device)
+The SDK path and device name are fixed by the node, so this is a plain on/off.
 ```
 # Create device
-ros2 service call /wmx/engine/set_engine wmx_r2_message/srv/SetEngine \
-  "{data: true, path: '/opt/wmx3/', name: 'my_device'}"
+ros2 service call /wmx/engine/set_engine std_srvs/srv/SetBool "{data: true}"
 
 # Close device
-ros2 service call /wmx/engine/set_engine wmx_r2_message/srv/SetEngine \
-  "{data: false, path: '', name: ''}"
+ros2 service call /wmx/engine/set_engine std_srvs/srv/SetBool "{data: false}"
 ```
 
 ---
@@ -122,21 +104,21 @@ ros2 service call /wmx/engine/set_engine wmx_r2_message/srv/SetEngine \
 ### Load Parameters from File
 ```
 # Dobot CR3A
-ros2 service call /wmx/core_motion/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
 
 # Diffbot
-ros2 service call /wmx/core_motion/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
+ros2 service call /wmx/engine/load_wmx_params wmx_r2_message/srv/LoadWmxParams \
   "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/diffbot_wmx_parameters.xml'}"
 ```
 
 ### Get Parameters (inspect active axis config)
 ```
 # Single axis
-ros2 service call /wmx/core_motion/get_wmx_params wmx_r2_message/srv/GetWmxParams "{indices: [0]}"
+ros2 service call /wmx/engine/get_wmx_params wmx_r2_message/srv/GetWmxParams "{indices: [0]}"
 
 # Multiple axes
-ros2 service call /wmx/core_motion/get_wmx_params wmx_r2_message/srv/GetWmxParams "{indices: [0,1,2,3,4,5]}"
+ros2 service call /wmx/engine/get_wmx_params wmx_r2_message/srv/GetWmxParams "{indices: [0,1,2,3,4,5]}"
 ```
 
 ---

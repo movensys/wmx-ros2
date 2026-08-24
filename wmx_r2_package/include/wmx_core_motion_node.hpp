@@ -4,8 +4,7 @@
 #ifndef WMX_CORE_MOTION_NODE_HPP_
 #define WMX_CORE_MOTION_NODE_HPP_
 
-#include <atomic>
-#include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -14,15 +13,13 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
-#include "std_srvs/srv/set_bool.hpp"
-
 #include "lifecycle_msgs/msg/state.hpp"
+#include "lifecycle_msgs/msg/transition_event.hpp"
+#include "lifecycle_msgs/srv/get_state.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
 #include "wmx_r2_message/srv/set_axes.hpp"
 #include "wmx_r2_message/srv/set_axes_gear_ratio.hpp"
-#include "wmx_r2_message/srv/load_wmx_params.hpp"
-#include "wmx_r2_message/srv/get_wmx_params.hpp"
 #include "wmx_r2_message/msg/axes_velocity.hpp"
 #include "wmx_r2_message/msg/axes_status.hpp"
 #include "wmx_r2_message/msg/axes_pose.hpp"
@@ -67,14 +64,8 @@ public:
   int setAxisCommandMode(int axis, int mode, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
   int setAxisPolarity(int axis, int polarity, std::string & message);
-  int setGearRatio(int axis, double numerator, double denominator, std::string & message);
+  int setGearRatio(int axis, int numerator, int denominator, std::string & message);
   int startHome(int axis, std::string & message);
-
-  int loadWmxParams(const std::string & path, std::string & message);
-  int getWmxParams(
-    const std::vector<int32_t> & axes, std::vector<std::string> & dump, std::string & message);
-
-  bool isDeviceOpen() const {return cm_ != nullptr;}
 
 private:
   struct JogState
@@ -88,17 +79,17 @@ private:
   rclcpp::Logger logger_;
   Config config_;
 
+  std::mutex jogMutex_;
+  std::unordered_map<int, JogState> jogState_;
+
   const char * deviceName_ = "wmx_core_motion_node";
   unsigned int timeout_ = 10000;
   unsigned int servoOnTimeout_ = 1000;
 
-  std::mutex jogMutex_;
-  std::unordered_map<int, JogState> jogState_;
-
-  std::mutex deviceMutex_;
+  mutable std::mutex deviceMutex_;
 
   wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::CoreMotion> cm_;
+  std::shared_ptr<wmx3Api::CoreMotion> cm_;
 };
 
 class WmxCoreMotionNode : public rclcpp_lifecycle::LifecycleNode
@@ -120,11 +111,31 @@ private:
   std::unique_ptr<WmxCoreMotionNodeApi> api_;
 
   int axisCount_ = 0;
-  const int rate_ = 100;
+  int rate_ = 100;
 
   rclcpp::TimerBase::SharedPtr axesStatusTimer_;
   rclcpp::TimerBase::SharedPtr jogWatchdogTimer_;
   wmx_r2_message::msg::AxesStatus axesStatusMsg_;
+
+  std::vector<std::string> motionControllers_;
+  double controllerResyncPeriod_ = 0.2;
+
+  mutable std::mutex controllerMutex_;
+  std::map<std::string, bool> controllerActive_;
+
+  rclcpp::CallbackGroup::SharedPtr clientCbGroup_;
+  std::map<std::string, rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr> getStateClients_;
+  std::vector<rclcpp::Subscription<lifecycle_msgs::msg::TransitionEvent>::SharedPtr>
+  transitionEventSubs_;
+  rclcpp::TimerBase::SharedPtr controllerResyncTimer_;
+
+  void setControllerActive(const std::string & controller, bool active);
+  void transitionEventCallback(
+    const std::string & controller,
+    const lifecycle_msgs::msg::TransitionEvent::SharedPtr msg);
+  void resyncControllerStates();
+
+  bool isMotionBlocked() const;
 
   rclcpp::CallbackGroup::SharedPtr homing_cb_group_;
   rclcpp_lifecycle::LifecyclePublisher<wmx_r2_message::msg::AxesStatus>::SharedPtr axesStatusPub_;
@@ -140,20 +151,17 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetAxesGearRatio>::SharedPtr setGearRatioService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr startHomeService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr stopAxisService_;
-  rclcpp::Service<wmx_r2_message::srv::LoadWmxParams>::SharedPtr loadWmxParamsService_;
-  rclcpp::Service<wmx_r2_message::srv::GetWmxParams>::SharedPtr getWmxParamsService_;
 
   bool isNodeActive();
   std::string notActiveMessage();
 
   void axesStatusStep();
+  void jogWatchdogStep();
 
   void startPosCallback(const wmx_r2_message::msg::AxesPose::SharedPtr msg);
   void startMovCallback(const wmx_r2_message::msg::AxesPose::SharedPtr msg);
   void startVelCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg);
   void startJogCallback(const wmx_r2_message::msg::AxesVelocity::SharedPtr msg);
-
-  void jogWatchdogStep();
 
   void setServoOnCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
@@ -176,12 +184,6 @@ private:
   void stopAxisCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response);
-  void loadWmxParamsCallback(
-    const std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Request> request,
-    std::shared_ptr<wmx_r2_message::srv::LoadWmxParams::Response> response);
-  void getWmxParamsCallback(
-    const std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Request> request,
-    std::shared_ptr<wmx_r2_message::srv::GetWmxParams::Response> response);
 };
 
 #endif  // WMX_CORE_MOTION_NODE_HPP_

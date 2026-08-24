@@ -8,67 +8,81 @@
 #include <sstream>
 #include <thread>
 
+using std::placeholders::_1;
+using std::placeholders::_2;
+
+using wmx3Api::AdvancedMotion;
+using wmx3Api::CoreMotion;
+using wmx3Api::CoreMotionStatus;
+using wmx3Api::DeviceType;
+using wmx3Api::ErrorCode;
+
+namespace
+{
 struct ScopeExit
 {
   std::function<void()> fn;
   ~ScopeExit() {fn();}
 };
 
-using wmx3Api::AdvancedMotion;
-using wmx3Api::AdvMotion;
-using wmx3Api::AxisSelection;
-using wmx3Api::CoreMotion;
-using wmx3Api::CoreMotionStatus;
-using wmx3Api::DeviceType;
-using wmx3Api::ErrorCode;
+std::string errorText(int err)
+{
+  char errString[256] = {};
+  AdvancedMotion::ErrorToString(err, errString, sizeof(errString));
+  return errString;
+}
+}  // namespace
 
 JointTrajectoryControllerApi::JointTrajectoryControllerApi(const rclcpp::Logger & logger)
 : logger_(logger)
 {
-  axisSel_.axisCount = 0;
 }
 
 JointTrajectoryControllerApi::~JointTrajectoryControllerApi()
 {
-  if (cm_) {
-    releaseDevice();
-  }
-}
-
-std::string JointTrajectoryControllerApi::errorText(int err)
-{
-  char errString[256] = {};
-  wmx3Lib_.ErrorToString(err, errString, sizeof(errString));
-  return errString;
+  releaseDevice();
 }
 
 int JointTrajectoryControllerApi::attachDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (cm_) {
+  if (isDeviceAttached_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
 
-  const int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
+  int err = wmx3Lib_.CreateDevice(WMX3_SDK_PATH, DeviceType::DeviceTypeNormal, timeout_);
   if (err != ErrorCode::None) {
     if (err == ErrorCode::StartProcessLockError) {
-      message = "Failed to attach to device (lock busy, will retry on next signal).";
-      RCLCPP_WARN(logger_, "%s", message.c_str());
+      message = "Failed to attach to device (lock busy). Is the engine communicating?";
     } else {
       message = "Failed to attach to device. Error=" + std::to_string(err) +
         " (" + errorText(err) + ")";
-      RCLCPP_ERROR(logger_, "%s", message.c_str());
     }
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  wmx3Lib_.SetDeviceName(deviceName_);
+  err = wmx3Lib_.SetDeviceName(deviceName_);
+  if (err != ErrorCode::None) {
+    message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
+      std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    wmx3Lib_.CloseDevice();
+    return err;
+  }
 
-  cm_ = std::make_unique<CoreMotion>(&wmx3Lib_);
-  am_ = std::make_unique<AdvancedMotion>(&wmx3Lib_);
-  am_->advMotion->CreateSplineBuffer(kSplineChannel, kMaxTrajectoryPoints);
+  cm_ = CoreMotion(&wmx3Lib_);
+  am_ = AdvancedMotion(&wmx3Lib_);
+
+  err = createSplineBuffer(message);
+  if (err != ErrorCode::None) {
+    wmx3Lib_.CloseDevice();
+    return err;
+  }
+
+  isDeviceAttached_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
@@ -79,76 +93,78 @@ void JointTrajectoryControllerApi::releaseDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (am_) {
-    am_->advMotion->FreeSplineBuffer(kSplineChannel);
-  }
-  am_.reset();
-  cm_.reset();
+  freeSplineBuffer();
 
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
   } else {
     RCLCPP_INFO(logger_, "Device closed");
+    isDeviceAttached_ = false;
   }
 }
 
-void JointTrajectoryControllerApi::setAxes(const std::vector<int64_t> & axes)
+int JointTrajectoryControllerApi::createSplineBuffer(std::string & message)
 {
-  std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  axes_ = axes;
-
-  axisSel_.axisCount = static_cast<int>(axes.size());
-  for (size_t i = 0; i < axes.size(); ++i) {
-    axisSel_.axis[i] = static_cast<int>(axes[i]);
-  }
-}
-
-int JointTrajectoryControllerApi::importAndSetAll(
-  const std::string & path, wmx3Api::Config::AxisParam & axisParamError, std::string & message)
-{
-  std::lock_guard<std::mutex> lock(deviceMutex_);
-
-  if (!cm_) {
-    message = "Cannot set WMX params. Core motion is not attached.";
-    return ErrorCode::DeviceIsNull;
-  }
-
-  wmx3Api::Config::SystemParam sysParamError;
-
-  std::vector<char> pathBuffer(path.begin(), path.end());
-  pathBuffer.push_back('\0');
-
-  const int err = cm_->config->ImportAndSetAll(pathBuffer.data(), &sysParamError, &axisParamError);
+  const int err = am_.advMotion->CreateSplineBuffer(kSplineChannel, kMaxTrajectoryPoints);
   if (err != ErrorCode::None) {
-    message = "Failed to set WMX params. Error=" + std::to_string(err) +
+    message = "Failed to create the spline buffer on channel " +
+      std::to_string(kSplineChannel) + ". Error=" + std::to_string(err) +
       " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  message = "Success to set WMX params";
+  splinePoints_.resize(kMaxTrajectoryPoints);
+  splineTimesMs_.resize(kMaxTrajectoryPoints);
   return ErrorCode::None;
 }
 
-int JointTrajectoryControllerApi::getAxisParam(
-  wmx3Api::Config::AxisParam & axisParam, std::string & message)
+void JointTrajectoryControllerApi::freeSplineBuffer()
+{
+  const int err = am_.advMotion->FreeSplineBuffer(kSplineChannel);
+  if (err != ErrorCode::None) {
+    RCLCPP_ERROR(
+      logger_, "Failed to free the spline buffer. Error=%d (%s)", err, errorText(err).c_str());
+  }
+}
+
+int JointTrajectoryControllerApi::setAxes(
+  const std::vector<int64_t> & axes, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot read axis params. Core motion is not attached.";
-    return ErrorCode::DeviceIsNull;
+  if (axes.empty()) {
+    message = "No axes configured: 'joint_axes' is empty.";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return ErrorCode::ArgumentOutOfRange;
   }
 
-  const int err = cm_->config->GetAxisParam(&axisParam);
-  if (err != ErrorCode::None) {
-    message = "Failed to get axis params. Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
-    return err;
+  if (axes.size() > static_cast<size_t>(wmx3Api::constants::maxSplineDimensions)) {
+    message = "Too many axes: " + std::to_string(axes.size()) + " configured, the SDK allows " +
+      std::to_string(wmx3Api::constants::maxSplineDimensions) + " spline dimensions.";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return ErrorCode::ArgumentOutOfRange;
   }
 
-  message = "OK";
+  for (const int64_t axis : axes) {
+    if (axis < 0 || axis >= wmx3Api::constants::maxAxes) {
+      message = "Invalid axis " + std::to_string(axis) + ": must be in [0, " +
+        std::to_string(wmx3Api::constants::maxAxes) + ").";
+      RCLCPP_ERROR(logger_, "%s", message.c_str());
+      return ErrorCode::ArgumentOutOfRange;
+    }
+  }
+
+  axisCount_ = axes.size();
+  axisSel_.axisCount = static_cast<int>(axisCount_);
+  splineCommand_.dimensionCount = static_cast<unsigned int>(axisCount_);
+  for (size_t i = 0; i < axisCount_; ++i) {
+    axisSel_.axis[i] = static_cast<int>(axes[i]);
+    splineCommand_.axis[i] = static_cast<int>(axes[i]);
+  }
+
+  message = "Driving " + std::to_string(axisCount_) + " axes";
   return ErrorCode::None;
 }
 
@@ -159,44 +175,52 @@ int JointTrajectoryControllerApi::startCSplinePos(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!am_) {
-    message = "Cannot start spline. Advanced motion is not attached.";
+  if (!isDeviceAttached_) {
+    message = "Cannot start the trajectory. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
-  const int pointCount = static_cast<int>(positions.size());
-  if (pointCount <= 0 || pointCount > kMaxTrajectoryPoints) {
-    message = "Invalid trajectory point count: " + std::to_string(pointCount);
+  if (axisCount_ == 0) {
+    message = "Cannot start the trajectory. No axes are selected.";
     return ErrorCode::ArgumentOutOfRange;
   }
 
-  AdvMotion::PointTimeSplineCommand splineCommand;
-  splineCommand.dimensionCount = static_cast<int>(axes_.size());
-  for (size_t j = 0; j < axes_.size(); ++j) {
-    splineCommand.axis[j] = static_cast<int>(axes_[j]);
+  if (positions.size() != timesMs.size()) {
+    message = "Point count mismatch: " + std::to_string(positions.size()) +
+      " position sets against " + std::to_string(timesMs.size()) + " time stamps.";
+    return ErrorCode::ArgumentOutOfRange;
   }
 
-  std::vector<AdvMotion::SplinePoint> splinePoints(pointCount);
-  std::vector<double> splineTimesMs(timesMs.begin(), timesMs.begin() + pointCount);
+  if (positions.empty() || positions.size() > kMaxTrajectoryPoints) {
+    message = "Invalid trajectory point count " + std::to_string(positions.size()) +
+      ": must be in [1, " + std::to_string(kMaxTrajectoryPoints) + "].";
+    return ErrorCode::ArgumentOutOfRange;
+  }
 
-  for (int i = 0; i < pointCount; ++i) {
-    for (size_t j = 0; j < axes_.size(); ++j) {
-      splinePoints[i].pos[j] = positions[i][j];
+  for (size_t i = 0; i < positions.size(); ++i) {
+    if (positions[i].size() != axisCount_) {
+      message = "Trajectory point " + std::to_string(i) + " carries " +
+        std::to_string(positions[i].size()) + " positions, expected " +
+        std::to_string(axisCount_) + ".";
+      return ErrorCode::ArgumentOutOfRange;
     }
+    for (size_t j = 0; j < axisCount_; ++j) {
+      splinePoints_[i].pos[j] = positions[i][j];
+    }
+    splineTimesMs_[i] = timesMs[i];
   }
 
-  const int err = am_->advMotion->StartCSplinePos(
-    kSplineChannel, &splineCommand, pointCount, splinePoints.data(), splineTimesMs.data());
-
+  const int err = am_.advMotion->StartCSplinePos(
+    kSplineChannel, &splineCommand_, static_cast<unsigned int>(positions.size()),
+    splinePoints_.data(), splineTimesMs_.data());
   if (err != ErrorCode::None) {
-    char errString[256] = {};
-    AdvancedMotion::ErrorToString(err, errString, sizeof(errString));
-    message = "StartCSplinePos Error: " + std::string(errString);
+    message = "StartCSplinePos failed. Error=" + std::to_string(err) +
+      " (" + errorText(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
-  message = "Spline started over " + std::to_string(pointCount) + " points";
+  message = "Trajectory of " + std::to_string(positions.size()) + " points started";
   return ErrorCode::None;
 }
 
@@ -204,40 +228,45 @@ int JointTrajectoryControllerApi::getInPos(bool & inPos, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot read status. Core motion is not attached.";
+  inPos = false;
+
+  if (!isDeviceAttached_) {
+    message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
   CoreMotionStatus status;
-  const int err = cm_->GetStatus(&status);
+  const int err = cm_.GetStatus(&status);
+  if (err != ErrorCode::None) {
+    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
+  }
 
-  inPos = true;
-  for (const int64_t axis : axes_) {
-    if (!status.axesStatus[axis].inPos) {
-      inPos = false;
-      break;
+  for (int i = 0; i < axisSel_.axisCount; ++i) {
+    if (!status.axesStatus[axisSel_.axis[i]].inPos) {
+      return ErrorCode::None;
     }
   }
 
-  return err;
+  inPos = true;
+  return ErrorCode::None;
 }
 
 int JointTrajectoryControllerApi::stopAxes(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!cm_) {
-    message = "Cannot stop axes. Core motion is not attached.";
-    return ErrorCode::DeviceIsNull;
+  int err = cm_.motion->Stop(&axisSel_);
+  if (err != ErrorCode::None) {
+    message = "Stop failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return err;
   }
 
-  cm_->motion->Stop(&axisSel_);
-
-  const int err = cm_->motion->Wait(&axisSel_);
+  err = cm_.motion->Wait(&axisSel_);
   if (err != ErrorCode::None) {
-    message = "Failed to stop axes. Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
+    message = "Wait failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -249,9 +278,9 @@ int JointTrajectoryControllerApi::stopAxes(std::string & message)
 JointTrajectoryController::JointTrajectoryController()
 : LifecycleNode("joint_trajectory_controller")
 {
-  api_ = std::make_unique<JointTrajectoryControllerApi>(this->get_logger());
-
   setRosParameter();
+
+  api_ = std::make_unique<JointTrajectoryControllerApi>(this->get_logger());
 
   RCLCPP_INFO(
     this->get_logger(), "joint_trajectory_controller is unconfigured, waiting for configure...");
@@ -263,16 +292,33 @@ JointTrajectoryController::~JointTrajectoryController()
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller stopped");
 }
 
-bool JointTrajectoryController::isNodeActive()
+bool JointTrajectoryController::isNodeActive() const
 {
-  return this->get_current_state().id() ==
-         lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
+  return isNodeActive_.load();
 }
 
 std::string JointTrajectoryController::notActiveMessage()
 {
   return "joint_trajectory_controller is not active (state: " +
          this->get_current_state().label() + ").";
+}
+
+void JointTrajectoryController::setRosParameter()
+{
+  jointAxes_ = this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
+  jointTrajectoryAction_ = this->declare_parameter<std::string>(
+    "joint_trajectory_action", "/joint_trajectory_action/no_param");
+
+  std::string jointAxesText;
+  for (size_t i = 0; i < jointAxes_.size(); ++i) {
+    if (i > 0) {jointAxesText += ", ";}
+    jointAxesText += std::to_string(jointAxes_[i]);
+  }
+
+  RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
+  RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", jointAxesText.c_str());
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
+  RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configure(
@@ -282,30 +328,26 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
 
   std::string message;
   if (api_->attachDevice(message) != ErrorCode::None) {
-    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
     return CallbackReturn::FAILURE;
   }
 
-  api_->setAxes(jointAxes_);
+  if (api_->setAxes(jointAxes_, message) != ErrorCode::None) {
+    api_->releaseDevice();
+    return CallbackReturn::FAILURE;
+  }
 
-  setWmxParam(wmxParamFilePath_);
-  getWmxParam();
-
-  servoResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
+  servoNodeResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
     "/servo_node/delta_joint_cmds", 10);
 
   execActivePub_ = this->create_publisher<std_msgs::msg::Bool>(
     "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local());
 
-  action_server_ = rclcpp_action::create_server<FollowJointTrajectory>(
+  actionServer_ = rclcpp_action::create_server<FollowJointTrajectory>(
     this,
     jointTrajectoryAction_,
-    std::bind(
-      &JointTrajectoryController::handle_goal, this, std::placeholders::_1,
-      std::placeholders::_2),
-    std::bind(&JointTrajectoryController::handle_cancel, this, std::placeholders::_1),
-    std::bind(&JointTrajectoryController::handle_accepted, this, std::placeholders::_1)
-  );
+    std::bind(&JointTrajectoryController::handleGoal, this, _1, _2),
+    std::bind(&JointTrajectoryController::handleCancel, this, _1),
+    std::bind(&JointTrajectoryController::handleAccepted, this, _1));
 
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is configured");
   return CallbackReturn::SUCCESS;
@@ -315,6 +357,7 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate
   const rclcpp_lifecycle::State & previous_state)
 {
   LifecycleNode::on_activate(previous_state);
+  isNodeActive_ = true;
 
   publishExecActive(false);
 
@@ -325,10 +368,9 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  publishExecActive(false);
+  isNodeActive_ = false;
 
-  std::string message;
-  api_->stopAxes(message);
+  publishExecActive(false);
 
   LifecycleNode::on_deactivate(previous_state);
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is inactive");
@@ -338,13 +380,13 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactiva
 JointTrajectoryController::CallbackReturn JointTrajectoryController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  action_server_.reset();
-  execActivePub_.reset();
-  servoResetPub_.reset();
+  isNodeActive_ = false;
 
-  if (api_->isDeviceOpen()) {
-    api_->releaseDevice();
-  }
+  actionServer_.reset();
+  execActivePub_.reset();
+  servoNodeResetPub_.reset();
+
+  api_->releaseDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is cleaned up");
   return CallbackReturn::SUCCESS;
@@ -356,92 +398,7 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_shutdown
   return on_cleanup(previous_state);
 }
 
-void JointTrajectoryController::setWmxParam(const std::string & path)
-{
-  wmx3Api::Config::AxisParam axisParamError;
-  std::string message;
-
-  if (api_->importAndSetAll(path, axisParamError, message) == ErrorCode::None) {
-    RCLCPP_INFO(this->get_logger(), "%s", message.c_str());
-    return;
-  }
-
-  RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
-  for (const int64_t axis : jointAxes_) {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "  [axis %ld] AxisParam error flags: gearNum=%.0f gearDen=%.6f polarity=%d "
-      "absEnc=%d maxSpd=%.0f maxSpdUnitNum=%.6f maxSpdUnitDen=%.6f singleTurnMode=%d "
-      "singleTurnCnt=%u maxTrq=%.1f posTrq=%.1f negTrq=%.1f axisUnit=%.6f cmdMode=%d",
-      axis,
-      axisParamError.gearRatioNumerator[axis], axisParamError.gearRatioDenominator[axis],
-      static_cast<int>(axisParamError.axisPolarity[axis]),
-      static_cast<int>(axisParamError.absoluteEncoderMode[axis]),
-      axisParamError.maxMotorSpeed[axis],
-      axisParamError.maxMotorSpeedUnitNumerator[axis],
-      axisParamError.maxMotorSpeedUnitDenominator[axis],
-      static_cast<int>(axisParamError.singleTurnMode[axis]),
-      axisParamError.singleTurnEncoderCount[axis],
-      axisParamError.maxTrqLimit[axis], axisParamError.positiveTrqLimit[axis],
-      axisParamError.negativeTrqLimit[axis], axisParamError.axisUnit[axis],
-      static_cast<int>(axisParamError.axisCommandMode[axis]));
-  }
-}
-
-void JointTrajectoryController::getWmxParam()
-{
-  wmx3Api::Config::AxisParam axisParam;
-  std::string message;
-
-  if (api_->getAxisParam(axisParam, message) != ErrorCode::None) {
-    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
-    return;
-  }
-
-  for (const int64_t axis : jointAxes_) {
-    RCLCPP_INFO(
-      this->get_logger(), "axis: %ld, numerator: %f", axis,
-      axisParam.gearRatioNumerator[axis]);
-    RCLCPP_INFO(
-      this->get_logger(), "axis: %ld, denominator: %f", axis,
-      axisParam.gearRatioDenominator[axis]);
-    RCLCPP_INFO(
-      this->get_logger(), "axis: %ld, polarity: %d", axis,
-      static_cast<int>(axisParam.axisPolarity[axis]));
-    RCLCPP_INFO(
-      this->get_logger(), "axis: %ld, abs encoder: %d", axis,
-      axisParam.absoluteEncoderMode[axis]);
-    RCLCPP_INFO(
-      this->get_logger(), "axis: %ld, mode: %d", axis,
-      axisParam.axisCommandMode[axis]);
-  }
-}
-
-void JointTrajectoryController::setRosParameter()
-{
-  this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
-  this->declare_parameter<std::string>(
-    "joint_trajectory_action", "/joint_trajectory_action/no_param");
-  this->declare_parameter<std::string>("wmx_param_file_path", "/joint_trajectory/no_param");
-
-  this->get_parameter("joint_axes", jointAxes_);
-  this->get_parameter("joint_trajectory_action", jointTrajectoryAction_);
-  this->get_parameter("wmx_param_file_path", wmxParamFilePath_);
-
-  std::string joint_axes_str;
-  for (size_t i = 0; i < jointAxes_.size(); ++i) {
-    if (i > 0) {joint_axes_str += ", ";}
-    joint_axes_str += std::to_string(jointAxes_[i]);
-  }
-
-  RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
-  RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", joint_axes_str.c_str());
-  RCLCPP_INFO(this->get_logger(), "joint_trajectory_action: %s", jointTrajectoryAction_.c_str());
-  RCLCPP_INFO(this->get_logger(), "wmx_param_file_path: %s", wmxParamFilePath_.c_str());
-  RCLCPP_INFO(this->get_logger(), "===========================");
-}
-
-rclcpp_action::GoalResponse JointTrajectoryController::handle_goal(
+rclcpp_action::GoalResponse JointTrajectoryController::handleGoal(
   const rclcpp_action::GoalUUID & uuid,
   std::shared_ptr<const FollowJointTrajectory::Goal> goal)
 {
@@ -457,18 +414,17 @@ rclcpp_action::GoalResponse JointTrajectoryController::handle_goal(
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
-rclcpp_action::CancelResponse JointTrajectoryController::handle_cancel(
-  std::shared_ptr<GoalHandleFJT> goal_handle)
+rclcpp_action::CancelResponse JointTrajectoryController::handleCancel(
+  std::shared_ptr<GoalHandleFJT> goalHandle)
 {
-  (void)goal_handle;
+  (void)goalHandle;
   RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
-void JointTrajectoryController::handle_accepted(std::shared_ptr<GoalHandleFJT> goal_handle)
+void JointTrajectoryController::handleAccepted(std::shared_ptr<GoalHandleFJT> goalHandle)
 {
-  std::thread{std::bind(&JointTrajectoryController::execute, this, std::placeholders::_1),
-    goal_handle}.detach();
+  std::thread{std::bind(&JointTrajectoryController::executeGoal, this, _1), goalHandle}.detach();
 }
 
 void JointTrajectoryController::publishExecActive(bool active)
@@ -482,112 +438,147 @@ void JointTrajectoryController::publishExecActive(bool active)
   execActivePub_->publish(msg);
 }
 
-void JointTrajectoryController::resetServo(const std::vector<std::string> & joint_names)
+void JointTrajectoryController::resetServo(const std::vector<std::string> & jointNames)
 {
-  if (!servoResetPub_) {
+  if (!servoNodeResetPub_) {
     return;
   }
 
   control_msgs::msg::JointJog jog;
   jog.header.stamp = this->get_clock()->now();
-  jog.joint_names = joint_names;
-  jog.velocities.assign(joint_names.size(), 0.0);
-  servoResetPub_->publish(jog);
+  jog.joint_names = jointNames;
+  jog.velocities.assign(jointNames.size(), 0.0);
+  servoNodeResetPub_->publish(jog);
 }
 
-void JointTrajectoryController::execute(std::shared_ptr<GoalHandleFJT> goal_handle)
+bool JointTrajectoryController::buildSplineInput(
+  const trajectory_msgs::msg::JointTrajectory & trajectory,
+  std::vector<std::vector<double>> & positions,
+  std::vector<double> & timesMs,
+  std::string & message)
 {
-  const auto goal = goal_handle->get_goal();
+  const size_t axisCount = jointAxes_.size();
+  size_t pointCount = trajectory.points.size();
+
+  if (pointCount == 0) {
+    message = "Trajectory carries no points.";
+    return false;
+  }
+
+  if (pointCount > JointTrajectoryControllerApi::kMaxTrajectoryPoints) {
+    message = "Too many trajectory point size! current points:" + std::to_string(pointCount) +
+      " / max traj points:" +
+      std::to_string(JointTrajectoryControllerApi::kMaxTrajectoryPoints);
+    return false;
+  }
+
+  if (pointCount > 1) {
+    const double lastGap =
+      rclcpp::Duration(trajectory.points[pointCount - 1].time_from_start).seconds() -
+      rclcpp::Duration(trajectory.points[pointCount - 2].time_from_start).seconds();
+    if (lastGap < 1e-3) {
+      pointCount -= 1;
+    }
+  }
+
+  positions.assign(pointCount, std::vector<double>(axisCount, 0.0));
+  timesMs.assign(pointCount, 0.0);
+
+  for (size_t i = 0; i < pointCount; ++i) {
+    const auto & pt = trajectory.points[i];
+
+    if (pt.positions.size() < axisCount) {
+      message = "Trajectory point " + std::to_string(i) + " carries " +
+        std::to_string(pt.positions.size()) + " positions, expected at least " +
+        std::to_string(axisCount) + ".";
+      return false;
+    }
+
+    timesMs[i] = rclcpp::Duration(pt.time_from_start).seconds() * 1000.0;
+    for (size_t j = 0; j < axisCount; ++j) {
+      positions[i][j] = pt.positions[j];
+    }
+  }
+
+  timesMs[0] = 0.0;
+
+  return true;
+}
+
+void JointTrajectoryController::executeGoal(std::shared_ptr<GoalHandleFJT> goalHandle)
+{
+  const auto goal = goalHandle->get_goal();
   const auto & trajectory = goal->trajectory;
 
   publishExecActive(true);
-  const auto servo_joint_names = trajectory.joint_names;
-  ScopeExit on_exit{[this, servo_joint_names]() {
+  const auto servoJointNames = trajectory.joint_names;
+  ScopeExit onExit{[this, servoJointNames]() {
       publishExecActive(false);
-      resetServo(servo_joint_names);
+      resetServo(servoJointNames);
     }};
 
-  int num_points = static_cast<int>(trajectory.points.size());
-
-  RCLCPP_INFO(this->get_logger(), "Received a new trajectory goal! Point number: [%d]", num_points);
+  RCLCPP_INFO(
+    this->get_logger(), "Received a new trajectory goal! Point number: [%zu]",
+    trajectory.points.size());
 
   auto result = std::make_shared<FollowJointTrajectory::Result>();
 
-  if (num_points > JointTrajectoryControllerApi::kMaxTrajectoryPoints) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Too many trajectory point size! "
-      "current points:%d / max traj points:%d \nAborting current goal.",
-      num_points, JointTrajectoryControllerApi::kMaxTrajectoryPoints);
-    goal_handle->abort(result);
+  std::vector<std::vector<double>> positions;
+  std::vector<double> timesMs;
+  std::string message;
+
+  if (!buildSplineInput(trajectory, positions, timesMs, message)) {
+    RCLCPP_WARN(this->get_logger(), "%s Aborting current goal.", message.c_str());
+    result->error_code = FollowJointTrajectory::Result::INVALID_GOAL;
+    result->error_string = message;
+    goalHandle->abort(result);
     return;
   }
 
   logTrajectory(trajectory);
 
-  std::vector<std::vector<double>> positions;
-  std::vector<double> timesMs;
-  positions.reserve(trajectory.points.size());
-  timesMs.reserve(trajectory.points.size());
-
-  for (const auto & pt : trajectory.points) {
-    timesMs.push_back(rclcpp::Duration(pt.time_from_start).seconds() * 1000);
-
-    std::vector<double> axisTargets;
-    axisTargets.reserve(jointAxes_.size());
-    for (size_t j = 0; j < jointAxes_.size(); ++j) {
-      axisTargets.push_back(pt.positions.at(j));
-    }
-    positions.push_back(std::move(axisTargets));
-  }
-
-  if (!timesMs.empty() && timesMs[0] != 0.0) {
-    timesMs[0] = 0.0;
-  }
-
-  if (trajectory.points.size() >= 2) {
-    const size_t last = trajectory.points.size() - 1;
-    if (rclcpp::Duration(trajectory.points[last].time_from_start).seconds() -
-      rclcpp::Duration(trajectory.points[last - 1].time_from_start).seconds() < 1e-3)
-    {
-      num_points -= 1;
-    }
-  }
-
-  if (num_points == 0) {
+  if (positions.empty()) {
     RCLCPP_INFO(this->get_logger(), "Point count is zero. It is already in the targeted position");
-  } else {
-    RCLCPP_INFO(this->get_logger(), "Command Start!!!");
+    result->error_code = FollowJointTrajectory::Result::SUCCESSFUL;
+    goalHandle->succeed(result);
+    return;
+  }
 
-    positions.resize(num_points);
+  RCLCPP_INFO(this->get_logger(), "Command Start!!!");
+  int err = api_->startCSplinePos(positions, timesMs, message);
+  if (err != ErrorCode::None) {
+    RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+    result->error_code = err;
+    result->error_string = message;
+    goalHandle->abort(result);
+    return;
+  }
 
-    std::string message;
-    const int err = api_->startCSplinePos(positions, timesMs, message);
-    if (err != ErrorCode::None) {
-      result->error_code = err;
-      goal_handle->abort(result);
+  while (true) {
+    if (goalHandle->is_canceling()) {
+      api_->stopAxes(message);
+      result->error_code = FollowJointTrajectory::Result::SUCCESSFUL;
+      goalHandle->canceled(result);
+      RCLCPP_INFO(this->get_logger(), "Goal canceled, axes stopped");
       return;
     }
 
-    while (true) {
-      if (goal_handle->is_canceling()) {
-        api_->stopAxes(message);
-        result->error_code = 0;
-        goal_handle->canceled(result);
-        RCLCPP_INFO(this->get_logger(), "Goal canceled, axes stopped");
-        return;
-      }
-
-      bool all_done = false;
-      api_->getInPos(all_done, message);
-      if (all_done) {break;}
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    bool inPos = false;
+    err = api_->getInPos(inPos, message);
+    if (err != ErrorCode::None) {
+      RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
+      result->error_code = err;
+      result->error_string = message;
+      goalHandle->abort(result);
+      return;
     }
+    if (inPos) {break;}
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  result->error_code = 0;
-  goal_handle->succeed(result);
+  result->error_code = FollowJointTrajectory::Result::SUCCESSFUL;
+  goalHandle->succeed(result);
   RCLCPP_INFO(this->get_logger(), "Trajectory execution completed successfully");
 }
 
@@ -624,11 +615,11 @@ void JointTrajectoryController::logTrajectory(
       pt.time_from_start.sec, pt.time_from_start.nanosec);
 
     if (i != 0) {
-      rclcpp::Duration duration_cur(trajectory.points[i].time_from_start);
-      rclcpp::Duration duration_pre(trajectory.points[i - 1].time_from_start);
+      const rclcpp::Duration durationCur(trajectory.points[i].time_from_start);
+      const rclcpp::Duration durationPre(trajectory.points[i - 1].time_from_start);
       RCLCPP_INFO(
         this->get_logger(), "Time interval: %f",
-        (duration_cur - duration_pre).seconds());
+        (durationCur - durationPre).seconds());
     }
   }
 }
