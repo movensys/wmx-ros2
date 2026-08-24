@@ -135,17 +135,26 @@ Confirm `ROBOT` matches the arm in front of you.
 ```bash
 ros2 service call /wmx/axis/clear_alarm wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
 ros2 service call /wmx/axis/set_on      wmx_r2_message/srv/SetAxis "{index: [0], data: [1]}"
-ros2 service call /wmx/axis/homing      wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
 ```
 
-If you reload parameters later, **re-run these three** — a home position recorded
-under the old scaling is not meaningful under new parameters.
+If you reload parameters later, **re-run both** — they act on the axis as scaled
+at the time they were called.
 
-**Do not skip homing.** `servo_stream_controller` seeds its first segment from
-`posCmd`, while `servo_stream_test_source` centres its waveform on `actualPos`
-from `/joint_states`. If those disagree because the axis was never homed, the
-first segment is a jump between them, commanded at that segment's velocity limit.
-Homing makes them equal.
+### Homing is not part of this procedure ⚠
+
+`/wmx/axis/homing` sets `HomeType::CurrentPos`, which **redefines the axis'
+current physical position as zero**. On an arm with absolute encoders
+(`abs encoder: 1` in the parameter-load log) the position is already known at
+power-on, and re-zeroing at an arbitrary pose discards the calibration that the
+URDF and MoveIt kinematics depend on.
+
+The streaming path does not need it. `servo_stream_controller` seeds each segment
+from `posCmd`, which the engine initialises from the absolute encoder, so it
+already agrees with the `actualPos` that `servo_stream_test_source` centres its
+waveform on.
+
+Home only deliberately, with the axis at its known zero pose, as a
+recalibration.
 
 ---
 

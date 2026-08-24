@@ -92,23 +92,35 @@ No `Stream started` yet — the stream begins on the first setpoint.
 
 ---
 
-## 3. Axis bring-up
+## 3. Axis bring-up — mostly automatic on this launch
 
-```bash
-ros2 service call /wmx/params/load wmx_r2_message/srv/LoadWmxParams \
-  "{file_path: '$HOME/workspaces/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
+Unlike the single-axis bench procedure, **this launch does the bring-up for you**.
+Confirm it in the log rather than repeating it by hand:
 
-ros2 service call /wmx/axis/clear_alarm wmx_r2_message/srv/SetAxis \
-  "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
-ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis \
-  "{index: [0,1,2,3,4,5], data: [1,1,1,1,1,1]}"
-ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis \
-  "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
-```
+| step | done by | log line to look for |
+|---|---|---|
+| Load axis parameters | `joint_trajectory_controller`, from `wmx_param_file_path` | `Success to set WMX params`, then per-axis numerator / denominator / polarity / abs encoder |
+| Clear alarms | `joint_state_broadcaster` | `wmx/axis/clear_alarm succeeded: Cleared alarm axis 0; ... axis 5;` |
+| Servo on | `joint_state_broadcaster` | `wmx/axis/set_on succeeded: Set axis 0 on; ... axis 5 on;` |
 
-The parameter load **must** return `success=True`. The three `SetAxis` calls will
-succeed regardless, so their success says nothing about whether the axes are
-correctly scaled. Re-run the three whenever you reload parameters.
+If the parameter lines are missing, check `wmx_param_file_path` in the launch —
+the axes will otherwise run on whatever scaling the engine already had.
+
+### Homing — do not do this routinely ⚠
+
+`/wmx/axis/homing` sets `HomeType::CurrentPos` and starts homing, which
+**redefines the axis' current physical position as zero**. The CR3A reports
+`abs encoder: 1` on all six axes, so it already knows where it is at power-on and
+does not need homing to establish a position.
+
+Homing at an arbitrary pose on an absolute-encoder arm discards the calibrated
+zero. From that point the URDF and MoveIt kinematics no longer describe the
+physical arm, so planning and collision checking are computed against the wrong
+pose. Only home deliberately, with the arm at its known zero pose, and treat it
+as a recalibration rather than a startup step.
+
+Nothing in the streaming path needs it: `servo_stream_controller` seeds each
+segment from `posCmd`, which the engine initialises from the absolute encoder.
 
 Verify feedback before going further:
 

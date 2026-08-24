@@ -441,9 +441,15 @@ This contradicts the design intent recorded in the source header, which expects
 `FastBlending` to make consecutive interpolations blend rather than stop-and-go.
 Nothing in this repo sets `LinearIntplProfileCalcMode`, which is inherited from
 `axis[0]`'s configuration, so per-segment velocity limits may not be in force at
-all. Unresolved — check the calc mode and record `pos_cmd` from `/axis_state`
+all. Unresolved — check the calc mode and record `pos_cmd` from `wmx/axis/state`
 alongside `actual_pos` to tell whether the surging originates in block execution
 or downstream in the servo loop.
+
+Caveat on that measurement: `wmx_core_motion_node` sizes `wmx/axis/state` from
+the axis count it reads out of `GetEngineStatus` at attach time, and on a CR3A
+launch it has been observed logging `is ready (1 axes, 100 Hz)` — so the topic
+may carry only axis 0 even on a six-axis arm. Check that line before relying on
+the topic for anything but axis 0.
 
 **4. The CR5A config is untuned.**
 Its `servo_stream_controller` values were copied from the CR3A. Re-run
