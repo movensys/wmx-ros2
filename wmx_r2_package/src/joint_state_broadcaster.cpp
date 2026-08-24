@@ -66,7 +66,6 @@ int JointStateBroadcasterApi::createDevice(std::string & message)
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
       std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
-    // The device exists but is unnamed: close it so the next attempt starts clean.
     wmx3Lib_.CloseDevice();
     return err;
   }
