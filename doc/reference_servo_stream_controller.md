@@ -32,34 +32,82 @@ launch files enforce this with the `use_api_buffer` argument.
 
 ### How a setpoint becomes motion
 
-Each Servo setpoint is recorded as **two blocks**:
+Each Servo setpoint is recorded as **one block**:
 
 | block | purpose |
 |---|---|
 | `StartLinearIntplPos(n axes)` | coordinated move, lands as a `FastBlending` override |
-| `USleep(T)` | paces the queue; `T` is trimmed to hold the target depth |
 
-`api_buffer_probe` measured 396 bytes per setpoint (320 motion + 76 sleep), so a
-1 MB channel holds ~2650 setpoints — over a minute of stream at Servo's 40 Hz.
+There is no pacing block. The WMX3 manual states that buffered API functions
+"will be executed as fast as possible" unless a `Wait` or `Sleep` is recorded
+between them, and that motion APIs execute one per communication cycle. So the
+channel drains at ~1 ms per setpoint against a 25 ms arrival interval, and
+`remainingBlockCount` sits at **0–1** in steady state.
 
-`T` is in microseconds and is **not** quantised to the 1 kHz engine cycle;
-`USleep` honours sub-millisecond requests to within ~0.3%.
+**The API buffer is a real-time mailbox here, not a queue.** It still moves the
+hand-off onto the RT side and still carries the watch trigger, but it no longer
+stores latency. Pacing comes from the ROS arrival rate.
 
-### Pacing loop
+Cost is 320 bytes per setpoint, so a 1 MB channel holds ~3200. The channel is a
+ring and reclaims space as blocks execute, so buffer size does not bound how long
+a stream can run.
 
-The pump adjusts `T` to hold the buffer at `target_queue_depth`:
+### Why there is no pacing block
+
+The earlier design recorded `USleep(T)` after each interpolation, which held the
+channel for the whole period. Every segment therefore ran to its target,
+decelerated to rest under `endVelocity = 0`, and sat there until the sleep
+expired — `FastBlending` never engaged. That is what produced the surging
+measured in the single-axis runs (~8× peak velocity, ~24 velocity sign changes
+per second), and the pacing loop could only cover the per-block setup cost by
+holding a standing depth error of ~7 setpoints, costing 225–250 ms of latency
+instead of the intended 50 ms.
+
+Dropping the sleep lets each command override its predecessor mid-flight, which
+is what `FastBlending` is for.
+
+Ride-through no longer comes from queue depth. Each block carries a full period
+of programmed travel, so a late setpoint continues the previous segment rather
+than leaving a gap; and if the publisher dies outright, the last interpolation
+decelerates to rest on its own within one period, before `starvation_timeout_ms`
+even fires.
+
+### Segment distance is measured from `posCmd`
+
+`nominal_period_us` is now the time each segment is given to cover its distance,
+which is what sets commanded velocity:
 
 ```
-T = nominal_period_us + pacing_kp * 1000 * (target_queue_depth - observed_depth)
-T = clamp(T, period_clamp_lo_us, period_clamp_hi_us)
+velocity_i = |target_i - posCmd_i| / nominal_period_us
 ```
 
-The sign is deliberate. The period is what the *engine* spends per setpoint while
-the pump feeds at whatever rate ROS delivers, so a depth **below** target calls
-for a **longer** period. Depth is read from `remainingBlockCount / 2`.
+The origin is the **current commanded position**, not the previous setpoint —
+the reverse of the buffered design, and it follows from the queue being gone.
+With commands overriding mid-flight, `posCmd` never reaches the previous target,
+so a setpoint-to-setpoint delta understates the distance still to cover and the
+lag grows without bound with nothing in the loop noticing. Measuring from
+`posCmd` is self-correcting: the further behind the axis is, the higher the
+velocity it asks for. Depth 0–1 is what makes `posCmd` trustworthy again — it is
+one block plus one cycle stale, ~1–2 ms.
 
-Queue depth is the latency dial: at 40 Hz, each setpoint of depth is 25 ms of
-deliberate latency.
+Two guards sit on top of that:
+
+- **`max_joint_velocity`** is applied as a *uniform scale* across all axes, not
+  a per-axis clamp. Clamping one axis while the others run free would bend the
+  coordinated path; slowing the whole move keeps it straight and only costs time.
+- **`min_step_rad`** — below this the setpoint is a hold and no block is
+  recorded at all. Recording it would ask for `maxVelocity = 0` on every axis,
+  which the engine rejects, and with `stop_on_error` that stops the channel — so
+  holding a pose would read as a fault. Servo publishes the held position
+  whenever its input is centred, so this is a normal case, not an edge one.
+
+### The pump takes the newest setpoint
+
+The ROS ring is drained on every pump pass and only the **newest** entry is fed
+in; the rest are dropped with a throttled warning. Feeding a backlog would
+execute every entry within a few cycles, each overriding the last, leaving the
+survivor to cover the whole backlog's distance in one period — a velocity spike
+proportional to the backlog, exactly when the system is already behind.
 
 ### Safety and hand-off behaviour
 
@@ -212,7 +260,7 @@ Single overrides work too:
 
 ```bash
 ~/wmxrun ros2 run wmx_r2_package servo_stream_controller --ros-args \
-  --params-file $BENCH -p target_queue_depth:=3
+  --params-file $BENCH -p nominal_period_us:=20000
 ```
 
 The node echoes every parameter at startup — check that block first when
@@ -262,11 +310,12 @@ The waveform is centred on the joint's **current** position read from
 
 1. `amplitude_rad: 0.0` — a pure hold. The full streaming path runs at rate with
    zero commanded motion. This is the correct first test with the servos on,
-   before commanding any movement at all. Queue depth should settle at
-   `target_queue_depth`.
-2. Small amplitude, e.g. `amplitude_rad: 0.02`, and watch queue depth and
-   tracking.
-3. Increase only once depth is stable and no warnings are firing.
+   before commanding any movement at all. Every setpoint should fall under
+   `min_step_rad` once tracking converges, so no blocks are recorded and
+   `queue_depth` reads 0 — with **no** fault and no `Stream ended`.
+2. Small amplitude, e.g. `amplitude_rad: 0.02`. Watch tracking and confirm
+   `queue_depth` stays at 0–1.
+3. Increase only once tracking is clean and no warnings are firing.
 
 Ctrl-C on the test source stops the stream, which is the intended way to exercise
 the starvation path.
@@ -305,15 +354,18 @@ run with the servos off, and that is the recommended way.
 | `api_buffer_channel` | `0` | Motion channel |
 | `estop_buffer_channel` | `1` | Watch trigger routine; must differ from the motion channel, or the trigger is disabled |
 | `api_buffer_size_mb` | `5` | 1 MB ≈ 2650 setpoints ≈ 66 s of stream |
-| `target_queue_depth` | `2` | Latency/robustness dial; 1 setpoint = 25 ms at 40 Hz |
-| `nominal_period_us` | `25000` | Must equal Servo's publish period |
-| `period_clamp_lo_us` | `20000` | Pacing authority, low end |
-| `period_clamp_hi_us` | `30000` | Pacing authority, high end |
-| `pacing_kp` | `0.15` | Correction in engine cycles per setpoint of depth error (150 µs each) |
-| `ros_queue_depth` | `8` | Ring size; drop-oldest above it, since stale teleop is worthless |
+| `nominal_period_us` | `25000` | Time each segment is given to cover its distance — this is what sets commanded velocity. Set it to Servo's actual publish period |
+| `ros_queue_depth` | `8` | Ring size, bounding memory only; the pump takes the newest entry and drops the rest |
 | `starvation_timeout_ms` | `75` | Gap without a setpoint before a controlled stop |
-| `accel_ratio` | `0.3` | Blend spans ~30% of each segment |
+| `accel_ratio` | `0.3` | Accel phase spans ~30% of each segment |
+| `max_joint_velocity` | `3.0` | rad/s ceiling, applied as a uniform scale across axes. **Verify against the arm's real joint limits** |
+| `min_step_rad` | `1e-6` | Below this a setpoint is a hold and no block is recorded |
 | `stop_on_error` | `true` | Stop rather than skip a rejected setpoint |
+
+`nominal_period_us` is the single most important value here. Too short
+over-drives: the axis reaches target early, decelerates to rest, and the
+stop-and-go this design exists to remove comes back. Too long under-drives and
+the arm lags the stream.
 
 ---
 
@@ -357,14 +409,19 @@ A healthy stream:
 ```
 
 - One `Stream started`, with no fault and no `Stream ended` following it.
-- `queue_depth` settling near `target_queue_depth` and staying there. A flicker
-  between two adjacent values is normal — depth is `remainingBlockCount / 2`, so
-  one block of sampling phase flips the reported integer.
+- `queue_depth` reading **0–1**. That is the healthy value now, not a fault:
+  with no pacing block the engine consumes each setpoint as soon as it lands.
+  Anything standing above `3` trips `API buffer not draining`.
+- The `axis N motion params:` line reporting `overrideType=FastBlending` and
+  `calcMode=AxisLimit`. Both are inherited from the axis configuration rather
+  than set by this node, and the node warns if either is something else.
 - No repeating warnings.
 
-`queue_depth` goes to 0 whenever the stream is down (starvation, fault,
-`move_group` takeover), so it is a usable liveness signal, not only a depth
-signal.
+**`queue_depth` is no longer a liveness signal.** It reads 0 both when the
+stream is healthy and when it is down, so it cannot distinguish them. What
+proves the engine is still consuming is `cumulativeBlockCount` advancing, which
+the node checks itself — three consecutive status polls (300 ms) with nothing
+consumed while streaming produces `Streaming but no blocks consumed`.
 
 ### Recording a run for analysis
 
@@ -387,7 +444,11 @@ topic. `stage5_buffered/` in the repo root is an example recording.
 |---|---|---|
 | `waiting for engine...` and nothing more | `wmx/engine/ready` never arrived | Start the general nodes (`wmx_r2_general_nodes.launch.py`); check the engine and EtherCAT state |
 | `servo_stream_test_source`: `Waiting for 'joint1' on /joint_states ...` forever | Either nothing publishes `/joint_states`, or it does but without that joint name | `ros2 topic info /joint_states` — `Publisher count: 0` means `joint_state_broadcaster` is not running; a nonzero count means the name does not match, so compare its `joint_name` with the test source's |
-| `API buffer backlog: N setpoints in flight (target M)` | Depth exceeded `4 × target_queue_depth` | The engine is consuming slower than the pacing model assumes — see Known issues |
+| `API buffer not draining: N blocks in flight (expected 0-1)` | The engine is not consuming setpoints as fast as they arrive | Check the publisher's rate against `nominal_period_us`; check `apiWaitUntilMotionStart` in the startup log |
+| `Streaming but no blocks consumed in N ms` | Channel is Active but `cumulativeBlockCount` is not advancing | The engine has stalled mid-interpolation — check axis state, servo-on, and alarms |
+| `Pump behind: skipped N setpoint(s) to take the newest` | Setpoints arrived faster than the pump drained them | Occasional entries are normal on a loaded host; sustained ones mean the pump thread is being starved |
+| `Setpoint needs X rad/s, over max_joint_velocity Y` | A step needed more speed than the ceiling allows | Either the arm was far behind and is catching up, or `max_joint_velocity` is set too low for this motion |
+| `CoreMotion::GetStatus failed, cannot place segment origin` | Could not read `posCmd` to anchor the segment | Engine-side problem; the setpoint is dropped rather than commanded from a stale origin |
 | `Servo stream starved (>75 ms); stopping axes` | No setpoint arrived within the timeout | Check the publisher's rate and the ROS transport; expected when you Ctrl-C the source |
 | `ROS queue full (8); dropping oldest setpoint` | The pump cannot keep up with arrivals | Check `nominal_period_us` against the publisher's actual rate |
 | `Dropped trajectory: no command for axis N` | The setpoint did not cover every driven axis | `joint_name` does not match the publisher's joint names |
@@ -400,50 +461,43 @@ topic. `stage5_buffered/` in the repo root is an example recording.
 
 ---
 
-## Known issues
+## Status of the previously measured issues
 
-Measured on a **single axis** (`joint_axes: [0]`) with `servo_stream_test_source`
-at 0.25 Hz, ±50 mrad, 40 Hz. Not yet re-measured on a full six-axis config.
+The measurements below were taken on a **single axis** (`joint_axes: [0]`) with
+`servo_stream_test_source` at 0.25 Hz, ±50 mrad, 40 Hz, against the earlier
+`USleep`-paced design. Removing the pacing block is expected to address the first
+three; **none of it has been re-measured on hardware yet.**
 
-**1. Queue depth settles far above target during motion.**
-`StartLinearIntplPos` costs roughly 1.05 ms of engine time to set up real motion,
-which the pacing model does not account for — it assumes `USleep` is the only
-per-setpoint cost. Since the loop is proportional-only, it can only supply that
-correction by holding a standing depth error of about `1050 / 150 ≈ 7` setpoints.
-Observed: depth 9–10 instead of 2, i.e. 225–250 ms of latency instead of 50 ms,
-with the backlog warning firing continuously.
+**1. Queue depth settled far above target during motion.** *(expected fixed)*
+`StartLinearIntplPos` cost roughly 1.05 ms of engine time to set up real motion,
+which the proportional pacing loop could only cover by holding a standing depth
+error of about `1050 / 150 ≈ 7` setpoints — observed depth 9–10 instead of 2,
+i.e. 225–250 ms of latency instead of 50 ms. There is no pacing loop and no
+target depth any more, so there is no standing error to hold. Expect depth 0–1.
 
-With `amplitude_rad: 0.0` the blocks are true no-ops, the cost drops below
-150 µs, and depth settles at target. So the cost is effectively bimodal — present
-whenever there is motion, absent when targets repeat — rather than proportional
-to step size.
+**2. The correction could exceed the loop's authority on six axes.**
+*(no longer applicable)* There is no correction and no clamp authority to exceed.
 
-Workaround for now: expect the extra latency, and read `queue_depth` as
-"target + block-cost error" rather than as a fault. A feedforward of the measured
-block cost is the fix.
+**3. Motion was delivered in surges, not smoothly.** *(expected fixed — verify)*
+Position tracking of the commanded fundamental was good (gain 1.015, ~290 ms of
+pure delay, 3.1 mrad rms residual on a 50 mrad amplitude), but the joint moved in
+bursts: peak velocity ~8× the per-segment `maxVelocity` the node computes, with
+roughly 24 velocity sign changes per second. Stiction was ruled out (following
+error showed no correlation with direction of travel).
 
-**2. The correction may exceed the loop's authority on six axes.**
-The pacing loop's total authority is `nominal_period_us - period_clamp_lo_us` =
-5000 µs, reached at a depth error of 33. If the per-setpoint block cost scales
-with axis count, six axes could need more correction than that, in which case
-depth grows without bound instead of settling. **Untested.** Before running the
-buffered path on a six-axis arm, run with the test source at low amplitude and
-confirm `queue_depth` settles rather than climbing.
+The cause was the pacing block itself: `USleep(T)` held the channel for the full
+period, so each segment ran to its target and decelerated to rest under
+`endVelocity = 0` before the next one was issued. `FastBlending` never engaged.
+With the sleep gone, each command overrides its predecessor mid-flight.
 
-**3. Motion is delivered in surges, not smoothly.**
-Position tracking of the commanded fundamental is good (gain 1.015, ~290 ms of
-pure delay, 3.1 mrad rms residual on a 50 mrad amplitude), but the joint moves in
-bursts: measured peak velocity is ~8× the per-segment `maxVelocity` the node
-computes, with roughly 24 velocity sign changes per second. Stiction is ruled out
-(following error shows no correlation with direction of travel).
+**This is the primary thing to verify on hardware.** Success looks like peak
+velocity falling from ~8× toward ~1× `maxVelocity`, and velocity sign changes
+falling from ~24/sec toward ~0 during smooth motion.
 
-This contradicts the design intent recorded in the source header, which expects
-`FastBlending` to make consecutive interpolations blend rather than stop-and-go.
-Nothing in this repo sets `LinearIntplProfileCalcMode`, which is inherited from
-`axis[0]`'s configuration, so per-segment velocity limits may not be in force at
-all. Unresolved — check the calc mode and record `pos_cmd` from `wmx/axis/state`
-alongside `actual_pos` to tell whether the surging originates in block execution
-or downstream in the servo loop.
+The node now logs `linearIntplProfileCalcMode` and `linearIntplOverrideType` for
+`axis[0]` at startup and warns if they are not `AxisLimit` / a blending type —
+both are inherited from the axis configuration, and issue 3 could not previously
+be diagnosed because neither was recorded.
 
 Caveat on that measurement: `wmx_core_motion_node` sizes `wmx/axis/state` from
 the axis count it reads out of `GetEngineStatus` at attach time, and on a CR3A
@@ -452,5 +506,32 @@ may carry only axis 0 even on a six-axis arm. Check that line before relying on
 the topic for anything but axis 0.
 
 **4. The CR5A config is untuned.**
-Its `servo_stream_controller` values were copied from the CR3A. Re-run
-`api_buffer_probe` and re-tune before relying on them.
+Its `servo_stream_controller` values were copied from the CR3A. Re-tune before
+relying on them, starting with `nominal_period_us` and `max_joint_velocity`.
+
+---
+
+## Known issues
+
+**1. `max_joint_velocity` defaults are placeholders.**
+`3.14` rad/s in the CR3A and CR5A configs is a plausible number, not one taken
+from the arms' datasheets. Verify against the real per-joint limits before
+relying on the ceiling to catch anything.
+
+**2. Jitter absorption is now the motion's job, not the buffer's.**
+With depth 0–1 the buffer no longer smooths ROS arrival jitter; what carries the
+arm across a late setpoint is the previous segment's remaining programmed travel.
+This should degrade gracefully, but it has not been measured under a loaded host.
+If the arm proves jittery on hardware, the WMX3 manual's endorsed pattern for
+this exact problem is `StartLinearIntplPos` → `ApiBuffer::Wait(DecelerationStarted)`
+→ next interpolation: still two blocks per setpoint, but the second is a
+condition-wait rather than a fixed sleep, so the buffer self-paces off the motion
+instead of a clock and the queue survives. `ApiBufferConditionType` also offers
+`RemainingTime`, `DistanceToTarget`, and `MotionStartedOverrideReady` as
+finer-grained variants.
+
+**3. Concurrency defects predating this change remain.**
+`endStream` runs on both the executor thread (via `onExecActive`) and the pump
+thread with no mutex, and `errString_` is a single shared scratch buffer written
+from three threads. Neither is affected by the pacing change, and both are still
+open. See the source review notes.

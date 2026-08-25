@@ -40,24 +40,29 @@ servo_stream_controller:
 
     api_buffer_channel: 0
     estop_buffer_channel: 1      # watch trigger routine; must differ from the above
-    # api_buffer_probe measured 396 bytes/setpoint (320 motion + 76 sleep), so
-    # 1 MB holds ~2650 setpoints = ~66 s of stream at 40 Hz. Ample.
+    # 320 bytes/setpoint with no pacing block, so 1 MB holds ~3200. The channel
+    # is a ring and reclaims space as blocks execute, so this does not bound how
+    # long a stream can run.
     api_buffer_size_mb: 1
 
-    # Queue depth is the latency/robustness dial. At Servo's 25 ms publish
-    # period, depth 2 costs ~50 ms of deliberate latency.
-    target_queue_depth: 2
-    # Microseconds, not engine cycles: api_buffer_probe measured USleep honouring
-    # sub-millisecond requests to within ~0.3%, so the pacing loop has full
-    # resolution and does not lose corrections to rounding.
+    # No queue, no pacing loop: one StartLinearIntplPos block per setpoint,
+    # executed as soon as it lands, overriding its predecessor mid-flight.
+    # queue_depth should read 0-1; anything standing above that means the engine
+    # is not keeping up.
+    #
+    # nominal_period_us is now the time each segment is given to cover its
+    # distance, which is what sets commanded velocity. It is the single most
+    # important value here. Too short over-drives: the axis reaches target early,
+    # decelerates to rest, and the stop-and-go this design exists to remove comes
+    # back. Too long under-drives and the arm lags the stream. Set it to Servo's
+    # actual publish period.
     nominal_period_us: 25000     # = Servo publish_period 0.025 s
-    period_clamp_lo_us: 20000    # pacing authority, +/-20%
-    period_clamp_hi_us: 30000
-    pacing_kp: 0.15              # 150 us of correction per setpoint of depth error
 
-    ros_queue_depth: 8           # drop-oldest above this; stale teleop is worthless
+    ros_queue_depth: 8           # bounds memory; the pump takes the newest and drops the rest
     starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
-    accel_ratio: 0.3             # blend spans ~30% of each segment
+    accel_ratio: 0.3             # accel phase spans 30% of a segment; retune with the surge data
+    max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against the arm's real joint limits.
+    min_step_rad: 1.0e-6         # below this a setpoint is a hold and is not recorded
     stop_on_error: true          # stop rather than skip a rejected setpoint
 
 gripper_controller:

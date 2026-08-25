@@ -19,20 +19,27 @@ servo_stream_controller:
 
     api_buffer_channel: 0
     estop_buffer_channel: 1      # watch trigger routine; must differ from the above
-    # 396 bytes/setpoint measured by api_buffer_probe, so 1 MB holds ~2650
-    # setpoints = ~66 s of stream at 40 Hz.
+    # 320 bytes/setpoint with no pacing block, so 1 MB holds ~3200. The channel
+    # is a ring and reclaims space as blocks execute, so this does not bound how
+    # long a stream can run.
     api_buffer_size_mb: 1
 
-    # Queue depth is the latency/robustness dial: 1 setpoint = 25 ms at 40 Hz.
-    target_queue_depth: 2
-    nominal_period_us: 25000     # must equal the publisher's period
-    period_clamp_lo_us: 20000    # pacing authority, +/-20%
-    period_clamp_hi_us: 30000
-    pacing_kp: 0.15              # 150 us of correction per setpoint of depth error
+    # There is no queue and no pacing loop: one StartLinearIntplPos block per
+    # setpoint, executed as soon as it lands. queue_depth should read 0-1.
+    #
+    # nominal_period_us is now the time each segment is given to cover its
+    # distance, which is what sets commanded velocity. It is the single most
+    # important value here. Too short over-drives: the axis reaches target early,
+    # decelerates to rest, and the stop-and-go this design exists to remove comes
+    # back. Too long under-drives and the arm lags the stream. Set it to the
+    # publisher's actual period.
+    nominal_period_us: 25000     # = 40 Hz publisher
 
-    ros_queue_depth: 8           # drop-oldest above this; stale teleop is worthless
+    ros_queue_depth: 8           # bounds memory; the pump takes the newest and drops the rest
     starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
-    accel_ratio: 0.3
+    accel_ratio: 0.3             # accel phase spans 30% of a segment; retune with the surge data
+    max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against this axis' real limit.
+    min_step_rad: 1.0e-6         # below this a setpoint is a hold and is not recorded
     stop_on_error: true
 
 # Publishes /joint_states, which servo_stream_test_source needs to centre its

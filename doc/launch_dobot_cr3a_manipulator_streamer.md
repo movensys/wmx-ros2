@@ -16,17 +16,16 @@ six-axis case is not yet validated, and there is a specific reason to expect it
 to behave differently.
 
 `StartLinearIntplPos` costs the engine roughly 1 ms of setup time per setpoint on
-one axis, which the pacing loop does not model and therefore absorbs as a
-standing queue-depth error of about 7 setpoints. If that cost scales with the
-number of axes in the command, six axes could need more correction than the loop
-can produce: its whole authority is
-`nominal_period_us − period_clamp_lo_us` = 5000 µs, reached at a depth error of
-33. Above that there is **no equilibrium** — depth grows until the buffer fills
-and setpoints start being rejected.
+one axis. There is no pacing loop to absorb that any more — each setpoint is one
+block, executed as soon as it lands — so the question is no longer whether the
+loop has an equilibrium but simply whether the engine can consume setpoints
+faster than they arrive. At 40 Hz that is a 25× margin on one axis. If the block
+cost scales with axis count, six axes shrink the margin, and depth standing
+above 0–1 is the symptom.
 
-So the first six-axis run is a **depth measurement, not a teleop session**. Do
-§4 before §5, and only pick up a teleop device once depth has been seen to
-settle.
+So the first six-axis run is a **measurement, not a teleop session**. Do §4
+before §5, and only pick up a teleop device once depth has been seen to stay at
+0–1 and the motion has been seen to be smooth.
 
 ---
 
@@ -76,8 +75,8 @@ otherwise double-command the arm. Do not start either by hand alongside this
 launch.
 
 Parameters come from the `servo_stream_controller:` block of
-`config/cr3a_manipulator_config.yaml` — all six axes, `target_queue_depth: 2`,
-`nominal_period_us: 25000`.
+`config/cr3a_manipulator_config.yaml` — all six axes, `nominal_period_us: 25000`,
+`max_joint_velocity: 3.14`.
 
 Expect, from the controller:
 
@@ -173,10 +172,10 @@ All six joints move together, ±20 mrad at 0.25 Hz, ramping in over 2 s. Watch
 
 | result | meaning | do |
 |---|---|---|
-| Settles anywhere and holds | The loop has an equilibrium. Note the value: depth × 25 ms is your latency. | Continue to §5 |
-| Settles around 9–10 | Same block cost as the single-axis case — it does not scale with axis count | Continue to §5 |
-| Settles at 30-plus | Near the clamp limit; little authority left for jitter | Usable but fragile — raise `period_clamp_lo_us` or add the block-cost feedforward first |
-| Never settles, keeps climbing | **No equilibrium.** The correction needed exceeds the loop's authority | Stop. Do not use the buffered path on six axes until this is fixed |
+| Stays at 0–1 | The engine keeps up on six axes | Continue to §5 |
+| Sits at 2–3 | Block cost scales with axis count; margin is thinner but workable | Continue to §5, and note it |
+| Trips `API buffer not draining` | Blocks are arriving faster than the engine executes them | Raise `nominal_period_us` to match the publisher's real rate first; if it persists, the six-axis block cost is the limit |
+| `Streaming but no blocks consumed` | Channel Active but the engine has stalled | Stop and diagnose — check axis state, servo-on, alarms |
 
 Also watch for `ROS queue full (8); dropping oldest setpoint` and any
 `Motion channel stopped (...)` — either means stop and diagnose.
@@ -208,8 +207,10 @@ service, and a composable container holding `servo_node`, configured from
 | `joint` scale | `0.5` | max joint speed for joint-jog, rad/s |
 | `check_collisions` | `true` | Servo-side protection, separate from the RT watch |
 
-If you change Servo's `publish_period`, change `nominal_period_us` to match —
-the pacing loop uses it as the reference arrival interval.
+If you change Servo's `publish_period`, change `nominal_period_us` to match — it
+is the time each segment is given to cover its distance, so it sets commanded
+velocity directly. Too short over-drives and brings back stop-and-go; too long
+under-drives and the arm lags the stream.
 
 ---
 

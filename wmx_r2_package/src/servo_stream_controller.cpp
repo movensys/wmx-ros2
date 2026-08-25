@@ -15,28 +15,61 @@
 //
 // The two nodes subscribe to the same topic and MUST NOT run together.
 //
-//   Servo topic -> ROS ring (bounded, drop-oldest) -> pump -> API buffer -> engine
+//   Servo topic -> ROS ring (latest-wins) -> pump -> API buffer -> engine
 //
-// Each setpoint becomes two blocks:
+// Each setpoint becomes ONE block:
 //   StartLinearIntplPos(6 axes)   coordinated, lands as a FastBlending override
-//   USleep(T)                     paces the queue, T trimmed to hold depth
 //
-// T is in microseconds and is NOT quantised to the engine cycle: api_buffer_probe
-// measured USleep tracking sub-millisecond requests to within ~0.3%. Measured
-// cost per setpoint is ~396 bytes (320 motion + 76 sleep), so a 1 MB channel
-// holds ~2650 setpoints, over a minute of stream at Servo's 40 Hz.
+// There is no pacing block. The WMX3 manual is explicit that buffered API
+// functions "will be executed as fast as possible" unless a Wait or Sleep is
+// recorded between them, and that motion APIs go at one per communication
+// cycle. So the channel drains at ~1 ms per setpoint against a 25 ms arrival
+// interval, and remainingBlockCount sits at 0-1 in steady state. The API buffer
+// is a real-time mailbox here, not a queue: it still moves the hand-off onto
+// the RT side and still carries the watch trigger, but it no longer stores
+// latency.
+//
+// That is deliberate. The earlier design recorded USleep(T) after each
+// interpolation, which held the channel for the whole period -- so every
+// segment ran to its target, decelerated to rest under endVelocity = 0, and sat
+// there until the sleep expired. FastBlending never engaged. The motion came
+// out stop-and-go (measured: ~8x peak velocity, ~24 velocity sign changes per
+// second), and the pacing loop could only cover the per-block setup cost by
+// holding a standing depth error of ~7 setpoints, which cost 225-250 ms of
+// latency instead of the intended 50 ms. Dropping the sleep lets each command
+// override its predecessor mid-flight, which is what FastBlending is for.
+//
+// Ride-through no longer comes from queue depth. Each block carries a full
+// period of programmed travel, so a late setpoint continues the previous
+// segment rather than leaving a gap; and if the publisher dies outright, the
+// last interpolation decelerates to rest on its own within one period, before
+// starvation_timeout_ms even fires.
+//
+// Cost is 320 bytes per setpoint, so a 1 MB channel holds ~3200. The channel is
+// a ring and reclaims space as blocks execute, so stream length is not bounded
+// by buffer size.
 //
 // Notes on the motion model:
 //   - LinearIntplOverrideType is FastBlending, so consecutive interpolations
 //     blend rather than stop-and-go.
 //   - profile.startingVelocity = 0 lets the override inherit the current
-//     velocity; continuity comes from the blend. Setting endVelocity per
-//     segment would fight it, so we do not.
+//     velocity; continuity comes from the blend. endVelocity = 0 is kept
+//     deliberately: it is what brings the arm to rest if the stream dies.
 //   - LinearIntplProfileCalcMode is read from axis[0], so the axis array is
 //     always filled in joint_axes order. That ordering is semantics, not style.
-//   - Segment distance is measured from the PREVIOUS SETPOINT, not from the
-//     current commanded position: with a queue, posCmd lags the setpoints in
-//     flight and would overestimate every step.
+//   - Segment distance is measured from the CURRENT COMMANDED POSITION, not
+//     from the previous setpoint. That is the reverse of the buffered design,
+//     and it follows from the queue being gone. With commands overriding
+//     mid-flight, posCmd never reaches the previous target, so a setpoint-to-
+//     setpoint delta understates the distance still to cover and the lag grows
+//     without bound -- nothing in the loop would ever notice. Measuring from
+//     posCmd is self-correcting: the further behind the axis is, the higher the
+//     velocity it asks for. Depth 0-1 is what makes posCmd trustworthy again;
+//     it is one block plus one cycle stale, ~1-2 ms.
+//   - The pump takes the NEWEST setpoint and drops the rest. Feeding a backlog
+//     in would execute every entry within a few cycles, each overriding the
+//     last, leaving the survivor to cover the whole backlog's distance in one
+//     period -- a velocity spike proportional to the backlog.
 
 #include <algorithm>
 #include <atomic>
@@ -69,6 +102,7 @@ using wmx3Api::ApiBufferStatus;
 using wmx3Api::ApiBufferWatch;
 using wmx3Api::AxisSelection;
 using wmx3Api::CoreMotion;
+using wmx3Api::Config;
 using wmx3Api::CoreMotionStatus;
 using wmx3Api::DeviceType;
 using wmx3Api::ErrorCode;
@@ -79,8 +113,17 @@ using wmx3Api::WMX3Api;
 
 namespace
 {
-constexpr int kBlocksPerSetpoint = 2;      // StartLinearIntplPos + USleep
+// One block per setpoint: StartLinearIntplPos, nothing else.
 constexpr auto kPumpIdleWait = std::chrono::milliseconds(5);
+
+// remainingBlockCount should sit at 0-1 with no pacing block, so anything
+// standing above this means the engine is not keeping up with arrivals.
+constexpr int kDepthWarnBlocks = 3;
+
+// Consecutive status polls with cumulativeBlockCount unchanged while streaming
+// before the engine is called stalled. Polls are 100 ms and arrivals are 40 Hz,
+// so a healthy poll sees ~4 blocks consumed and three empty ones is not noise.
+constexpr int kStalledPollCount = 3;
 constexpr auto kStatusPollPeriod = std::chrono::milliseconds(100);   // ~10 Hz
 
 // Backoff after the motion channel stops on a fault. Without this the pump
@@ -140,14 +183,12 @@ private:
   int channelMotion_ = 0;
   int channelEstop_ = 1;
   int bufferSizeMb_ = 5;
-  int targetQueueDepth_ = 2;
-  int nominalPeriodUs_ = 25000;
-  int clampLoUs_ = 20000;
-  int clampHiUs_ = 30000;
-  double pacingKp_ = 0.15;
+  int nominalPeriodUs_ = 25000;      // time each segment is given to cover its step
   int rosQueueDepth_ = 8;
   int starvationTimeoutMs_ = 75;
   double accelRatio_ = 0.3;
+  double maxJointVelocity_ = 3.0;    // rad/s ceiling, applied as a uniform scale
+  double minStepRad_ = 1e-6;         // below this the setpoint is a hold, not a move
   bool stopOnError_ = true;
 
   std::map<std::string, int> axisByName_;
@@ -159,12 +200,18 @@ private:
   std::condition_variable ringCv_;
   std::deque<std::vector<double>> ring_;      // targets, in joint_axes order
 
-  std::vector<double> lastTarget_;            // origin of the next segment
-  bool haveLastTarget_ = false;
-  bool streaming_ = false;                    // buffer Active and being fed
-  long long blocksAdded_ = 0;                 // stands in for the SDK's missing
-                                              // GetCumulativeBlockCount
+  std::vector<double> step_;                  // scratch: target - posCmd, per axis
+
+  // Atomic because pollStatus reads it from the executor thread to decide
+  // whether a stalled cumulative block count is worth reporting.
+  std::atomic<bool> streaming_{false};        // buffer Active and being fed
+
   long long lastErrorCount_ = 0;             // ApiBufferStatus::errorCount is long long
+
+  // Liveness. remainingBlockCount is 0-1 by design now, so depth no longer
+  // shows whether the engine is consuming; the cumulative count does.
+  long long lastCumulativeBlocks_ = 0;
+  int stalledPolls_ = 0;
 
   int consecutiveFaults_ = 0;                       // channel stops without progress
   std::chrono::steady_clock::time_point faultUntil_{};   // suppress restarts until
@@ -201,8 +248,8 @@ private:
   void pumpLoop();
   bool beginStream();
   void endStream(const char * reason, bool controlled_stop);
-  bool recordSetpoint(const std::vector<double> & target, int period_us);
-  int pacePeriodUs(int depth) const;
+  bool recordSetpoint(const std::vector<double> & target);
+  void logMotionParams();
   void pollStatus();
 };
 
@@ -278,14 +325,12 @@ void ServoStreamController::setRosParameter()
   this->declare_parameter<int>("api_buffer_channel", 0);
   this->declare_parameter<int>("estop_buffer_channel", 1);
   this->declare_parameter<int>("api_buffer_size_mb", 5);
-  this->declare_parameter<int>("target_queue_depth", 2);
   this->declare_parameter<int>("nominal_period_us", 25000);
-  this->declare_parameter<int>("period_clamp_lo_us", 20000);
-  this->declare_parameter<int>("period_clamp_hi_us", 30000);
-  this->declare_parameter<double>("pacing_kp", 0.15);
   this->declare_parameter<int>("ros_queue_depth", 8);
   this->declare_parameter<int>("starvation_timeout_ms", 75);
   this->declare_parameter<double>("accel_ratio", 0.3);
+  this->declare_parameter<double>("max_joint_velocity", 3.0);
+  this->declare_parameter<double>("min_step_rad", 1e-6);
   this->declare_parameter<bool>("stop_on_error", true);
 
   this->get_parameter("joint_axes", jointAxes_);
@@ -294,14 +339,12 @@ void ServoStreamController::setRosParameter()
   this->get_parameter("api_buffer_channel", channelMotion_);
   this->get_parameter("estop_buffer_channel", channelEstop_);
   this->get_parameter("api_buffer_size_mb", bufferSizeMb_);
-  this->get_parameter("target_queue_depth", targetQueueDepth_);
   this->get_parameter("nominal_period_us", nominalPeriodUs_);
-  this->get_parameter("period_clamp_lo_us", clampLoUs_);
-  this->get_parameter("period_clamp_hi_us", clampHiUs_);
-  this->get_parameter("pacing_kp", pacingKp_);
   this->get_parameter("ros_queue_depth", rosQueueDepth_);
   this->get_parameter("starvation_timeout_ms", starvationTimeoutMs_);
   this->get_parameter("accel_ratio", accelRatio_);
+  this->get_parameter("max_joint_velocity", maxJointVelocity_);
+  this->get_parameter("min_step_rad", minStepRad_);
   this->get_parameter("stop_on_error", stopOnError_);
 
   for (size_t i = 0; i < jointNames_.size() && i < jointAxes_.size(); ++i) {
@@ -312,6 +355,27 @@ void ServoStreamController::setRosParameter()
   axisSel_.axisCount = jointAxes_.size();
   for (size_t i = 0; i < jointAxes_.size(); ++i) {
     axisSel_.axis[i] = static_cast<int>(jointAxes_[i]);
+  }
+
+  step_.assign(jointAxes_.size(), 0.0);
+
+  // These three feed a division or a velocity directly, so a bad value is a
+  // divide-by-zero or an unbounded command rather than a mis-tuned stream.
+  if (accelRatio_ <= 0.0) {
+    RCLCPP_ERROR(
+      this->get_logger(), "accel_ratio must be > 0 (got %.3f); using 0.3", accelRatio_);
+    accelRatio_ = 0.3;
+  }
+  if (nominalPeriodUs_ <= 0) {
+    RCLCPP_ERROR(
+      this->get_logger(), "nominal_period_us must be > 0 (got %d); using 25000", nominalPeriodUs_);
+    nominalPeriodUs_ = 25000;
+  }
+  if (maxJointVelocity_ <= 0.0) {
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "max_joint_velocity must be > 0 (got %.3f); using 3.0", maxJointVelocity_);
+    maxJointVelocity_ = 3.0;
   }
 
   if (channelMotion_ == channelEstop_) {
@@ -334,14 +398,12 @@ void ServoStreamController::setRosParameter()
     channelMotion_, channelEstop_);
   RCLCPP_INFO(this->get_logger(), "api_buffer_size_mb: %d", bufferSizeMb_);
   RCLCPP_INFO(
-    this->get_logger(), "target_queue_depth: %d setpoints (~%d ms of latency)",
-    targetQueueDepth_, targetQueueDepth_ * nominalPeriodUs_ / 1000);
-  RCLCPP_INFO(
-    this->get_logger(), "period: %d us, clamp [%d, %d] us, Kp %.2f (%.0f us per setpoint of error)",
-    nominalPeriodUs_, clampLoUs_, clampHiUs_, pacingKp_, pacingKp_ * 1000.0);
-  RCLCPP_INFO(this->get_logger(), "ros_queue_depth: %d", rosQueueDepth_);
+    this->get_logger(), "nominal_period_us: %d (time given to each segment)", nominalPeriodUs_);
+  RCLCPP_INFO(this->get_logger(), "ros_queue_depth: %d (latest-wins)", rosQueueDepth_);
   RCLCPP_INFO(this->get_logger(), "starvation_timeout_ms: %d", starvationTimeoutMs_);
   RCLCPP_INFO(this->get_logger(), "accel_ratio: %.2f", accelRatio_);
+  RCLCPP_INFO(this->get_logger(), "max_joint_velocity: %.3f rad/s", maxJointVelocity_);
+  RCLCPP_INFO(this->get_logger(), "min_step_rad: %.2e", minStepRad_);
   RCLCPP_INFO(this->get_logger(), "stop_on_error: %s", stopOnError_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
@@ -534,6 +596,56 @@ bool ServoStreamController::setupBuffers()
   return true;
 }
 
+// Neither of these is set by this node — both are inherited from the axis
+// configuration — and both decide whether the motion model in this file's
+// header actually holds. linearIntplProfileCalcMode governs whether the
+// per-axis velocity limits recordSetpoint computes are in force at all;
+// linearIntplOverrideType decides whether consecutive setpoints blend or
+// stop-and-go, which is the whole premise of dropping the pacing block. Read
+// them once and put them in the log so a run can be diagnosed after the fact.
+void ServoStreamController::logMotionParams()
+{
+  if (jointAxes_.empty()) {
+    return;
+  }
+
+  // SystemParam carries per-axis arrays for all 128 axes; too big for the stack.
+  auto param = std::make_unique<Config::SystemParam>();
+  if (cmCtl_->config->GetParam(param.get()) != ErrorCode::None) {
+    RCLCPP_WARN(this->get_logger(), "Could not read motion params; calc mode unknown");
+    return;
+  }
+
+  static const char * const kCalcMode[] = {"AxisLimit", "MatchSlowestAxis", "MatchFarthestAxis"};
+  static const char * const kOverride[] = {"Smoothing", "Blending", "FastBlending"};
+  const auto name = [](const char * const * table, int size, int value) {
+      return (value >= 0 && value < size) ? table[value] : "unknown";
+    };
+
+  const auto & mp = param->motionParam[jointAxes_[0]];
+  RCLCPP_INFO(
+    this->get_logger(),
+    "axis %d motion params: calcMode=%s, overrideType=%s, apiWaitUntilMotionStart=%s",
+    static_cast<int>(jointAxes_[0]),
+    name(kCalcMode, 3, mp.linearIntplProfileCalcMode),
+    name(kOverride, 3, mp.linearIntplOverrideType),
+    mp.apiWaitUntilMotionStart ? "true" : "false");
+
+  if (mp.linearIntplOverrideType == Config::LinearIntplOverrideType::Smoothing) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "linearIntplOverrideType is Smoothing; streaming needs Blending or FastBlending "
+      "for consecutive setpoints to override rather than run to completion");
+  }
+  if (mp.linearIntplProfileCalcMode != Config::LinearIntplProfileCalcMode::AxisLimit) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "linearIntplProfileCalcMode is %s, not AxisLimit; the per-axis velocity and "
+      "acceleration limits this node computes may not govern the profile",
+      name(kCalcMode, 3, mp.linearIntplProfileCalcMode));
+  }
+}
+
 void ServoStreamController::runInitSequence()
 {
   // Flags are set per-device, not after both: if the second attach fails the
@@ -562,6 +674,8 @@ void ServoStreamController::runInitSequence()
     initializing_ = false;
     return;
   }
+
+  logMotionParams();
 
   pumpThread_ = std::thread(&ServoStreamController::pumpLoop, this);
 
@@ -674,45 +788,9 @@ void ServoStreamController::jointTrajectoryCallback(
   ringCv_.notify_one();
 }
 
-// Adaptive playout: trim the sleep to hold the queue at target depth.
-//
-// Worked in MICROSECONDS, not engine cycles. api_buffer_probe measured USleep
-// honouring sub-millisecond requests to within ~0.3% (1333 us -> 1341 us), so
-// there is no 1 kHz quantisation to round to. Rounding to whole cycles used to
-// swallow the correction entirely: at Kp 0.15 the depth error had to exceed
-// 3.34 setpoints before lround moved the period at all, which left the loop
-// unable to ever speed up — depth cannot go far enough below target to trip it.
-//
-// pacing_kp keeps its original meaning: cycles of adjustment per setpoint of
-// depth error, hence the x1000 to microseconds.
-//
-// SIGN: the period is what the ENGINE spends per setpoint, while the pump feeds
-// at whatever rate ROS delivers. So depth grows when the period exceeds the
-// arrival interval and shrinks when it is shorter — meaning a depth BELOW target
-// calls for a LONGER period, not a shorter one. The error term is therefore
-// (target - depth). Getting this backwards makes the loop positive-feedback:
-// it pins depth at 0 (nothing ever buffered, so no jitter absorption at all)
-// and lets a backlog run away instead of draining it.
-int ServoStreamController::pacePeriodUs(int depth) const
-{
-  const double adjust = pacingKp_ * static_cast<double>(targetQueueDepth_ - depth) * 1000.0;
-  const int us = static_cast<int>(std::lround(nominalPeriodUs_ + adjust));
-  return std::max(clampLoUs_, std::min(clampHiUs_, us));
-}
-
 bool ServoStreamController::beginStream()
 {
-  // Seed the segment origin from the arm's current commanded position. Every
-  // later segment measures from the previous setpoint instead.
-  CoreMotionStatus cmStatus;
-  cmCtl_->GetStatus(&cmStatus);
-
-  lastTarget_.assign(jointAxes_.size(), 0.0);
-  for (size_t i = 0; i < jointAxes_.size(); ++i) {
-    lastTarget_[i] = cmStatus.axesStatus[jointAxes_[i]].posCmd;
-  }
-  haveLastTarget_ = true;
-
+  // No origin to seed: every segment reads posCmd for itself at record time.
   if (!check(abCtl_->Clear(channelMotion_), "ApiBuffer::Clear")) {
     return false;
   }
@@ -720,8 +798,11 @@ bool ServoStreamController::beginStream()
     return false;
   }
 
-  blocksAdded_ = 0;
-  lastErrorCount_ = 0;
+  // lastErrorCount_ is deliberately NOT reset here. errorCount is cumulative
+  // for the life of the channel — the manual is explicit that channel statuses
+  // are cleared by FreeApiBuffer, not by Clear — so zeroing it would make the
+  // next pollStatus re-report the entire error history on every stream restart.
+  // It belongs to pollStatus alone.
   streaming_ = true;
   streamStartedAt_ = std::chrono::steady_clock::now();
   RCLCPP_INFO_THROTTLE(
@@ -739,7 +820,6 @@ void ServoStreamController::endStream(const char * reason, bool controlled_stop)
     return;
   }
   streaming_ = false;
-  haveLastTarget_ = false;
 
   // The pump only writes observedDepth_ on its success path, so without this
   // the depth topic keeps republishing the last in-flight count for as long as
@@ -760,15 +840,65 @@ void ServoStreamController::endStream(const char * reason, bool controlled_stop)
     "Stream ended: %s%s", reason, controlled_stop ? " (axes stopped)" : "");
 }
 
-bool ServoStreamController::recordSetpoint(const std::vector<double> & target, int period_us)
+bool ServoStreamController::recordSetpoint(const std::vector<double> & target)
 {
   const size_t count = jointAxes_.size();
-  const double period_s = period_us / 1000000.0;
+  const double period_s = nominalPeriodUs_ / 1000000.0;
+
+  // Origin is the live commanded position, not the previous setpoint — see the
+  // motion-model note at the top of this file. Costs one extra cyclic read per
+  // setpoint, which at 40 Hz is nothing, and it is what keeps lag from
+  // accumulating now that every command lands as a mid-flight override.
+  // Not check(): that decodes with ApiBuffer::ErrorToString, which yields an
+  // empty string for a CoreMotion code. Same reason blockErrorToString exists.
+  CoreMotionStatus cmStatus;
+  const int status_err = cmCtl_->GetStatus(&cmStatus);
+  if (status_err != ErrorCode::None) {
+    char buf[256];
+    blockErrorToString(status_err, buf, sizeof(buf));
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "CoreMotion::GetStatus failed, cannot place segment origin. Error=%d (%s)",
+      status_err, buf);
+    return false;
+  }
+
+  double peak = 0.0;                  // largest per-axis step, in radians
+  for (size_t i = 0; i < count; ++i) {
+    step_[i] = std::fabs(target[i] - cmStatus.axesStatus[jointAxes_[i]].posCmd);
+    peak = std::max(peak, step_[i]);
+  }
+
+  // A hold, not a move. Recording it would ask for maxVelocity = 0 on every
+  // axis, which the engine rejects — and with stop_on_error that stops the
+  // channel, so holding a pose would read as a fault. Servo publishes the held
+  // position whenever its input is centred, so this is a normal case.
+  if (peak < minStepRad_) {
+    return true;
+  }
+
+  // Uniform scale rather than a per-axis clamp: clamping one axis while the
+  // others run free would bend the coordinated path. Slowing the whole move
+  // keeps it straight and only costs time.
+  const double peak_velocity = peak / period_s;
+  const double scale = (peak_velocity > maxJointVelocity_) ?
+    peak_velocity / maxJointVelocity_ : 1.0;
+  if (scale > 1.0) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "Setpoint needs %.3f rad/s, over max_joint_velocity %.3f; scaling the move by %.2f "
+      "(the arm will lag the stream)", peak_velocity, maxJointVelocity_, 1.0 / scale);
+  }
+
+  // Floor so an axis with nothing to do still carries a positive limit. A zero
+  // limit on one axis of a coordinated move is the same rejection risk as the
+  // all-zero case above, and since that axis has no distance to cover the floor
+  // never binds.
+  const double min_velocity = minStepRad_ / period_s;
 
   intpl_.axisCount = count;
   for (size_t i = 0; i < count; ++i) {
-    const double step = std::fabs(target[i] - lastTarget_[i]);
-    const double velocity = step / period_s;
+    const double velocity = std::max(step_[i] / period_s / scale, min_velocity);
     const double accel = velocity / (accelRatio_ * period_s);
 
     intpl_.axis[i] = static_cast<int>(jointAxes_[i]);
@@ -789,21 +919,17 @@ bool ServoStreamController::recordSetpoint(const std::vector<double> & target, i
     return false;
   }
   const int motion_err = cmRec_->motion->StartLinearIntplPos(&intpl_);
-  const int sleep_err =
-    (motion_err == ErrorCode::None) ? abRec_->USleep(period_us) : ErrorCode::None;
   abRec_->EndRecordBufferChannel();
 
-  if (motion_err != ErrorCode::None || sleep_err != ErrorCode::None) {
-    const int e = (motion_err != ErrorCode::None) ? motion_err : sleep_err;
-    wmxRec_.ErrorToString(e, errString_, sizeof(errString_));
+  if (motion_err != ErrorCode::None) {
+    char buf[256];
+    wmxRec_.ErrorToString(motion_err, buf, sizeof(buf));
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
-      "Failed to record setpoint. Error=%d (%s)", e, errString_);
+      "Failed to record setpoint. Error=%d (%s)", motion_err, buf);
     return false;
   }
 
-  blocksAdded_ += kBlocksPerSetpoint;
-  lastTarget_ = target;
   return true;
 }
 
@@ -815,6 +941,7 @@ void ServoStreamController::pumpLoop()
   while (running_.load() && rclcpp::ok()) {
     std::vector<double> target;
     bool have_target = false;
+    size_t skipped = 0;
 
     {
       std::unique_lock<std::mutex> lock(ringMtx_);
@@ -824,10 +951,22 @@ void ServoStreamController::pumpLoop()
         });
       }
       if (!ring_.empty()) {
-        target = std::move(ring_.front());
-        ring_.pop_front();
+        // Latest wins, and the rest are dropped here rather than fed in. With
+        // no pacing block the engine would execute a whole backlog within a few
+        // cycles, each entry overriding the last, and the survivor would be
+        // asked to cover the backlog's entire distance in one period — a
+        // velocity spike exactly when the system is already behind.
+        target = std::move(ring_.back());
+        skipped = ring_.size() - 1;
+        ring_.clear();
         have_target = true;
       }
+    }
+
+    if (skipped > 0) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "Pump behind: skipped %zu setpoint(s) to take the newest", skipped);
     }
 
     if (!running_.load()) {
@@ -918,16 +1057,19 @@ void ServoStreamController::pumpLoop()
       continue;
     }
 
-    const int depth = static_cast<int>(st.remainingBlockCount / kBlocksPerSetpoint);
+    // One block per setpoint, so this is blocks and setpoints at once. It sits
+    // at 0-1 in steady state and is a "can the engine keep up" signal now, not
+    // a latency dial.
+    const int depth = static_cast<int>(st.remainingBlockCount);
     observedDepth_.store(depth);
 
-    if (depth > 4 * targetQueueDepth_) {
+    if (depth > kDepthWarnBlocks) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 1000,
-        "API buffer backlog: %d setpoints in flight (target %d)", depth, targetQueueDepth_);
+        "API buffer not draining: %d blocks in flight (expected 0-1)", depth);
     }
 
-    if (recordSetpoint(target, pacePeriodUs(depth))) {
+    if (recordSetpoint(target)) {
       last_sent = std::chrono::steady_clock::now();
       // Forgive the fault history only once the stream has actually survived a
       // while. Resetting on a successful record instead would pin the backoff
@@ -961,6 +1103,23 @@ void ServoStreamController::pollStatus()
     return;
   }
 
+  // Liveness. remainingBlockCount is 0-1 by design, so an empty buffer proves
+  // nothing either way — what proves the engine is still consuming is the
+  // cumulative count advancing. A channel that is Active but not executing
+  // (an axis stuck mid-interpolation, say) shows up here and nowhere else.
+  const long long consumed = st.cumulativeBlockCount - lastCumulativeBlocks_;
+  lastCumulativeBlocks_ = st.cumulativeBlockCount;
+  if (streaming_.load() && consumed == 0) {
+    if (++stalledPolls_ >= kStalledPollCount) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "Streaming but no blocks consumed in %d ms; engine may be stalled",
+        stalledPolls_ * static_cast<int>(kStatusPollPeriod.count()));
+    }
+  } else {
+    stalledPolls_ = 0;
+  }
+
   if (st.errorCount == lastErrorCount_) {
     return;
   }
@@ -974,9 +1133,8 @@ void ServoStreamController::pollStatus()
     blockErrorToString(st.errorLog[i].errorCode, errString_, sizeof(errString_));
     RCLCPP_ERROR(
       this->get_logger(),
-      "API buffer error at block %lld (setpoint ~%lld): %d (%s)",
+      "API buffer error at block %lld (one block per setpoint): %d (%s)",
       st.errorLog[i].execBlockNumber,
-      st.errorLog[i].execBlockNumber / kBlocksPerSetpoint,
       st.errorLog[i].errorCode, errString_);
   }
   if (missed > reportable) {

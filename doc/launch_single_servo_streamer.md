@@ -9,7 +9,8 @@ For what the node is and what every parameter means, see
 **What this exercises**
 
 - The full streaming path: command source → ROS ring → pump → API buffer → engine
-- The pacing loop holding the buffer at `target_queue_depth`
+- The buffer draining to depth 0–1 with no pacing block, and the engine
+  consuming setpoints as fast as they land
 - The starvation path (controlled stop when commands stop arriving)
 - Clean restart after a starvation teardown
 
@@ -227,13 +228,14 @@ ros2 run wmx_r2_package servo_stream_test_source --ros-args --params-file $BENCH
 | `queue_depth` | settles at **2–3** and stays there |
 | the axis | does not move |
 
-A flicker between two adjacent depth values is normal: depth is
-`remainingBlockCount / 2`, so one block of sampling phase flips the reported
-integer.
+A flicker between 0 and 1 is normal: depth is `remainingBlockCount`, so a block
+in flight at sampling time flips the reported integer.
 
-**Do not proceed until depth settles at target here.** This is the measurement
-that says the pacing loop is healthy, because a no-op interpolation block costs
-the engine almost nothing and so leaves the loop nothing to fight.
+**Do not proceed until depth reads 0 with no fault here.** On a pure hold, every
+setpoint should fall under `min_step_rad` once tracking converges, so no blocks
+are recorded at all. The thing being confirmed is that the channel stays Active
+and error-free while idle — not that a queue has formed, because there is no
+queue to form.
 
 ---
 
@@ -340,8 +342,8 @@ ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis "{index: [0], data
 
 | test | pass |
 |---|---|
-| Hold (§6) | Depth settles at `target_queue_depth`; axis still; no warnings |
-| Motion (§7) | Axis tracks the waveform; depth stable (9–10 today); no faults, no dropped setpoints |
+| Hold (§6) | Depth reads 0; axis still; no warnings and no fault |
+| Motion (§7) | Axis tracks the waveform; depth stays 0–1; no faults, no dropped setpoints. Motion should be **smooth** — the surging measured under the old `USleep` design is what this change targets |
 | Starvation (§8) | Starve warning, controlled stop, depth → 0 and stays |
 | Restart (§9) | Single clean `Stream started`, no fault, repeatable |
 
