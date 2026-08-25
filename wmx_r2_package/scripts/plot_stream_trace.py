@@ -21,6 +21,12 @@
 #   python3 plot_stream_trace.py trace.csv --joint 3
 #   python3 plot_stream_trace.py trace.csv --all           # 6-up overview
 #   python3 plot_stream_trace.py trace.csv --show          # interactive window
+#   python3 plot_stream_trace.py trace.csv --cycles 0      # whole capture
+#
+# By default only ONE cycle of the move is plotted and measured. Over a 30 s
+# capture the three traces sit on top of each other and the lag between them is
+# a line width; over one period it is visible. --cycles takes any number of
+# periods, 0 for the whole capture.
 
 import argparse
 import csv
@@ -73,7 +79,11 @@ def measure(ref, sig, t):
     """
     e = sig - ref
     v = np.gradient(sig, t)
-    tau = float(np.dot(e, v) / np.dot(v, v))
+    vv = float(np.dot(v, v))
+    if vv <= 0:                                    # axis held still, no slope to fit
+        return {"lag": 0.0, "gain": float("nan"), "r2": float("nan"),
+                "rms": float(np.sqrt((e ** 2).mean()))}
+    tau = float(np.dot(e, v) / vv)
     resid = e - tau * v
     r2 = 1.0 - float(np.var(resid) / np.var(e)) if np.var(e) > 0 else 1.0
     ratio = float(sig.std() / ref.std()) if ref.std() > 0 else float("nan")
@@ -81,13 +91,73 @@ def measure(ref, sig, t):
             "rms": float(np.sqrt((resid ** 2).mean()))}
 
 
-def analyse(data, j):
+def cycle_window(t, y, cycles):
+    """Index slice spanning `cycles` periods of y, centred in the capture.
+
+    The period comes from the dominant FFT bin rather than from velocity sign
+    changes: the setpoint arrives as a 40 Hz staircase, so its numerical
+    derivative flips sign on quantisation steps and crossing-counting picks up
+    flips that are not there, while the spectrum of a single-tone move has an
+    unambiguous peak. The window is snapped to an upward mean-crossing so the
+    cycle starts mid-stroke instead of at an arbitrary phase, and is taken from
+    the middle of the capture so the start-up transient is not what you see.
+    """
+    if cycles <= 0 or len(t) < 4:
+        return slice(None)
+    d = y - y.mean()
+    dt = (t[-1] - t[0]) / (len(t) - 1)
+    mag = np.abs(np.fft.rfft(d))
+    mag[0] = 0.0                                   # ignore the DC bin
+    f = float(np.fft.rfftfreq(len(d), dt)[mag.argmax()])
+    if f <= 0:
+        return slice(None)
+    span = cycles / f
+    if span >= t[-1] - t[0]:                       # capture is shorter than asked
+        return slice(None)
+    mid = t[0] + (t[-1] - t[0] - span) / 2
+    up = np.flatnonzero((d[:-1] <= 0) & (d[1:] > 0))
+    if not len(up):
+        return slice(int(np.searchsorted(t, mid)),
+                     min(int(np.searchsorted(t, mid + span)) + 1, len(t)))
+    i0 = int(up[np.abs(t[up] - mid).argmin()])
+    # Snap the end to a crossing too, so the window is an exact whole number of
+    # cycles rather than an FFT bin's approximation of one -- at 27 s of capture
+    # the bin spacing alone costs ~3% of a 0.25 Hz period, which shows up as a
+    # cycle that visibly fails to close. Only when a crossing is actually near
+    # where the period says it should be; a fractional --cycles lands between
+    # crossings and keeps the FFT estimate.
+    end = t[i0] + span
+    near = up[np.abs(t[up] - end) < 0.25 / f]
+    i1 = int(near[np.abs(t[near] - end).argmin()]) if len(near) else \
+        int(np.searchsorted(t, end))
+    return slice(i0, min(i1 + 1, len(t)))
+
+
+def analyse(data, j, cycles=1.0):
     t_state, _ = data['pos_cmd']
     t = t_state - t_state[0]
     cmd = data['pos_cmd'][1][:, j]
     act = data['actual_pos'][1][:, j]
     st_t, st_y = data['setpoint'][0] - t_state[0], data['setpoint'][1][:, j]
     setp = align(t, st_t, st_y)
+
+    # align() clamps to the setpoint endpoints outside its range, so any span
+    # where axis state exists but the setpoint does not would read as a flat
+    # command that was never sent -- fake error, and it inflates the measured
+    # lag. Keep only the overlap.
+    keep = (t >= st_t[0]) & (t <= st_t[-1])
+    if keep.sum() < 4:
+        raise SystemExit('setpoint and axis-state timestamps barely overlap; '
+                         'are the trajectory header stamps being set?')
+    t, setp, cmd, act = t[keep], setp[keep], cmd[keep], act[keep]
+
+    # The window is taken from whichever joint moves most, not from joint j:
+    # a joint that is holding still has no dominant frequency, so its own
+    # spectrum would pick a window out of the noise floor and every row of the
+    # table -- and every panel of --all -- would cover a different span.
+    jref = int(data['setpoint'][1].std(axis=0).argmax())
+    w = cycle_window(t, align(t, st_t, data['setpoint'][1][:, jref]), cycles)
+    t, setp, cmd, act = t[w], setp[w], cmd[w], act[w]
 
     m = {}
     m['buffer'] = measure(setp, cmd, t)            # setpoint -> pos_cmd
@@ -104,7 +174,11 @@ def analyse(data, j):
     return t, setp, cmd, act, v_cmd, v_act, m
 
 
-def style(ax, ylabel):
+def style(ax, ylabel, headroom=0.0):
+    # A one-cycle window fills the panel, so the in-axes legends end up sitting
+    # on the peaks; headroom buys them space without moving them out.
+    if headroom:
+        ax.margins(y=headroom)
     ax.grid(True, color=C_GRID, lw=0.8)
     ax.set_axisbelow(True)
     for s in ('top', 'right'):
@@ -115,17 +189,18 @@ def style(ax, ylabel):
     ax.set_ylabel(ylabel, fontsize=9, color=C_MUTE)
 
 
-def plot_joint(data, j, path, show):
-    t, setp, cmd, act, v_cmd, v_act, m = analyse(data, j)
+def plot_joint(data, j, path, show, cycles):
+    t, setp, cmd, act, v_cmd, v_act, m = analyse(data, j, cycles)
     fig, ax = plt.subplots(3, 1, figsize=(11, 8.5), sharex=True,
                            gridspec_kw={'height_ratios': [3, 2, 2]})
-    fig.suptitle(f'joint{j + 1} — commanded position vs motion executed by WMX3',
+    fig.suptitle(f'joint{j + 1} — commanded position vs motion executed by WMX3'
+                 f'   [{t[0]:.2f}–{t[-1]:.2f} s of the capture]',
                  fontsize=13, x=0.02, ha='left')
 
     ax[0].plot(t, setp, color=C_SET, lw=1.6, label='setpoint (ROS)')
     ax[0].plot(t, cmd, color=C_CMD, lw=1.6, label='pos_cmd (WMX3 interpolator)')
     ax[0].plot(t, act, color=C_ACT, lw=1.6, label='actual_pos (encoder)')
-    style(ax[0], 'position [rad]')
+    style(ax[0], 'position [rad]', headroom=0.16)
     ax[0].legend(frameon=False, fontsize=9, loc='upper right', ncol=3)
 
     ax[1].plot(t, (cmd - setp) * 1000, color=C_CMD, lw=1.4,
@@ -133,13 +208,13 @@ def plot_joint(data, j, path, show):
     ax[1].plot(t, (act - cmd) * 1000, color=C_ACT, lw=1.4,
                label=f'servo loop: pos_cmd → actual  ({m["servo"]["lag"] * 1000:.1f} ms)')
     ax[1].axhline(0, color=C_AXIS, lw=1)
-    style(ax[1], 'error [mrad]')
+    style(ax[1], 'error [mrad]', headroom=0.22)
     ax[1].legend(frameon=False, fontsize=9, loc='upper right')
 
     ax[2].plot(t, v_cmd, color=C_CMD, lw=1.4, label='pos_cmd velocity')
     ax[2].plot(t, v_act, color=C_ACT, lw=1.4, label='encoder velocity')
     ax[2].axhline(0, color=C_AXIS, lw=1)
-    style(ax[2], 'velocity [rad/s]')
+    style(ax[2], 'velocity [rad/s]', headroom=0.16)
     ax[2].set_xlabel('time [s]', fontsize=9, color=C_MUTE)
     ax[2].legend(frameon=False, fontsize=9, loc='upper right', ncol=2)
 
@@ -150,13 +225,15 @@ def plot_joint(data, j, path, show):
         plt.show()
 
 
-def plot_all(data, path, show):
+def plot_all(data, path, show, cycles):
     n = data['pos_cmd'][1].shape[1]
-    fig, axes = plt.subplots(n, 1, figsize=(11, 2.0 * n), sharex=True)
+    fig, axes = plt.subplots(n, 1, figsize=(11, 2.0 * n), sharex=True,
+                             squeeze=False)
+    axes = axes[:, 0]
     fig.suptitle('All joints — setpoint vs pos_cmd vs actual_pos',
                  fontsize=13, x=0.02, ha='left')
     for j in range(n):
-        t, setp, cmd, act, _, _, _ = analyse(data, j)
+        t, setp, cmd, act, _, _, _ = analyse(data, j, cycles)
         ax = axes[j]
         ax.plot(t, setp, color=C_SET, lw=1.2)
         ax.plot(t, cmd, color=C_CMD, lw=1.2)
@@ -170,12 +247,16 @@ def plot_all(data, path, show):
         plt.show()
 
 
-def report(data):
+def report(data, cycles):
     n = data['pos_cmd'][1].shape[1]
-    print(f'\n{"joint":>5} {"buf lag":>8} {"srv lag":>8} {"tot lag":>8} '
+    t = analyse(data, 0, cycles)[0]
+    print(f'\nwindow: {t[0]:.2f}-{t[-1]:.2f} s of the capture '
+          f'({t[-1] - t[0]:.2f} s, {len(t)} samples)'
+          + ('' if cycles <= 0 else f', {cycles:g} cycle(s)'))
+    print(f'{"joint":>5} {"buf lag":>8} {"srv lag":>8} {"tot lag":>8} '
           f'{"gain":>7} {"delay%":>7} {"resid":>8} {"peak v":>8} {"flips/s":>8}')
     for j in range(n):
-        _, _, _, _, _, _, m = analyse(data, j)
+        _, _, _, _, _, _, m = analyse(data, j, cycles)
         print(f'{"j" + str(j + 1):>5} '
               f'{m["buffer"]["lag"] * 1000:7.1f}m {m["servo"]["lag"] * 1000:7.1f}m '
               f'{m["total"]["lag"] * 1000:7.1f}m {m["total"]["gain"]:7.4f} '
@@ -195,6 +276,9 @@ def main():
     p.add_argument('csv')
     p.add_argument('--joint', type=int, default=1, help='1-based')
     p.add_argument('--all', action='store_true', help='6-up position overview')
+    p.add_argument('--cycles', type=float, default=1.0,
+                   help='periods of the move to plot and measure, '
+                        '0 for the whole capture (default: 1)')
     p.add_argument('--out', default=None)
     p.add_argument('--show', action='store_true')
     a = p.parse_args()
@@ -209,12 +293,15 @@ def main():
             f'{a.csv} has no rows for: {", ".join(sorted(missing))}. '
             'Was the command source publishing while it was captured?')
 
+    n = data['pos_cmd'][1].shape[1]
     if a.all:
-        plot_all(data, a.out or 'stream_trace_all.png', a.show)
+        plot_all(data, a.out or 'stream_trace_all.png', a.show, a.cycles)
     else:
+        if not 1 <= a.joint <= n:
+            raise SystemExit(f'--joint must be 1..{n}, got {a.joint}')
         plot_joint(data, a.joint - 1,
-                   a.out or f'stream_trace_j{a.joint}.png', a.show)
-    report(data)
+                   a.out or f'stream_trace_j{a.joint}.png', a.show, a.cycles)
+    report(data, a.cycles)
 
 
 if __name__ == '__main__':

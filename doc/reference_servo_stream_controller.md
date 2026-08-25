@@ -437,7 +437,17 @@ python3 src/wmx-r2/wmx_r2_package/scripts/capture_stream_trace.py \
 # plot one joint + print the metric table for all six
 python3 src/wmx-r2/wmx_r2_package/scripts/plot_stream_trace.py trace.csv --joint 1
 python3 src/wmx-r2/wmx_r2_package/scripts/plot_stream_trace.py trace.csv --all
+
+# the whole capture instead of a single cycle
+python3 src/wmx-r2/wmx_r2_package/scripts/plot_stream_trace.py trace.csv --cycles 0
 ```
+
+The plot shows **one cycle** of the move by default, taken from the middle of
+the capture so the start-up transient is not in frame. Across a 30 s run the
+three traces overlap into a single band and the lag between them is a line
+width; across one period it is visible. `--cycles N` widens the window, and the
+metric table is computed over whatever window is plotted, so the numbers and the
+picture always agree.
 
 `plot_stream_trace.py` needs `matplotlib` and `numpy`; the capture script needs
 neither. Both take `--help`.
