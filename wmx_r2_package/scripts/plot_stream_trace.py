@@ -55,37 +55,44 @@ def align(t_ref, t_src, y_src):
     return np.interp(t_ref, t_src, y_src)
 
 
-def lag_gain(ref, sig, dt):
-    """Cross-correlate to find delay, then fit gain and residual at that delay."""
-    r = ref - ref.mean()
-    s = sig - sig.mean()
-    best, best_score = 0, -np.inf
-    for lag in range(0, int(0.6 / dt)):
-        m = len(r) - lag
-        if m < 10:
-            break
-        score = float(np.dot(r[:m], s[lag:lag + m])) / m
-        if score > best_score:
-            best, best_score = lag, score
-    m = len(r) - best
-    gain = float(np.dot(r[:m], s[best:best + m]) / np.dot(r[:m], r[:m]))
-    resid = s[best:best + m] - gain * r[:m]
-    return best * dt, gain, float(np.sqrt((resid ** 2).mean()))
+def measure(ref, sig, t):
+    """Delay, amplitude ratio, and how much of the error is *only* delay.
+
+    NOT cross-correlation. For a slow signal the correlation peak is nearly
+    flat -- on a 0.25 Hz sine it sits within 0.01% of its maximum across a
+    30 ms span, so the argmax is decided by noise and the estimate lands tens
+    of milliseconds off, quantised to the feedback period on top of that.
+
+    Instead: a pure delay tau makes error(t) = ref(t-tau) - ref(t) ~= -tau*v(t),
+    so the least-squares slope of error against velocity IS the delay, at
+    sub-sample resolution and with no assumption about the waveform. The r2 of
+    that fit reports how much of the error the delay actually accounts for --
+    when it is high the delay figure is trustworthy and there is no distortion
+    to explain; when it is low, something other than delay is happening and the
+    delay number alone is misleading.
+    """
+    e = sig - ref
+    v = np.gradient(sig, t)
+    tau = float(np.dot(e, v) / np.dot(v, v))
+    resid = e - tau * v
+    r2 = 1.0 - float(np.var(resid) / np.var(e)) if np.var(e) > 0 else 1.0
+    ratio = float(sig.std() / ref.std()) if ref.std() > 0 else float("nan")
+    return {"lag": abs(tau), "gain": ratio, "r2": r2,
+            "rms": float(np.sqrt((resid ** 2).mean()))}
 
 
 def analyse(data, j):
     t_state, _ = data['pos_cmd']
     t = t_state - t_state[0]
-    dt = float(np.median(np.diff(t)))
     cmd = data['pos_cmd'][1][:, j]
     act = data['actual_pos'][1][:, j]
     st_t, st_y = data['setpoint'][0] - t_state[0], data['setpoint'][1][:, j]
     setp = align(t, st_t, st_y)
 
     m = {}
-    m['buffer'] = lag_gain(setp, cmd, dt)          # setpoint -> pos_cmd
-    m['servo'] = lag_gain(cmd, act, dt)            # pos_cmd  -> actual_pos
-    m['total'] = lag_gain(setp, act, dt)           # setpoint -> actual_pos
+    m['buffer'] = measure(setp, cmd, t)            # setpoint -> pos_cmd
+    m['servo'] = measure(cmd, act, t)              # pos_cmd  -> actual_pos
+    m['total'] = measure(setp, act, t)             # setpoint -> actual_pos
 
     v_cmd = np.gradient(cmd, t)
     v_act = np.gradient(act, t)
@@ -122,9 +129,9 @@ def plot_joint(data, j, path, show):
     ax[0].legend(frameon=False, fontsize=9, loc='upper right', ncol=3)
 
     ax[1].plot(t, (cmd - setp) * 1000, color=C_CMD, lw=1.4,
-               label=f'buffer path: setpoint → pos_cmd  ({m["buffer"][0] * 1000:.0f} ms)')
+               label=f'buffer path: setpoint → pos_cmd  ({m["buffer"]["lag"] * 1000:.1f} ms)')
     ax[1].plot(t, (act - cmd) * 1000, color=C_ACT, lw=1.4,
-               label=f'servo loop: pos_cmd → actual  ({m["servo"][0] * 1000:.0f} ms)')
+               label=f'servo loop: pos_cmd → actual  ({m["servo"]["lag"] * 1000:.1f} ms)')
     ax[1].axhline(0, color=C_AXIS, lw=1)
     style(ax[1], 'error [mrad]')
     ax[1].legend(frameon=False, fontsize=9, loc='upper right')
@@ -165,18 +172,22 @@ def plot_all(data, path, show):
 
 def report(data):
     n = data['pos_cmd'][1].shape[1]
-    print(f'\n{"joint":>6} {"buf lag":>8} {"servo lag":>10} {"tot lag":>8} '
-          f'{"gain":>7} {"buf rms":>9} {"servo rms":>10} {"peak v":>8} {"flips/s":>8}')
+    print(f'\n{"joint":>5} {"buf lag":>8} {"srv lag":>8} {"tot lag":>8} '
+          f'{"gain":>7} {"delay%":>7} {"resid":>8} {"peak v":>8} {"flips/s":>8}')
     for j in range(n):
         _, _, _, _, _, _, m = analyse(data, j)
-        print(f'{"j" + str(j + 1):>6} '
-              f'{m["buffer"][0] * 1000:7.0f}m {m["servo"][0] * 1000:9.0f}m '
-              f'{m["total"][0] * 1000:7.0f}m {m["total"][1]:7.4f} '
-              f'{m["buffer"][2] * 1000:8.3f}m {m["servo"][2] * 1000:9.3f}m '
+        print(f'{"j" + str(j + 1):>5} '
+              f'{m["buffer"]["lag"] * 1000:7.1f}m {m["servo"]["lag"] * 1000:7.1f}m '
+              f'{m["total"]["lag"] * 1000:7.1f}m {m["total"]["gain"]:7.4f} '
+              f'{m["total"]["r2"] * 100:6.1f}% {m["total"]["rms"] * 1000:7.3f}m '
               f'{m["peak_v"]:8.4f} {m["flips"] / m["dur"]:8.2f}')
-    print('\nlag in ms, rms in mrad, peak v in rad/s')
-    print('buf = setpoint -> pos_cmd (streaming path)   '
-          'servo = pos_cmd -> actual (tuning)')
+    print('\nlag in ms, resid in mrad, peak v in rad/s')
+    print('buf   = setpoint -> pos_cmd   (the streaming path -- this node)')
+    print('srv   = pos_cmd  -> actual    (the servo loop -- tuning)')
+    print('delay% = share of the total error explained by pure delay; near 100'
+          ' means no distortion,')
+    print('         only latency, and resid is what is left once delay is'
+          ' removed.')
 
 
 def main():
