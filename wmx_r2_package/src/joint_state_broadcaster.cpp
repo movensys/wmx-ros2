@@ -358,8 +358,6 @@ bool JointStateBroadcaster::callSetAxesService(
   const std::vector<int64_t> & data)
 {
   for (int attempt = 1; attempt <= kServiceMaxRetries; attempt++) {
-    // The server advertises only while it is active, so a miss here means it has
-    // not activated yet: wait again on the next attempt instead of giving up.
     if (!client->wait_for_service(kServiceWaitTimeout)) {
       RCLCPP_WARN(
         this->get_logger(), "Service %s not available yet (attempt %d/%d)",

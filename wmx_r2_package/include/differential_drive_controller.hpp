@@ -64,8 +64,7 @@ struct DiffDriveModel
 
   BodyVel forwardDelta(double d_phi_left, double d_phi_right) const
   {
-    // DiffDriveModel::forward, not std::forward (cpplint IWYU false positive):
-    return forward({d_phi_left, d_phi_right});  // NOLINT(build/include_what_you_use)
+    return forward({d_phi_left, d_phi_right}); 
   }
 };
 
@@ -100,7 +99,7 @@ public:
 
   void odometryPoseCalculation(double ds, double dtheta)
   {
-    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}  // ignore invalid steps
+    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}
     const double half = 0.5 * dtheta;
     const double mid = pose_.theta + half;
     const double k = ds * sinc(half);
@@ -134,14 +133,14 @@ class OdomDeltaAccumulator
 public:
   void odometryDeltaAccumulation(const BodyVel & vel, double dt)
   {
-    if (!std::isfinite(dt) || dt <= 0.0) {return;}  // ignore invalid/negative dt
+    if (!std::isfinite(dt) || dt <= 0.0) {return;} 
     delta_.linear += std::abs(vel.linear * dt);
     delta_.angular += std::abs(vel.angular * dt);
   }
 
   void odometryDeltaAccumulation(double ds, double dtheta)
   {
-    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}  // ignore invalid steps
+    if (!std::isfinite(ds) || !std::isfinite(dtheta)) {return;}
     delta_.linear += std::abs(ds);
     delta_.angular += std::abs(dtheta);
   }

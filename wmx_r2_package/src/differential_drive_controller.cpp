@@ -334,14 +334,14 @@ void DifferentialDriveController::controlStep()
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
       "Servo alarm on. Please clear servo alarm");
-    lastSentValid_ = false;  // force a resend once the alarm clears
+    lastSentValid_ = false;  
     return;
   }
   if (!left.servoOn || !right.servoOn) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 1000,
       "Servo off. Please set servo on");
-    lastSentValid_ = false;  // force a resend once servo is back on
+    lastSentValid_ = false;  
     return;
   }
 
@@ -398,7 +398,7 @@ void DifferentialDriveController::publishOdometry(
   msg.pose.pose.orientation = yawToQuaternion(pose.theta);
 
   msg.twist.twist.linear.x = body.linear;
-  msg.twist.twist.linear.y = 0.0;     // diff-drive: no lateral motion
+  msg.twist.twist.linear.y = 0.0;  
   msg.twist.twist.angular.z = body.angular;
 
   constexpr double kSmall = 0.01;
