@@ -425,6 +425,36 @@ consumed while streaming produces `Streaming but no blocks consumed`.
 
 ### Recording a run for analysis
 
+Two scripts in `wmx_r2_package/scripts/` do the capture and the plot. Use them in
+preference to a bag when the question is "how well is it tracking" — the bag is
+for keeping a run, these are for measuring one.
+
+```bash
+# capture: setpoint, pos_cmd and actual_pos on one clock
+python3 src/wmx-r2/wmx_r2_package/scripts/capture_stream_trace.py \
+  --seconds 30 --out trace.csv
+
+# plot one joint + print the metric table for all six
+python3 src/wmx-r2/wmx_r2_package/scripts/plot_stream_trace.py trace.csv --joint 1
+python3 src/wmx-r2/wmx_r2_package/scripts/plot_stream_trace.py trace.csv --all
+```
+
+`plot_stream_trace.py` needs `matplotlib` and `numpy`; the capture script needs
+neither. Both take `--help`.
+
+**The three traces are the point.** Capturing only the setpoint and the encoder
+cannot tell you where a tracking error came from; adding WMX3's own interpolator
+output splits it:
+
+| split | what it measures | if the error lives here |
+|---|---|---|
+| `setpoint` → `pos_cmd` | the API buffer and interpolation path | this node's problem |
+| `pos_cmd` → `actual_pos` | the servo loop underneath it | tuning; no amount of work on the streaming path will move it |
+
+That split is what known issue 3 could not previously resolve.
+
+A bag still makes sense for keeping a run around:
+
 ```bash
 ros2 bag record -o stage_test \
   /joint_states \
@@ -432,9 +462,8 @@ ros2 bag record -o stage_test \
   /servo_stream_controller/queue_depth
 ```
 
-Commanded-vs-measured cross-correlation on those three topics gives the true
-transport latency, which is the check that does not depend on trusting the depth
-topic. `stage5_buffered/` in the repo root is an example recording.
+`stage5_buffered/` in the repo root is an example recording, taken under the
+earlier `USleep`-paced design.
 
 ---
 

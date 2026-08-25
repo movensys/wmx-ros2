@@ -11,9 +11,14 @@ i.e. `servo_stream_controller` in place of `joint_position_controller`.
 
 ## ⚠ Read this before the first six-axis run
 
-Every characterisation of the buffered path so far was done on **one axis**. The
-six-axis case is not yet validated, and there is a specific reason to expect it
-to behave differently.
+Every characterisation of the buffered path so far was done on **one axis**, and
+those measurements predate the removal of the pacing block — so at the time of
+writing **neither** the one-axis nor the six-axis case has been verified on
+hardware against the current design. Run
+[launch_single_servo_streamer.md](launch_single_servo_streamer.md) end to end
+first; this guide assumes it passed.
+
+There is also a specific reason to expect six axes to behave differently.
 
 `StartLinearIntplPos` costs the engine roughly 1 ms of setup time per setpoint on
 one axis. There is no pacing loop to absorb that any more — each setpoint is one
@@ -83,11 +88,24 @@ Expect, from the controller:
 ```
 Recorded e-stop routine into channel 1
 Watch enabled on 6 axes, trigger routine on channel 1
+axis 0 motion params: calcMode=AxisLimit, overrideType=FastBlending, apiWaitUntilMotionStart=false
 servo_stream_controller is ready
 ```
 
 `Watch enabled on 6 axes` confirms the RT-side safety net covers the whole arm.
 No `Stream started` yet — the stream begins on the first setpoint.
+
+**Check the `motion params` line before going further.** Neither value is set by
+this node; both come from the axis parameter file, and both decide whether the
+streaming design holds at all:
+
+| field | wanted | if it differs |
+|---|---|---|
+| `overrideType` | `FastBlending` (or `Blending`) | `Smoothing` means consecutive setpoints do not override each other, so the motion will be stop-and-go no matter what this node does. Everything in §4 would be measuring the wrong thing. The node warns. |
+| `calcMode` | `AxisLimit` | Anything else means the per-axis velocity and acceleration limits the node computes may not govern the profile. The node warns. |
+
+It reports `axis[0]` only, since that is the axis whose calc mode governs the
+whole interpolation.
 
 ---
 
@@ -156,8 +174,9 @@ ros2 topic echo /servo_stream_controller/queue_depth
 
 | result | meaning |
 |---|---|
-| Depth settles at **2–3** | Good. A no-op interpolation block costs the engine almost nothing, so the loop has nothing to fight — this only proves the plumbing works, not that motion will be fine. |
-| Depth climbs and keeps climbing | Stop. Even the no-op path cannot be paced; do not command motion. |
+| Depth reads **0**, no warnings, no fault | Good. On a pure hold every setpoint falls under `min_step_rad` once tracking converges, so no blocks are recorded at all. What this confirms is that the channel stays Active and error-free while idle — it does not prove motion will be fine. |
+| Depth reads 0 but `Motion channel stopped` appears | Stop. The channel is faulting with nothing being commanded; read the cause in the message before going near motion. |
+| Depth standing above 0–1 | Unexpected on a hold — blocks are being recorded when they should not be. Check `min_step_rad` against the arm's encoder noise. |
 
 ### 4b. Motion test — the measurement that matters
 
@@ -177,8 +196,14 @@ All six joints move together, ±20 mrad at 0.25 Hz, ramping in over 2 s. Watch
 | Trips `API buffer not draining` | Blocks are arriving faster than the engine executes them | Raise `nominal_period_us` to match the publisher's real rate first; if it persists, the six-axis block cost is the limit |
 | `Streaming but no blocks consumed` | Channel Active but the engine has stalled | Stop and diagnose — check axis state, servo-on, alarms |
 
-Also watch for `ROS queue full (8); dropping oldest setpoint` and any
-`Motion channel stopped (...)` — either means stop and diagnose.
+Also watch for `Pump behind: skipped N setpoint(s)` — occasional entries are
+normal on a loaded host, sustained ones mean the pump thread is being starved —
+and for any `Motion channel stopped (...)`, which always means stop and diagnose.
+
+**Judge the motion itself, not only the depth.** All six joints should travel
+smoothly. Visible 40 Hz stepping is the defect this path was rebuilt to remove,
+so if it is still there, go back to the `overrideType` check in §2 before
+tuning anything.
 
 Ctrl-C the test source when done. Expect `Servo stream starved (>75 ms);
 stopping axes`, then `Stream ended`, and depth → 0.
@@ -187,7 +212,7 @@ stopping axes`, then `Stream ended`, and depth → 0.
 
 ## 5. MoveIt and Servo — terminal 2
 
-Only once §4b settled.
+Only once §4b passed: depth at 0–1 and the motion visibly smooth.
 
 ```bash
 ros2 launch movensys_manipulator_moveit_config moveit.launch.py use_sim_time:=false
@@ -275,12 +300,15 @@ ros2 topic echo /moveit2_trajectory/execution_active
 
 | observation | verdict |
 |---|---|
-| `queue_depth` steady at target | healthy |
-| `queue_depth` steady but well above target | the known block-cost error; latency is depth × 25 ms |
-| `API buffer backlog: N setpoints in flight` at 1 Hz | consequence of the above, not a separate fault |
+| `queue_depth` at 0–1 while streaming | healthy — 0 is the expected value, not a symptom |
+| `queue_depth` at 0 with the stream down | expected, and indistinguishable from healthy on this topic alone — depth is no longer a liveness signal |
 | Start/stop cycles as jogging pauses | expected, see §6 |
-| Motion in visible surges rather than smoothly | known and unresolved on one axis; see Known issues in the reference doc |
-| `queue_depth` climbing without settling | **fault** — no equilibrium, stop |
+| Occasional `Pump behind: skipped N setpoint(s)` | expected on a loaded host |
+| `Setpoint needs X rad/s, over max_joint_velocity` | the arm is catching up from behind, or the ceiling is set too low for this motion |
+| `API buffer not draining: N blocks in flight` | **fault** — the engine is not consuming as fast as setpoints arrive |
+| `Streaming but no blocks consumed in N ms` | **fault** — channel Active but the engine has stalled mid-interpolation |
+| Motion in visible surges rather than smoothly | **fault** — this is what removing the pacing block was meant to fix; check `overrideType` from §2 |
+| Arm lag that *grows* over a run | **fault** — the `posCmd`-referenced segment origin is not doing its job |
 | `ROS queue full ... dropping oldest` | **fault** — the pump is not keeping up |
 | `Motion channel stopped (watch fired ...)` | **fault** — a watched axis went servo-off, alarmed, offline, or hit a limit |
 

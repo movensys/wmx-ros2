@@ -192,8 +192,19 @@ Attached WMX3 device 'servo_stream_rec'
 Attached WMX3 device 'servo_stream_ctl'
 Recorded e-stop routine into channel 1
 Watch enabled on 1 axes, trigger routine on channel 1
+axis 0 motion params: calcMode=AxisLimit, overrideType=FastBlending, apiWaitUntilMotionStart=false
 servo_stream_controller is ready
 ```
+
+**Read the `motion params` line before going on.** Neither value is set by this
+node — both are inherited from the axis parameter file loaded in step 2 — and
+both decide whether the streaming design holds:
+
+| field | wanted | if it differs |
+|---|---|---|
+| `overrideType` | `FastBlending` (or `Blending`) | `Smoothing` means consecutive setpoints do not override, and the motion will be stop-and-go no matter what this node does. The node warns. |
+| `calcMode` | `AxisLimit` | Anything else means the per-axis velocity and acceleration limits this node computes may not govern the profile at all. The node warns. |
+| `apiWaitUntilMotionStart` | either | `true` costs a full communication cycle per block, which matters only if depth stops reading 0–1. |
 
 **It stops there, and that is correct.** The stream starts on the first setpoint,
 so `Stream started` does not appear until step 6. If it stays at
@@ -253,23 +264,30 @@ Amplitude ramps in over `ramp_seconds` (2 s), so there is no step at start. Step
 up gradually — 0.02, then 0.05 — watching depth and the arm at each level. The
 node hard-caps amplitude at 0.5 rad.
 
-**Expected, and not a failure:**
+**Expected:**
 
-- Depth climbs to **9–10** over ~5 s and stays there
-- `API buffer backlog: 9 setpoints in flight (target 2)` repeating at 1 Hz
-
-That is the known unmodelled interpolation-block cost: the loop is
-proportional-only, so it can only supply that correction by holding a standing
-depth error of about 7 setpoints. It costs 225–250 ms of latency instead of the
-intended 50 ms. See Known issues in the reference doc.
+- `queue_depth` flickering between **0 and 1** and never standing higher
+- **No** repeating warnings of any kind
+- The axis moving **smoothly** — this is the point of the test, and it is best
+  judged by hand and ear before it is judged by a bag file. Under the old
+  `USleep` design the axis advanced in visible 40 Hz steps with ~24 velocity
+  reversals a second; it should now travel continuously.
 
 **Real failures:**
 
 | symptom | meaning |
 |---|---|
-| Depth climbs past ~33 and keeps going | The required correction exceeds the loop's clamp authority; it has no equilibrium |
-| `ROS queue full (8); dropping oldest setpoint` | The pump cannot keep up with arrivals |
+| `API buffer not draining: N blocks in flight` | The engine is not consuming as fast as setpoints arrive. Check `nominal_period_us` against the source's real rate, and `apiWaitUntilMotionStart` from step 4 |
+| `Streaming but no blocks consumed in N ms` | Channel Active but the engine has stalled mid-interpolation |
+| `Pump behind: skipped N setpoint(s)` | Occasional is fine on a loaded host; sustained means the pump thread is starved |
+| `Setpoint needs X rad/s, over max_joint_velocity` | Either the arm is catching up from behind, or `max_joint_velocity` is too low for this motion |
+| Motion still visibly stepping | The change did not achieve its purpose — check `overrideType` from step 4 first, then see the fallback in the reference doc |
 | Any `Motion channel stopped (...)` | A watch trip or a rejected block — read the cause in the message |
+
+**Watch for lag specifically.** The `posCmd`-referenced segment origin is what
+should keep the arm from falling progressively behind the waveform. A steady
+phase offset is expected; an offset that *grows* over 60 s is not, and would mean
+the origin change is not doing its job.
 
 ---
 
@@ -314,10 +332,23 @@ ros2 bag record -o bench_$(date +%H%M) \
   /servo_stream_controller/queue_depth
 ```
 
-Record 60 s or more at a fixed amplitude. Cross-correlating commanded against
-measured position gives the true transport latency — the check that does not
-depend on trusting the depth topic. Expect roughly 290 ms at depth 9 and 315 ms
-at depth 10.
+Record 60 s or more at a fixed amplitude. This is the run that decides whether
+the change worked, since §7 only establishes that nothing is obviously broken.
+
+Compare against the pre-change baseline in `stage5_buffered/`, which was taken at
+the same 0.25 Hz, ±50 mrad, 40 Hz:
+
+| measurement | before (`USleep`) | expected now |
+|---|---|---|
+| Transport latency (commanded vs measured cross-correlation) | ~290 ms | **~25–50 ms** |
+| Peak velocity vs the per-segment `maxVelocity` the node computes | ~8× | **~1×** |
+| Velocity sign changes per second during smooth motion | ~24 | **~0** |
+| Position gain / rms residual | 1.015 / 3.1 mrad | no worse |
+
+The velocity columns are the primary criterion — latency falling is expected and
+easy, but the surging was the defect the pacing block was actually causing.
+Differentiate `/joint_states` position to get velocity; do not rely on a velocity
+field unless you have confirmed the broadcaster populates it.
 
 ---
 
