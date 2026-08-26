@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -64,7 +65,7 @@ struct DiffDriveModel
 
   BodyVel forwardDelta(double d_phi_left, double d_phi_right) const
   {
-    return forward({d_phi_left, d_phi_right}); 
+    return forward({d_phi_left, d_phi_right});
   }
 };
 
@@ -133,7 +134,7 @@ class OdomDeltaAccumulator
 public:
   void odometryDeltaAccumulation(const BodyVel & vel, double dt)
   {
-    if (!std::isfinite(dt) || dt <= 0.0) {return;} 
+    if (!std::isfinite(dt) || dt <= 0.0) {return;}
     delta_.linear += std::abs(vel.linear * dt);
     delta_.angular += std::abs(vel.angular * dt);
   }
@@ -331,6 +332,7 @@ private:
   void cmdStampedCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
   void controlStep();
   void commandWheels(double omegaLeft, double omegaRight);
+  void stopWheelsOnFault();
   bool startVel(int axis, double omega);
 
   void publishOmega(const diff_drive::WheelOmega & enc);

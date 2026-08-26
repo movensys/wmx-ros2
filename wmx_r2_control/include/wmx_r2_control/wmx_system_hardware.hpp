@@ -63,6 +63,7 @@ public:
     bool & communicating, std::string & message);
 
   int startVel(int axis, double omega, std::string & message);
+  int stop(int axis, std::string & message);
   int setServoOn(int axis, int newStatus, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
 
@@ -123,6 +124,12 @@ public:
   hardware_interface::CallbackReturn on_cleanup(
     const rclcpp_lifecycle::State & previous_state) override;
 
+  hardware_interface::CallbackReturn on_error(
+    const rclcpp_lifecycle::State & previous_state) override;
+
+  hardware_interface::CallbackReturn on_shutdown(
+    const rclcpp_lifecycle::State & previous_state) override;
+
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
 
   std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
@@ -134,6 +141,8 @@ public:
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
 private:
+  void stopAllAxes();
+
   rclcpp::Logger logger_ = rclcpp::get_logger("WmxSystemHardware");
   rclcpp::Clock clock_{RCL_STEADY_TIME};
 

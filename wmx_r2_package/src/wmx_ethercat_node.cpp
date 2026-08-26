@@ -3,6 +3,8 @@
 
 #include "wmx_ethercat_node.hpp"
 
+#include <algorithm>
+
 using std::placeholders::_1;
 using std::placeholders::_2;
 
@@ -272,6 +274,10 @@ WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_cleanup(const rclcpp_lifecyc
 WmxEtherCatNode::CallbackReturn WmxEtherCatNode::on_shutdown(
   const rclcpp_lifecycle::State & previous_state)
 {
+  if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+    on_deactivate(previous_state);
+  }
+
   return on_cleanup(previous_state);
 }
 
@@ -279,7 +285,8 @@ void WmxEtherCatNode::getMasterInfoCallback(
   const std::shared_ptr<wmx_r2_message::srv::EcatGetMasterInfo::Request> request,
   std::shared_ptr<wmx_r2_message::srv::EcatGetMasterInfo::Response> response)
 {
-  wmx3Api::ecApi::EcMasterInfo info;
+  auto infoBuffer = std::make_unique<wmx3Api::ecApi::EcMasterInfo>();
+  wmx3Api::ecApi::EcMasterInfo & info = *infoBuffer;
   std::string message;
 
   if (api_->getMasterInfo(request->master_id, info, message) != ErrorCode::None) {
@@ -306,8 +313,16 @@ void WmxEtherCatNode::getMasterInfoCallback(
   response->over_cycle = info.statisticsInfo.overCycle;
   response->num_of_slaves = static_cast<int32_t>(info.numOfSlaves);
 
+  const unsigned int slaveCount = std::min<unsigned int>(
+    info.numOfSlaves, wmx3Api::ecApi::constants::maxSlaves);
+  if (slaveCount != info.numOfSlaves) {
+    RCLCPP_WARN(
+      this->get_logger(), "Master reported %u slaves, reading the first %u only",
+      info.numOfSlaves, slaveCount);
+  }
+
   // Per-slave arrays
-  for (unsigned int i = 0; i < info.numOfSlaves; ++i) {
+  for (unsigned int i = 0; i < slaveCount; ++i) {
     const wmx3Api::ecApi::EcSlaveInfo & s = info.slaves[i];
     response->slave_ids.push_back(static_cast<int32_t>(s.id));
     response->slave_states.push_back(static_cast<int32_t>(s.state));

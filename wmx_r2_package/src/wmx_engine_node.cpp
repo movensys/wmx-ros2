@@ -99,7 +99,13 @@ int WmxEngineNodeApi::startEngine(std::string & message)
 
         if (!config_.wmxParamFilePath.empty()) {
           std::string paramMessage;
-          importAndSetAll(config_.wmxParamFilePath, paramMessage);
+          const int paramErr = importAndSetAll(config_.wmxParamFilePath, paramMessage);
+          if (paramErr != wmx3Api::ErrorCode::None) {
+            message = "Refusing to start communication with default parameters. " + paramMessage;
+            RCLCPP_ERROR(logger_, "%s", message.c_str());
+            wmx3Lib_.CloseDevice();
+            return paramErr;
+          }
         }
 
         return startCommunication(message);

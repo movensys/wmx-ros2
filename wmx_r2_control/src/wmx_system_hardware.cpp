@@ -183,6 +183,21 @@ int WmxSystemHardwareApi::startVel(int axis, double omega, std::string & message
   return ErrorCode::None;
 }
 
+int WmxSystemHardwareApi::stop(int axis, std::string & message)
+{
+  std::lock_guard<std::mutex> lock(deviceMutex_);
+
+  const int err = cm_.motion->Stop(axis);
+  if (err != ErrorCode::None) {
+    message = "Stop failed on axis " + std::to_string(axis) + ". Error=" +
+      std::to_string(err) + " (" + errorToString(err) + ")";
+    return err;
+  }
+
+  message = "Stopped axis " + std::to_string(axis);
+  return ErrorCode::None;
+}
+
 int WmxSystemHardwareApi::setServoOn(int axis, int newStatus, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
@@ -402,24 +417,59 @@ hardware_interface::CallbackReturn WmxSystemHardware::on_activate(
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn WmxSystemHardware::on_deactivate(
-  const rclcpp_lifecycle::State & /*previous_state*/)
+void WmxSystemHardware::stopAllAxes()
 {
+  if (!api_) {
+    return;
+  }
+
   std::string message;
 
   for (const WmxJoint & joint : joints_) {
     if (joint.mode == JointMode::Velocity) {
       api_->startVel(joint.axis, 0.0, message);
+    } else {
+      api_->stop(joint.axis, message);
     }
   }
 
-  if (autoServoOn_) {
-    for (const WmxJoint & joint : joints_) {
-      api_->setServoOn(joint.axis, 0, message);
-    }
+  if (!autoServoOn_) {
+    return;
   }
+
+  for (const WmxJoint & joint : joints_) {
+    api_->setServoOn(joint.axis, 0, message);
+  }
+}
+
+hardware_interface::CallbackReturn WmxSystemHardware::on_deactivate(
+  const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  stopAllAxes();
 
   RCLCPP_INFO(logger_, "WmxSystemHardware deactivated");
+  return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn WmxSystemHardware::on_error(
+  const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  stopAllAxes();
+
+  RCLCPP_ERROR(logger_, "WmxSystemHardware entered the error state, all axes stopped");
+  return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn WmxSystemHardware::on_shutdown(
+  const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  stopAllAxes();
+
+  if (api_) {
+    api_->closeDevice();
+  }
+
+  RCLCPP_INFO(logger_, "WmxSystemHardware shut down");
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 

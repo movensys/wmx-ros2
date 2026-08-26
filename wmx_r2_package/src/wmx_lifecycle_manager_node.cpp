@@ -20,6 +20,8 @@ constexpr std::chrono::seconds kTransitionTimeout{30};
 constexpr std::chrono::seconds kQueryServiceWaitTimeout{1};
 constexpr std::chrono::seconds kQueryTimeout{5};
 
+constexpr int kEngineMissLimit = 3;
+
 bool isDeviceLevelNode(const std::string & fullName)
 {
   const std::size_t start = fullName.find_last_of('/');
@@ -258,6 +260,26 @@ bool LifecycleManager::isKnownTransition(const std::string & transition)
          transition == "bringdown";
 }
 
+bool LifecycleManager::isDownwardTransition(const std::string & transition)
+{
+  return transition == "deactivate" || transition == "cleanup" ||
+         transition == "shutdown" || transition == "bringdown";
+}
+
+void LifecycleManager::markManual(const std::string & node, bool goingDown)
+{
+  handledNodes_.insert(node);
+
+  if (!goingDown) {
+    return;
+  }
+
+  RCLCPP_WARN(
+    logger_,
+    "%s was taken down by hand. Automatic bring-up stays off for it until it is brought up "
+    "by hand or the engine restarts.", node.c_str());
+}
+
 std::string LifecycleManager::knownTransitions()
 {
   return "configure, activate, deactivate, cleanup, shutdown, bringup or bringdown";
@@ -297,8 +319,7 @@ bool LifecycleManager::applyTransitionToAll(
 {
   nodes = discover();
 
-  const bool goingDown = transition == "deactivate" || transition == "cleanup" ||
-    transition == "shutdown" || transition == "bringdown";
+  const bool goingDown = isDownwardTransition(transition);
   if (goingDown) {
     std::reverse(nodes.begin(), nodes.end());
   }
@@ -311,7 +332,7 @@ bool LifecycleManager::applyTransitionToAll(
 
     if (applyTransition(node, transition, nodeMessage)) {
       RCLCPP_INFO(logger_, "%s", nodeMessage.c_str());
-      markHandled(node);
+      markManual(node, goingDown);
     } else {
       RCLCPP_ERROR(logger_, "%s", nodeMessage.c_str());
       allSucceeded = false;
@@ -435,18 +456,29 @@ bool WmxLifecycleManagerNode::isEngineCommunicating()
 void WmxLifecycleManagerNode::discoveryStep()
 {
   if (isEngineCommunicating()) {
+    engineMissCount_ = 0;
     nodesAreUp_ = true;
     lifecycle_->bringUpDiscovered();
     return;
   }
 
-  if (nodesAreUp_) {
-    RCLCPP_WARN(
-      this->get_logger(), "Engine stopped; taking the lifecycle nodes down");
-    lifecycle_->bringDownDiscovered(true);
-    lifecycle_->clearHandled();
-    nodesAreUp_ = false;
+  if (!nodesAreUp_) {
+    return;
   }
+
+  ++engineMissCount_;
+  if (engineMissCount_ < kEngineMissLimit) {
+    RCLCPP_WARN(
+      this->get_logger(), "Engine status query failed (%d of %d). Holding the nodes up.",
+      engineMissCount_, kEngineMissLimit);
+    return;
+  }
+
+  RCLCPP_WARN(this->get_logger(), "Engine stopped; taking the lifecycle nodes down");
+  lifecycle_->bringDownDiscovered(true);
+  lifecycle_->clearHandled();
+  nodesAreUp_ = false;
+  engineMissCount_ = 0;
 }
 
 void WmxLifecycleManagerNode::setNodeStateCallback(
@@ -475,7 +507,7 @@ void WmxLifecycleManagerNode::setNodeStateCallback(
 
     if (response->success) {
       RCLCPP_INFO(this->get_logger(), "%s", message.c_str());
-      lifecycle_->markHandled(node);
+      lifecycle_->markManual(node, LifecycleManager::isDownwardTransition(transition));
     } else {
       RCLCPP_ERROR(this->get_logger(), "%s", message.c_str());
     }

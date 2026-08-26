@@ -110,6 +110,14 @@ int WmxIoNodeApi::getInBits(
   const std::vector<int32_t> & addr, const std::vector<int32_t> & bit,
   std::vector<uint8_t> & data, std::string & message)
 {
+  if (addr.empty() || addr.size() != bit.size()) {
+    message = "getInBits: addr and bit must be non-empty and the same length (addr=" +
+      std::to_string(addr.size()) + ", bit=" + std::to_string(bit.size()) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    data.clear();
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
   const int count = static_cast<int>(addr.size());
   data.assign(addr.size(), 0);
 
@@ -132,6 +140,14 @@ int WmxIoNodeApi::getOutBits(
   const std::vector<int32_t> & addr, const std::vector<int32_t> & bit,
   std::vector<uint8_t> & data, std::string & message)
 {
+  if (addr.empty() || addr.size() != bit.size()) {
+    message = "getOutBits: addr and bit must be non-empty and the same length (addr=" +
+      std::to_string(addr.size()) + ", bit=" + std::to_string(bit.size()) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    data.clear();
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
   const int count = static_cast<int>(addr.size());
   data.assign(addr.size(), 0);
 
@@ -260,10 +276,21 @@ int WmxIoNodeApi::setOutBits(
   const std::vector<int32_t> & addr, const std::vector<int32_t> & bit,
   const std::vector<uint8_t> & data, std::string & message)
 {
+  if (addr.empty() || addr.size() != bit.size() || addr.size() != data.size()) {
+    message = "setOutBits: addr, bit and data must be non-empty and the same length (addr=" +
+      std::to_string(addr.size()) + ", bit=" + std::to_string(bit.size()) +
+      ", data=" + std::to_string(data.size()) + ")";
+    RCLCPP_ERROR(logger_, "%s", message.c_str());
+    return ErrorCode::IOSizeOutOfRange;
+  }
+
   const int count = static_cast<int>(addr.size());
   std::vector<int> rawAddr(addr.begin(), addr.end());
   std::vector<int> rawBit(bit.begin(), bit.end());
-  std::vector<unsigned char> rawData(data.begin(), data.end());
+  std::vector<unsigned char> rawData(data.size());
+  for (size_t i = 0; i < data.size(); ++i) {
+    rawData[i] = data[i] ? 1 : 0;
+  }
 
   const int err = wmxIo_.SetOutBitsEx(
     rawAddr.data(), rawBit.data(), rawData.data(), count);
@@ -414,6 +441,10 @@ WmxIoNode::CallbackReturn WmxIoNode::on_cleanup(const rclcpp_lifecycle::State &)
 
 WmxIoNode::CallbackReturn WmxIoNode::on_shutdown(const rclcpp_lifecycle::State & previous_state)
 {
+  if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+    on_deactivate(previous_state);
+  }
+
   return on_cleanup(previous_state);
 }
 

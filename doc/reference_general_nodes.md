@@ -98,7 +98,10 @@ ros2 service call /wmx/axes/set_gear_ratio wmx_r2_message/srv/SetAxesGearRatio \
   "{axis: [0,1], numerator: [8388608.0, 8388608.0], denominator: [360.0, 360.0]}"
 ```
 
-**`wmx/axes/start_home`** — Homes with `CurrentPos` type, making the current encoder position zero.
+**`wmx/axes/start_home`** — Homes with the `HomeType` configured in the WMX parameter
+file for that axis. The shipped parameter files use `CurrentPos`, which makes the
+current encoder position zero. The service does not write the home configuration,
+so a switch based or Z pulse setup is left alone. `data` is ignored.
 ```bash
 ros2 service call /wmx/axes/start_home wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [0,0]}"
 ```

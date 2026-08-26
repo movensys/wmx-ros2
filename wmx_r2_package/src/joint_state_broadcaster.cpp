@@ -348,6 +348,10 @@ JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_cleanup(
 JointStateBroadcaster::CallbackReturn JointStateBroadcaster::on_shutdown(
   const rclcpp_lifecycle::State & previous_state)
 {
+  if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+    on_deactivate(previous_state);
+  }
+
   return on_cleanup(previous_state);
 }
 

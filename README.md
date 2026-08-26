@@ -31,7 +31,7 @@ This package wraps the WMX3 C++ API into standard ROS2 nodes, topics, services, 
 ## Quickstart
 
 Full environment setup, dependencies, and `~/.bashrc` configuration are in [doc/first_setup.md](doc/first_setup.md).
-To build and run the packages in a container instead, follow the Docker setup in [doc/first_setup.md](doc/first_setup.md#2-docker-setup).
+To build and run the packages in a container instead, follow the Docker setup in [doc/first_setup.md](doc/first_setup.md#docker-setup).
 
 ```bash
 # 1. Build (messages first, then the rest)
@@ -50,7 +50,7 @@ ros2 service call /wmx/axes/start_pos wmx_r2_message/srv/StartAxesPose \
 ```
 
 The full startup sequence and the complete service/topic catalog are documented in
-[doc/reference_wmx_r2_general_nodes.md](doc/reference_wmx_r2_general_nodes.md).
+[doc/reference_general_nodes.md](doc/reference_general_nodes.md).
 
 ## Architecture
 
@@ -157,7 +157,8 @@ flowchart LR;
 |-------------|---------|---------------|
 | [wmx_r2_general_nodes.launch.py](wmx_r2_package/launch/wmx_r2_general_nodes.launch.py) | Low-level axis / IO / EtherCAT control | `wmx_engine_node`, `wmx_lifecycle_manager_node`, `wmx_core_motion_node`, `wmx_io_node`, `wmx_ethercat_node` |
 | [wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py) | Dobot CR3A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller`, `joint_position_controller`, `gripper_controller` |
-| [wmx_r2_cr5a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr5a_manipulator.launch.py) | Dobot CR5A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller` |
+| [wmx_r2_cr5a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr5a_manipulator.launch.py) | Dobot CR5A trajectory control | general nodes + `joint_state_broadcaster`, `joint_trajectory_controller`, `joint_position_controller` |
+| [wmx_r2_diffbot_navigation.launch.py](wmx_r2_package/launch/wmx_r2_diffbot_navigation.launch.py) | Differential-drive base control | general nodes + `joint_state_broadcaster`, `differential_drive_controller` |
 
 ## Supported Robots
 
@@ -165,7 +166,7 @@ flowchart LR;
 |-------|------|-------------|----------------|-------|
 | Dobot CR3A | 6-axis manipulator | `wmx_r2_cr3a_manipulator.launch.py` | `config/cr3a_wmx_parameters.xml` | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) |
 | Dobot CR5A | 6-axis manipulator | `wmx_r2_cr5a_manipulator.launch.py` | `config/cr5a_wmx_parameters.xml` | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) |
-| Diffbot | Differential-drive base | `wmx_r2_general_nodes.launch.py` | `config/diffbot_wmx_parameters.xml` | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) |
+| Diffbot | Differential-drive base | `wmx_r2_diffbot_navigation.launch.py` | `config/diffbot_wmx_parameters.xml` | [doc/launch_diffbot_navigation.md](doc/launch_diffbot_navigation.md) |
 
 ## MoveIt2 Integration
 
@@ -185,8 +186,10 @@ To quickly set up the WMX ROS2 package and explore its key features, follow thes
 | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) | Launch the WMX general nodes |
 | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) | Launch the Dobot CR3A manipulator |
 | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) | Launch the Dobot CR5A manipulator |
-| [doc/reference_wmx_r2_general_nodes.md](doc/reference_wmx_r2_general_nodes.md) | ROS2 service/topic reference with startup sequence |
-| [doc/system_test.md](doc/system_test.md) | System-level test procedures |
+| [doc/launch_diffbot_navigation.md](doc/launch_diffbot_navigation.md) | Launch the differential-drive base |
+| [doc/reference_general_nodes.md](doc/reference_general_nodes.md) | ROS2 service/topic reference with startup sequence |
+| [doc/reference_manipulator.md](doc/reference_manipulator.md) | Manipulator node reference |
+| [doc/reference_navigation.md](doc/reference_navigation.md) | Navigation node reference |
 
 For the complete and up-to-date documentation, please visit the official site:
 **[WMX R2 Documentation](https://movensys.github.io/wmx-r2-doc/)**

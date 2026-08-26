@@ -333,6 +333,10 @@ JointPositionController::CallbackReturn JointPositionController::on_cleanup(
 JointPositionController::CallbackReturn JointPositionController::on_shutdown(
   const rclcpp_lifecycle::State & previous_state)
 {
+  if (previous_state.id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+    on_deactivate(previous_state);
+  }
+
   return on_cleanup(previous_state);
 }
 
@@ -405,19 +409,42 @@ bool JointPositionController::buildCommand(
   maxVelocity.assign(count, 0.0);
   maxAcc.assign(count, 0.0);
 
+  const double accDt = (dt > 0.0) ? dt : 1.0;
+
   double largestStep = 0.0;
+  double largestVelocity = 0.0;
   for (size_t i = 0; i < count; ++i) {
     const double step = std::fabs(pt.positions[i] - posCmd[i]);
     largestStep = std::fmax(largestStep, step);
 
     const double velocity = (dt > 0.0) ? step / dt : defaultVelocity_;
+    largestVelocity = std::fmax(largestVelocity, velocity);
 
     targets[i] = pt.positions[i];
     maxVelocity[i] = velocity;
-    maxAcc[i] = velocity / (accelRatio_ * ((dt > 0.0) ? dt : 1.0));
+    maxAcc[i] = velocity / (accelRatio_ * accDt);
   }
 
-  return largestStep >= minStep_;
+  if (largestStep < minStep_) {
+    return false;
+  }
+
+  if (largestVelocity <= 0.0) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "Dropped trajectory: every axis resolved to zero velocity");
+    return false;
+  }
+
+  for (size_t i = 0; i < count; ++i) {
+    if (maxVelocity[i] > 0.0) {
+      continue;
+    }
+    maxVelocity[i] = largestVelocity;
+    maxAcc[i] = largestVelocity / (accelRatio_ * accDt);
+  }
+
+  return true;
 }
 
 void JointPositionController::jointTrajectoryCallback(
