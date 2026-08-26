@@ -126,10 +126,15 @@ def cycle_window(t, y, cycles):
     # cycle that visibly fails to close. Only when a crossing is actually near
     # where the period says it should be; a fractional --cycles lands between
     # crossings and keeps the FFT estimate.
+    # Only crossings AFTER the start qualify: for a span shorter than a quarter
+    # period the start crossing is itself inside the tolerance, and snapping to
+    # it collapses the window to a single sample.
     end = t[i0] + span
-    near = up[np.abs(t[up] - end) < 0.25 / f]
+    later = up[up > i0]
+    near = later[np.abs(t[later] - end) < 0.25 / f]
     i1 = int(near[np.abs(t[near] - end).argmin()]) if len(near) else \
         int(np.searchsorted(t, end))
+    i1 = max(i1, i0 + 3)                           # gradient() needs a real span
     return slice(i0, min(i1 + 1, len(t)))
 
 
@@ -171,7 +176,13 @@ def analyse(data, j, cycles=1.0):
     m['flips'] = int(np.sum(np.diff(np.sign(v_act)) != 0))
     m['dur'] = float(t[-1] - t[0])
     m['amp'] = span / 2
-    return t, setp, cmd, act, v_cmd, v_act, m
+
+    # The raw 40 Hz arrivals inside the window. The setpoint LINE is what
+    # align() interpolated through them onto the 100 Hz state grid, which hides
+    # where a sample actually landed -- and it is the arrival cadence, not the
+    # line, that shows a late or dropped trajectory message.
+    sw = (st_t >= t[0]) & (st_t <= t[-1])
+    return t, setp, cmd, act, v_cmd, v_act, m, (st_t[sw], st_y[sw])
 
 
 def style(ax, ylabel, headroom=0.0):
@@ -190,7 +201,7 @@ def style(ax, ylabel, headroom=0.0):
 
 
 def plot_joint(data, j, path, show, cycles):
-    t, setp, cmd, act, v_cmd, v_act, m = analyse(data, j, cycles)
+    t, setp, cmd, act, v_cmd, v_act, m, raw = analyse(data, j, cycles)
     fig, ax = plt.subplots(3, 1, figsize=(11, 8.5), sharex=True,
                            gridspec_kw={'height_ratios': [3, 2, 2]})
     fig.suptitle(f'joint{j + 1} — commanded position vs motion executed by WMX3'
@@ -198,10 +209,12 @@ def plot_joint(data, j, path, show, cycles):
                  fontsize=13, x=0.02, ha='left')
 
     ax[0].plot(t, setp, color=C_SET, lw=1.6, label='setpoint (ROS)')
+    ax[0].plot(raw[0], raw[1], ls='none', marker='+', ms=5, mew=1.1,
+               color=C_SET, label=f'setpoint arrivals ({len(raw[0])})')
     ax[0].plot(t, cmd, color=C_CMD, lw=1.6, label='pos_cmd (WMX3 interpolator)')
     ax[0].plot(t, act, color=C_ACT, lw=1.6, label='actual_pos (encoder)')
-    style(ax[0], 'position [rad]', headroom=0.16)
-    ax[0].legend(frameon=False, fontsize=9, loc='upper right', ncol=3)
+    style(ax[0], 'position [rad]', headroom=0.22)
+    ax[0].legend(frameon=False, fontsize=9, loc='upper right', ncol=2)
 
     ax[1].plot(t, (cmd - setp) * 1000, color=C_CMD, lw=1.4,
                label=f'buffer path: setpoint → pos_cmd  ({m["buffer"]["lag"] * 1000:.1f} ms)')
@@ -233,9 +246,11 @@ def plot_all(data, path, show, cycles):
     fig.suptitle('All joints — setpoint vs pos_cmd vs actual_pos',
                  fontsize=13, x=0.02, ha='left')
     for j in range(n):
-        t, setp, cmd, act, _, _, _ = analyse(data, j, cycles)
+        t, setp, cmd, act, _, _, _, raw = analyse(data, j, cycles)
         ax = axes[j]
         ax.plot(t, setp, color=C_SET, lw=1.2)
+        ax.plot(raw[0], raw[1], ls='none', marker='+', ms=3.5, mew=0.8,
+                color=C_SET)
         ax.plot(t, cmd, color=C_CMD, lw=1.2)
         ax.plot(t, act, color=C_ACT, lw=1.2)
         style(ax, f'j{j + 1} [rad]')
@@ -256,7 +271,7 @@ def report(data, cycles):
     print(f'{"joint":>5} {"buf lag":>8} {"srv lag":>8} {"tot lag":>8} '
           f'{"gain":>7} {"delay%":>7} {"resid":>8} {"peak v":>8} {"flips/s":>8}')
     for j in range(n):
-        _, _, _, _, _, _, m = analyse(data, j, cycles)
+        _, _, _, _, _, _, m, _ = analyse(data, j, cycles)
         print(f'{"j" + str(j + 1):>5} '
               f'{m["buffer"]["lag"] * 1000:7.1f}m {m["servo"]["lag"] * 1000:7.1f}m '
               f'{m["total"]["lag"] * 1000:7.1f}m {m["total"]["gain"]:7.4f} '

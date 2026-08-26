@@ -41,6 +41,10 @@ servo_stream_controller:
     max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against this axis' real limit.
     min_step_rad: 1.0e-6         # below this a setpoint is a hold and is not recorded
     stop_on_error: true
+    # Per-setpoint trace: 0 = off, N = log every Nth recorded setpoint.
+    # 1 traces every command; at 40-50 Hz set it to the rate for ~1 line/sec.
+    # Runs on the pump thread, so leave it off for latency measurements.
+    setpoint_log_every: 0
 
 # Publishes /joint_states, which servo_stream_test_source needs to centre its
 # waveform on and which every measurement of the streaming path depends on.

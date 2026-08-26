@@ -60,10 +60,14 @@ servo_stream_controller:
 
     ros_queue_depth: 8           # bounds memory; the pump takes the newest and drops the rest
     starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
-    accel_ratio: 0.3             # accel phase spans 30% of a segment; retune with the surge data
+    accel_ratio: 0.5             # accel phase spans 30% of a segment; retune with the surge data
     max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against the arm's real joint limits.
     min_step_rad: 1.0e-6         # below this a setpoint is a hold and is not recorded
     stop_on_error: true          # stop rather than skip a rejected setpoint
+    # Per-setpoint trace: 0 = off, N = log every Nth recorded setpoint.
+    # 1 traces every command; at 40-50 Hz set it to the rate for ~1 line/sec.
+    # Runs on the pump thread, so leave it off for latency measurements.
+    setpoint_log_every: 50
 
 gripper_controller:
   ros__parameters:

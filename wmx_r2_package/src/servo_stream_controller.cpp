@@ -190,6 +190,7 @@ private:
   double maxJointVelocity_ = 3.0;    // rad/s ceiling, applied as a uniform scale
   double minStepRad_ = 1e-6;         // below this the setpoint is a hold, not a move
   bool stopOnError_ = true;
+  int setpointLogEvery_ = 0;         // 0 = off; N = trace every Nth recorded setpoint
 
   std::map<std::string, int> axisByName_;
   AxisSelection axisSel_;
@@ -201,6 +202,7 @@ private:
   std::deque<std::vector<double>> ring_;      // targets, in joint_axes order
 
   std::vector<double> step_;                  // scratch: target - posCmd, per axis
+  unsigned long long setpointSeq_ = 0;        // recorded setpoints, for the trace log
 
   // Atomic because pollStatus reads it from the executor thread to decide
   // whether a stalled cumulative block count is worth reporting.
@@ -249,6 +251,7 @@ private:
   bool beginStream();
   void endStream(const char * reason, bool controlled_stop);
   bool recordSetpoint(const std::vector<double> & target);
+  void logSetpoint(const CoreMotionStatus & before, double scale);
   void logMotionParams();
   void pollStatus();
 };
@@ -332,6 +335,7 @@ void ServoStreamController::setRosParameter()
   this->declare_parameter<double>("max_joint_velocity", 3.0);
   this->declare_parameter<double>("min_step_rad", 1e-6);
   this->declare_parameter<bool>("stop_on_error", true);
+  this->declare_parameter<int>("setpoint_log_every", 0);
 
   this->get_parameter("joint_axes", jointAxes_);
   this->get_parameter("joint_name", jointNames_);
@@ -346,6 +350,7 @@ void ServoStreamController::setRosParameter()
   this->get_parameter("max_joint_velocity", maxJointVelocity_);
   this->get_parameter("min_step_rad", minStepRad_);
   this->get_parameter("stop_on_error", stopOnError_);
+  this->get_parameter("setpoint_log_every", setpointLogEvery_);
 
   for (size_t i = 0; i < jointNames_.size() && i < jointAxes_.size(); ++i) {
     axisByName_[jointNames_[i]] = static_cast<int>(jointAxes_[i]);
@@ -405,6 +410,9 @@ void ServoStreamController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "max_joint_velocity: %.3f rad/s", maxJointVelocity_);
   RCLCPP_INFO(this->get_logger(), "min_step_rad: %.2e", minStepRad_);
   RCLCPP_INFO(this->get_logger(), "stop_on_error: %s", stopOnError_ ? "true" : "false");
+  RCLCPP_INFO(
+    this->get_logger(), "setpoint_log_every: %d (%s)", setpointLogEvery_,
+    setpointLogEvery_ > 0 ? "per-setpoint trace ON" : "off");
   RCLCPP_INFO(this->get_logger(), "===========================");
 }
 
@@ -930,7 +938,54 @@ bool ServoStreamController::recordSetpoint(const std::vector<double> & target)
     return false;
   }
 
+  // Trace only blocks the engine accepted. cmStatus was read before this block
+  // was recorded, so its posCmd/velocityCmd/cmdAcc are this segment's start
+  // conditions -- and equally, the PREVIOUS segment's end conditions.
+  ++setpointSeq_;
+  if (setpointLogEvery_ > 0 && (setpointSeq_ % setpointLogEvery_) == 0) {
+    logSetpoint(cmStatus, scale);
+  }
+
   return true;
+}
+
+// Per-setpoint trace. Off by default: this runs on the pump thread at the stream
+// rate, and formatting six axes is not free -- setpoint_log_every throttles it.
+//
+// "start" is read from the engine, "end" is what we programmed. The two are not
+// symmetric on purpose: endVelocity is always 0 because that is what stops the
+// arm if the stream dies, but under FastBlending the next override lands before
+// the decel phase runs, so the axis never gets there. The start velocity of the
+// NEXT setpoint is the measurement of what the end velocity actually was; if it
+// keeps reading ~0, the blend is not engaging.
+void ServoStreamController::logSetpoint(const CoreMotionStatus & before, double scale)
+{
+  const double period_s = nominalPeriodUs_ / 1000000.0;
+  char line[512];
+
+  std::snprintf(
+    line, sizeof(line),
+    "setpoint #%llu | period %.2f ms | accel_ratio %.2f | scale %.3f | "
+    "Trapezoidal, startVel inherited, endVel %.4f",
+    setpointSeq_, period_s * 1000.0, accelRatio_, scale, intpl_.profile.endVelocity);
+  std::string out(line);
+
+  for (unsigned int i = 0; i < intpl_.axisCount; ++i) {
+    const auto & a = before.axesStatus[intpl_.axis[i]];
+    std::snprintf(
+      line, sizeof(line),
+      "\n  ax%-2d start[pos %+.6f vel %+.6f acc %+.4f%s%s] "
+      "end[pos %+.6f vel %+.6f] "
+      "cmd[step %.3e maxVel %.6f maxAcc %.4f maxDec %.4f]",
+      intpl_.axis[i], a.posCmd, a.velocityCmd, a.cmdAcc,
+      a.accFlag ? " ACC" : "", a.decFlag ? " DEC" : "",
+      intpl_.target[i], intpl_.profile.endVelocity,
+      step_[static_cast<size_t>(i)], intpl_.maxVelocity[i],
+      intpl_.maxAcc[i], intpl_.maxDec[i]);
+    out += line;
+  }
+
+  RCLCPP_INFO(this->get_logger(), "%s", out.c_str());
 }
 
 void ServoStreamController::pumpLoop()
@@ -996,9 +1051,19 @@ void ServoStreamController::pumpLoop()
       continue;
     }
 
-    if (!streaming_ && !beginStream()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      continue;
+    if (!streaming_) {
+      if (!beginStream()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        continue;
+      }
+      // Re-arm the starvation clock. last_sent still holds the last time a
+      // setpoint was RECORDED, which on the first stream is the pump's own
+      // start time -- seconds ago if the publisher was slow to appear. Any
+      // iteration that continues before recording (the stale-Stop settle path
+      // below is the normal one) then reaches the starvation check with that
+      // dead timestamp and stops the axes one kPumpIdleWait after Execute,
+      // before a single setpoint has been recorded.
+      last_sent = std::chrono::steady_clock::now();
     }
 
     // GetStatus is cyclic (one cycle stale), which is fine for a slow pacing
