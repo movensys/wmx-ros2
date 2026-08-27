@@ -50,19 +50,82 @@ servo_stream_controller:
     # queue_depth should read 0-1; anything standing above that means the engine
     # is not keeping up.
     #
-    # nominal_period_us is now the time each segment is given to cover its
-    # distance, which is what sets commanded velocity. It is the single most
-    # important value here. Too short over-drives: the axis reaches target early,
-    # decelerates to rest, and the stop-and-go this design exists to remove comes
-    # back. Too long under-drives and the arm lags the stream. Set it to Servo's
-    # actual publish period.
-    nominal_period_us: 25000     # = Servo publish_period 0.025 s
+    # The time each segment is given to cover its step, which is what sets the
+    # commanded velocity -- the single most important value here. Set it to the
+    # rate setpoints actually ARRIVE at: anything larger under-drives by that
+    # ratio. Measured on this arm, with the stream healthy, recorded setpoints
+    # arrive 25.0 ms apart, exactly Servo's publish period. (The 48-56 ms
+    # intervals in a teleop trace are pauses, not jitter.)
+    #
+    # 50000 was a diagnostic and cost a permanent 2x under-drive: the arm was
+    # commanded at half the speed the stream asked for, and only kept up by
+    # letting lag build until the step doubled. joint_position_controller takes
+    # this same 25 ms from time_from_start and so never carried that lag.
+    #
+    # But it cannot be set TO the arrival rate. Deceleration begins at exactly
+    # this value, and a FastBlending override issued during the final decel
+    # segment does not blend -- the current interpolation runs to completion,
+    # i.e. to rest. Measured on this arm, all three points agree:
+    #
+    #   25000  decel onset lands on the 25.0 ms arrival instant   -> roughest
+    #   35000  10 ms of margin, 1.4x under-drive                  -> here
+    #   50000  25 ms of margin, 2.0x under-drive                  -> smooth but laggy
+    #
+    # So this value trades blend margin against under-drive, and the margin has
+    # to cover the arrival interval plus the buffer's own execution latency
+    # (~1 communication cycle between recording a block and the engine running
+    # it). 35000 is the smallest value tried that still clears both.
+    #
+    # To stop paying the under-drive at all, the velocity and the decel onset
+    # have to stop sharing one number -- see the note in recordSetpoint about
+    # extending the target past the setpoint.
+    nominal_period_us: 60000
 
-    starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
+    # Ends the stream when setpoints dry up. While end_velocity_ratio is 0 this
+    # is not a deadline: the in-flight segment already decelerates to rest by
+    # itself and the axes are NOT commanded to stop, so a generous value simply
+    # avoids churning the channel through teleop pauses. It becomes a hard
+    # deadline the moment end_velocity_ratio goes above 0, because a segment then
+    # ends in a velocity step -- the node computes the segment completion time,
+    # prints "segment completes at N ms; controlled stop armed at M ms", and logs
+    # an ERROR if this value is not below it.
+    starvation_timeout_ms: 75
     accel_ratio: 0.3             # accel phase spans 30% of a segment; retune with the surge data
     max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against the arm's real joint limits.
     min_step_rad: 1.0e-6         # below this a setpoint is a hold and is not recorded
-    stop_on_error: true          # stop rather than skip a rejected setpoint
+    # Terminal velocity of each segment, as a fraction of the segment's own path
+    # velocity. 1.0 removes the final deceleration segment entirely, which is
+    # what stops overrides from landing in it -- the WMX3 manual is explicit that
+    # a FastBlending override issued during the final decel segment does not
+    # blend, and instead lets the current interpolation run to completion (i.e.
+    # to rest). That was the stop-and-go.
+    #
+    # The trade: a segment that DOES complete now ends in a velocity step, not a
+    # ramp ("the axis will suddenly decelerate from the end velocity to 0"), so
+    # the starvation timer above must reach the axes first. Lower this toward 0
+    # to soften that step at the cost of reintroducing the decel segment; 0 is
+    # exactly the old behaviour.
+    # OFF. Enabling this tripped an amplifier alarm on axis 0 -- but the first
+    # failure in that run was NOT the terminal velocity step: block 23 was
+    # rejected with 65630 "Currently processing override. Additional overrides
+    # can occur after smoothing is complete." With stop_on_error the rejection
+    # stopped the channel, and the stop/restart cycle is what built the velocity
+    # demand that trips the amplifier. Fix the rejection first; this is a
+    # second-order knob and is not safe to revisit until then.
+    end_velocity_ratio: 0.0
+    # FALSE, and this is the point of the current experiment. A setpoint whose
+    # override the engine refuses (65630 ProcessingOverride: the previous
+    # override's smoothing segment is still running) is a routine outcome at
+    # stream rate, not a fault. With this true, one refusal stopped the whole
+    # channel -- and the stop/restart cycle let posCmd diverge until the restart
+    # demanded max velocity and tripped an amplifier alarm on axis 0.
+    #
+    # False makes the engine SKIP the rejected block and carry on, which is
+    # exactly what joint_position_controller does with the same rejection (warn
+    # and drop) and is the likeliest reason the direct path is smooth. The
+    # ApiBufferWatch is untouched and still stops the arm on a real axis alarm,
+    # so this trades block-level strictness for continuity, not the safety net.
+    stop_on_error: false
     # Per-setpoint trace: 0 = off, N = log every Nth recorded setpoint.
     # 1 traces every command; at 40-50 Hz set it to the rate for ~1 line/sec.
     # Runs on the pump thread, so leave it off for latency measurements.

@@ -60,5 +60,17 @@ servo_stream_controller:
     accel_ratio: 0.3             # accel phase spans 30% of a segment; retune with the surge data
     max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against the arm's real joint limits.
     min_step_rad: 1.0e-6         # below this a setpoint is a hold and is not recorded
+    # Terminal velocity per segment as a fraction of its path velocity. 1.0
+    # removes the final decel segment, which is what overrides were colliding
+    # with; a completed segment then ends in a velocity step, so
+    # starvation_timeout_ms must land before the completion time the node prints
+    # at startup. 0 restores the old decelerate-to-rest behaviour.
+    #
+    # OFF here, deliberately. Enabling it needs nominal_period_us raised above
+    # this setup's worst-case setpoint gap first, the way cr3a was: at 25000 a
+    # segment completes in 28.8 ms, far inside the 75 ms starvation timeout, so
+    # the engine would step the axes to zero before the controlled stop ran.
+    # Measure the gap here, retune both values, then set this to 1.0.
+    end_velocity_ratio: 0.0
     stop_on_error: true          # stop rather than skip a rejected setpoint
 

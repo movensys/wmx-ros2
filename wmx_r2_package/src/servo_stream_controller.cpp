@@ -49,10 +49,14 @@
 // newer one in the middleware instead of in a ring of our own.
 //
 // Ride-through no longer comes from queue depth. Each block carries a full
-// period of programmed travel, so a late setpoint continues the previous
-// segment rather than leaving a gap; and if the publisher dies outright, the
-// last interpolation decelerates to rest on its own within one period, before
-// starvation_timeout_ms even fires.
+// period of programmed travel, so a late setpoint continues the previous segment
+// rather than leaving a gap.
+//
+// What a dead publisher does NOT do any more is coast to a stop on its own. That
+// was true while endVelocity was 0; with end_velocity_ratio > 0 the final
+// segment ends in a velocity STEP, so stopping the arm is now the starvation
+// timer's job and it has a real deadline -- setRosParameter checks that the
+// timeout lands before the segment completes, and says so at startup.
 //
 // Cost is 320 bytes per setpoint, so a 1 MB channel holds ~3200. The channel is
 // a ring and reclaims space as blocks execute, so stream length is not bounded
@@ -62,8 +66,11 @@
 //   - LinearIntplOverrideType is FastBlending, so consecutive interpolations
 //     blend rather than stop-and-go.
 //   - profile.startingVelocity = 0 lets the override inherit the current
-//     velocity; continuity comes from the blend. endVelocity = 0 is kept
-//     deliberately: it is what brings the arm to rest if the stream dies.
+//     velocity; continuity comes from the blend. endVelocity is NOT 0: a segment
+//     planning a decel to rest puts that decel exactly where the next setpoint
+//     lands, and an override issued during the final deceleration segment does
+//     not blend at all (see recordSetpoint). The arm is brought to rest by the
+//     starvation timer instead.
 //   - LinearIntplProfileCalcMode is read from axis[0], so the axis array is
 //     always filled in joint_axes order. That ordering is semantics, not style.
 //   - Segment distance is measured from the CURRENT COMMANDED POSITION, not
@@ -129,6 +136,13 @@ constexpr int kDepthWarnBlocks = 3;
 constexpr int kStalledPollCount = 3;
 constexpr auto kStatusPollPeriod = std::chrono::milliseconds(100);   // ~10 Hz
 
+// Starvation is checked on its own timer rather than with the status poll,
+// because once end_velocity_ratio > 0 it is a safety deadline and not just
+// bookkeeping: a segment that completes drops the axes from speed to zero in one
+// step, and the controlled stop has to land first. The callback does nothing but
+// compare two timestamps -- no engine call -- so it is cheap enough to run here.
+constexpr auto kStarvationPollPeriod = std::chrono::milliseconds(10);
+
 // Backoff after the motion channel stops on a fault. Without this the callback
 // re-Executes on the very next setpoint, so a PERSISTENT fault (servo off, for
 // one) becomes a 40 Hz Clear/Execute/Stop storm against the engine that never
@@ -192,6 +206,7 @@ private:
   double accelRatio_ = 0.3;
   double maxJointVelocity_ = 3.0;    // rad/s ceiling, applied as a uniform scale
   double minStepRad_ = 1e-6;         // below this the setpoint is a hold, not a move
+  double endVelocityRatio_ = 1.0;    // endVelocity as a fraction of path velocity
   bool stopOnError_ = true;
   int setpointLogEvery_ = 0;         // 0 = off; N = trace every Nth recorded setpoint
 
@@ -214,10 +229,12 @@ private:
   std::chrono::steady_clock::time_point lastSetpointAt_{};
 
   long long lastErrorCount_ = 0;             // ApiBufferStatus::errorCount is long long
+  long long overrideRejects_ = 0;            // refused overrides, a floor (log samples 10/poll)
 
   // Liveness. remainingBlockCount is 0-1 by design now, so depth no longer
   // shows whether the engine is consuming; the cumulative count does.
   long long lastCumulativeBlocks_ = 0;
+  unsigned long long lastSeqSeen_ = 0;       // setpointSeq_ at the previous poll
   int stalledPolls_ = 0;
 
   int consecutiveFaults_ = 0;                       // channel stops without progress
@@ -237,6 +254,7 @@ private:
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr jointTrajectorySub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr depthPub_;
   rclcpp::TimerBase::SharedPtr statusTimer_;
+  rclcpp::TimerBase::SharedPtr starvationTimer_;
 
   // --- helpers ------------------------------------------------------------
   void setRosParameter();
@@ -258,6 +276,7 @@ private:
   void logSetpoint(const CoreMotionStatus & before, double scale);
   void logMotionParams();
   void pollStatus();
+  void checkStarvation();
 };
 
 ServoStreamController::ServoStreamController()
@@ -332,6 +351,7 @@ void ServoStreamController::setRosParameter()
   this->declare_parameter<double>("accel_ratio", 0.3);
   this->declare_parameter<double>("max_joint_velocity", 3.0);
   this->declare_parameter<double>("min_step_rad", 1e-6);
+  this->declare_parameter<double>("end_velocity_ratio", 1.0);
   this->declare_parameter<bool>("stop_on_error", true);
   this->declare_parameter<int>("setpoint_log_every", 0);
 
@@ -346,6 +366,7 @@ void ServoStreamController::setRosParameter()
   this->get_parameter("accel_ratio", accelRatio_);
   this->get_parameter("max_joint_velocity", maxJointVelocity_);
   this->get_parameter("min_step_rad", minStepRad_);
+  this->get_parameter("end_velocity_ratio", endVelocityRatio_);
   this->get_parameter("stop_on_error", stopOnError_);
   this->get_parameter("setpoint_log_every", setpointLogEvery_);
 
@@ -379,6 +400,40 @@ void ServoStreamController::setRosParameter()
       "max_joint_velocity must be > 0 (got %.3f); using 3.0", maxJointVelocity_);
     maxJointVelocity_ = 3.0;
   }
+  if (endVelocityRatio_ < 0.0 || endVelocityRatio_ > 1.0) {
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "end_velocity_ratio must be in [0, 1] (got %.3f); using 1.0", endVelocityRatio_);
+    endVelocityRatio_ = 1.0;
+  }
+
+  // A segment runs for T*(1 + r*(1 - e + e*e/2)) before it completes: accel r*T,
+  // cruise, then a decel from the path velocity down to e times it. At e = 1
+  // that last phase vanishes and the segment simply ends at speed.
+  //
+  // Completion is the dangerous moment once e > 0, because the engine drops the
+  // axis from endVelocity to 0 in one step rather than ramping. The starvation
+  // timer has to get there first with a controlled stop, so its timeout must sit
+  // BELOW the completion time -- and above the worst-case gap between setpoints,
+  // or it will stop the arm mid-stream.
+  if (endVelocityRatio_ > 0.0) {
+    const double e = endVelocityRatio_;
+    const double completion_ms = (nominalPeriodUs_ / 1000.0) *
+      (1.0 + accelRatio_ * (1.0 - e + 0.5 * e * e));
+    if (starvationTimeoutMs_ >= completion_ms) {
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "starvation_timeout_ms %d is at or past the %.1f ms segment completion time; "
+        "with end_velocity_ratio %.2f the engine will step the axes from speed to zero "
+        "before the controlled stop runs. Lower the timeout or raise nominal_period_us.",
+        starvationTimeoutMs_, completion_ms, e);
+    } else {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "segment completes at %.1f ms; controlled stop armed at %d ms",
+        completion_ms, starvationTimeoutMs_);
+    }
+  }
 
   if (channelMotion_ == channelEstop_) {
     RCLCPP_ERROR(
@@ -405,6 +460,9 @@ void ServoStreamController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "accel_ratio: %.2f", accelRatio_);
   RCLCPP_INFO(this->get_logger(), "max_joint_velocity: %.3f rad/s", maxJointVelocity_);
   RCLCPP_INFO(this->get_logger(), "min_step_rad: %.2e", minStepRad_);
+  RCLCPP_INFO(
+    this->get_logger(), "end_velocity_ratio: %.2f (%s)", endVelocityRatio_,
+    endVelocityRatio_ > 0.0 ? "carry velocity" : "decelerate to rest each segment");
   RCLCPP_INFO(this->get_logger(), "stop_on_error: %s", stopOnError_ ? "true" : "false");
   RCLCPP_INFO(
     this->get_logger(), "setpoint_log_every: %d (%s)", setpointLogEvery_,
@@ -684,6 +742,9 @@ void ServoStreamController::runInitSequence()
   statusTimer_ = this->create_wall_timer(
     kStatusPollPeriod, std::bind(&ServoStreamController::pollStatus, this));
 
+  starvationTimer_ = this->create_wall_timer(
+    kStarvationPollPeriod, std::bind(&ServoStreamController::checkStarvation, this));
+
   // Before the subscription, not after: the callback drops setpoints until this
   // is set, and the subscription can start delivering the moment it exists.
   initialized_ = true;
@@ -926,9 +987,11 @@ bool ServoStreamController::recordSetpoint(const std::vector<double> & target)
   const double min_velocity = minStepRad_ / period_s;
 
   intpl_.axisCount = count;
+  double path_sq = 0.0;               // |step| along the interpolation trajectory
   for (size_t i = 0; i < count; ++i) {
     const double velocity = std::max(step_[i] / period_s / scale, min_velocity);
     const double accel = velocity / (accelRatio_ * period_s);
+    path_sq += step_[i] * step_[i];
 
     intpl_.axis[i] = static_cast<int>(jointAxes_[i]);
     intpl_.target[i] = target[i];
@@ -937,12 +1000,40 @@ bool ServoStreamController::recordSetpoint(const std::vector<double> & target)
     intpl_.maxDec[i] = accel;
   }
 
+  // Velocity along the trajectory. Every axis limit above is step_[i]/(T*scale)
+  // and the path direction IS the step vector, so all axes reach their limit at
+  // the same instant and the implied path velocity is exactly |step|/(T*scale).
+  // The manual allows omitting profile.velocity when per-axis limits are given
+  // (the trajectory velocity is then derived from them), and this reproduces
+  // that derived value rather than constraining it -- but stating it explicitly
+  // is what makes endVelocity well defined, because endVelocity is documented as
+  // clamped to the profile velocity, and a profile velocity of 0 would clamp it
+  // away to nothing.
+  const double path_velocity = std::sqrt(path_sq) / period_s / scale;
+
   intpl_.profile.type = ProfileType::Trapezoidal;
-  intpl_.profile.velocity = 0.0;      // per-axis limits govern under AxisLimit calc mode
-  intpl_.profile.acc = 0.0;
+  intpl_.profile.velocity = path_velocity;
+  intpl_.profile.acc = 0.0;           // per-axis maxAcc/maxDec govern under AxisLimit
   intpl_.profile.dec = 0.0;
   intpl_.profile.startingVelocity = 0.0;   // override inherits the current velocity
-  intpl_.profile.endVelocity = 0.0;
+
+  // The point of the whole exercise. With endVelocity = 0 the segment plans a
+  // final deceleration to rest beginning at exactly t = T, and setpoints arrive
+  // at T -- so every override landed on that boundary, where the manual is
+  // explicit that FastBlending does NOT blend: "if the override interpolation is
+  // executed while the current interpolation is in the final deceleration
+  // segment, the current interpolation will run to completion instead of
+  // transitioning to a stop motion." Completion means rest, so the arm
+  // stop-and-goes at the stream rate. At ratio 1.0 there is no deceleration
+  // segment left to collide with.
+  //
+  // The cost, and it is real: "If this value is not set to 0, the axis will
+  // suddenly decelerate from the end velocity to 0 velocity at the end of
+  // motion." A segment that COMPLETES now ends in a velocity step rather than a
+  // ramp. Segments only complete when the stream stops feeding them, which is
+  // why the starvation timer must command a controlled stop before the engine
+  // gets there -- see the guard in setRosParameter.
+  intpl_.profile.endVelocity = endVelocityRatio_ * path_velocity;
 
   if (!check(abRec_->StartRecordBufferChannel(channelMotion_), "StartRecordBufferChannel")) {
     return false;
@@ -973,12 +1064,10 @@ bool ServoStreamController::recordSetpoint(const std::vector<double> & target)
 // Per-setpoint trace. Off by default: this runs on the pump thread at the stream
 // rate, and formatting six axes is not free -- setpoint_log_every throttles it.
 //
-// "start" is read from the engine, "end" is what we programmed. The two are not
-// symmetric on purpose: endVelocity is always 0 because that is what stops the
-// arm if the stream dies, but under FastBlending the next override lands before
-// the decel phase runs, so the axis never gets there. The start velocity of the
-// NEXT setpoint is the measurement of what the end velocity actually was; if it
-// keeps reading ~0, the blend is not engaging.
+// "start" is read from the engine, "end" is what we programmed. The start
+// velocity of the NEXT setpoint is the measurement of what the end velocity
+// actually was; if it keeps reading ~0 while endVel is not 0, the blend is not
+// engaging and the segments are running to completion.
 void ServoStreamController::logSetpoint(const CoreMotionStatus & before, double scale)
 {
   const double period_s = nominalPeriodUs_ / 1000000.0;
@@ -1007,6 +1096,38 @@ void ServoStreamController::logSetpoint(const CoreMotionStatus & before, double 
   }
 
   RCLCPP_INFO(this->get_logger(), "%s", out.c_str());
+}
+
+// The controlled stop for a stream that has gone quiet. This is a deadline, not
+// a poll: with end_velocity_ratio > 0 the last segment ends in a velocity STEP
+// rather than a ramp, so this has to reach the axes before the segment completes.
+// setRosParameter checks the two times against each other at startup.
+//
+// A hold refreshes lastSetpointAt_ without recording anything, which is what
+// keeps a deliberately stationary teleop input from being read as a dead stream.
+void ServoStreamController::checkStarvation()
+{
+  if (!streaming_) {
+    return;
+  }
+  if (std::chrono::steady_clock::now() - lastSetpointAt_ <=
+    std::chrono::milliseconds(starvationTimeoutMs_))
+  {
+    return;
+  }
+  // Motion::Stop ONLY when the segment would not come to rest by itself. At
+  // end_velocity_ratio 0 the in-flight interpolation already decelerates to
+  // endVelocity = 0, so Halt/Clear alone lets it finish its own ramp -- which is
+  // exactly what joint_position_controller does with a gap, and why the direct
+  // path glides through a teleop pause that this one used to punctuate with a
+  // commanded stop. Above 0 the segment ends at speed and the Stop is the whole
+  // point of the deadline.
+  const bool needs_stop = endVelocityRatio_ > 0.0;
+  RCLCPP_WARN(
+    this->get_logger(), "Servo stream starved (>%d ms); %s",
+    starvationTimeoutMs_,
+    needs_stop ? "stopping axes" : "letting the last segment ramp down");
+  endStream("stream starved", needs_stop);
 }
 
 // Everything that watches the channel rather than feeds it. This used to be
@@ -1043,20 +1164,6 @@ void ServoStreamController::pollStatus()
       "API buffer not draining: %d blocks in flight (expected 0-1)", depth);
   }
 
-  // Starvation. Granularity is the poll period now rather than the pump's 5 ms,
-  // which is acceptable because this is a channel-state backstop and not what
-  // stops the arm: a stream that dies leaves the last interpolation to
-  // decelerate to rest within one period on its own, well before this fires.
-  if (streaming_ &&
-    std::chrono::steady_clock::now() - lastSetpointAt_ >
-    std::chrono::milliseconds(starvationTimeoutMs_))
-  {
-    RCLCPP_WARN(
-      this->get_logger(), "Servo stream starved (>%d ms); stopping axes",
-      starvationTimeoutMs_);
-    endStream("stream starved", true);
-  }
-
   if (streaming_ && st.state == ApiBufferState::Stop) {
     // A Stop with nothing recorded against it is not a fault: since GetStatus
     // is one cycle stale, the first poll after Execute reads back the Stop that
@@ -1086,7 +1193,12 @@ void ServoStreamController::pollStatus()
           cause, sizeof(cause), "watch fired on axis %d, code %d (%s)",
           st.watchErrorAxis, st.watchErrorCode, errString_);
       } else if (st.errorCount > 0) {
-        wmxCtl_.ErrorToString(st.errorLog[0].errorCode, errString_, sizeof(errString_));
+        // blockErrorToString, NOT the device decoder: a block error is a
+        // CoreMotion/ApiBuffer code, and running it through WMX3Api::
+        // ErrorToString yields a plausible-looking string for an unrelated
+        // error. 65630 came out as "Failed to obtain lock for starting process"
+        // when it actually means "Currently processing override".
+        blockErrorToString(st.errorLog[0].errorCode, errString_, sizeof(errString_));
         snprintf(
           cause, sizeof(cause), "block %lld failed, code %d (%s)",
           static_cast<long long>(st.errorLog[0].execBlockNumber),
@@ -1108,9 +1220,17 @@ void ServoStreamController::pollStatus()
   // nothing either way — what proves the engine is still consuming is the
   // cumulative count advancing. A channel that is Active but not executing
   // (an axis stuck mid-interpolation, say) shows up here and nowhere else.
+  //
+  // It also has to know whether anything was OFFERED. setpointSeq_ counts
+  // recorded blocks only -- a hold returns before the record -- so a stationary
+  // teleop input advances neither counter, and without this the warning fired
+  // through every deliberate pause and cried stall at a perfectly healthy
+  // engine.
   const long long consumed = st.cumulativeBlockCount - lastCumulativeBlocks_;
+  const bool recorded_any = setpointSeq_ != lastSeqSeen_;
   lastCumulativeBlocks_ = st.cumulativeBlockCount;
-  if (streaming_ && consumed == 0) {
+  lastSeqSeen_ = setpointSeq_;
+  if (streaming_ && recorded_any && consumed == 0) {
     if (++stalledPolls_ >= kStalledPollCount) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 1000,
@@ -1130,17 +1250,42 @@ void ServoStreamController::pollStatus()
 
   const int reportable = static_cast<int>(
     std::min<long long>(missed, wmx3Api::constants::maxApiBufferErrorLog));
+
+  // ProcessingOverride is not a fault once stop_on_error is false: it is the
+  // engine saying the previous override is still in its smoothing segment, so
+  // this setpoint was skipped and the axes stayed on the segment already in
+  // flight. That is the intended degradation, and at stream rate it can happen
+  // many times a second -- logging each one would put a hundred ERROR lines a
+  // second on the executor thread that also runs the setpoint callback, which
+  // would corrupt the very timing being measured. Count them, report a rate.
+  int rejects = 0;
   for (int i = 0; i < reportable; ++i) {
-    blockErrorToString(st.errorLog[i].errorCode, errString_, sizeof(errString_));
+    const int code = st.errorLog[i].errorCode;
+    if (code == wmx3Api::CoreMotionErrorCode::ProcessingOverride) {
+      ++rejects;
+      continue;
+    }
+    blockErrorToString(code, errString_, sizeof(errString_));
     RCLCPP_ERROR(
       this->get_logger(),
       "API buffer error at block %lld (one block per setpoint): %d (%s)",
-      st.errorLog[i].execBlockNumber,
-      st.errorLog[i].errorCode, errString_);
+      st.errorLog[i].execBlockNumber, code, errString_);
   }
+
+  if (rejects > 0) {
+    overrideRejects_ += rejects;
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "Engine refused at least %lld override(s) so far (previous override still "
+      "smoothing); those setpoints were skipped and the arm continued the segment "
+      "in flight. The error log holds %d entries per poll, so this is a floor.",
+      overrideRejects_, static_cast<int>(wmx3Api::constants::maxApiBufferErrorLog));
+  }
+
   if (missed > reportable) {
-    RCLCPP_ERROR(
-      this->get_logger(), "%lld further errors overflowed the log between polls",
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "%lld further block errors overflowed the log between polls",
       missed - reportable);
   }
 }
