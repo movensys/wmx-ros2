@@ -5,21 +5,20 @@
 #define JOINT_STATE_BROADCASTER_HPP_
 
 #include <atomic>
-#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
+
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
 
-#include "lifecycle_msgs/msg/state.hpp"
-
+#include "wmx_r2_message/srv/get_wmx_params.hpp"
 #include "wmx_r2_message/srv/set_axes.hpp"
 
 #include "WMX3Api.h"
@@ -49,21 +48,20 @@ public:
 
   int setServoOn(int axis, int on, std::string & message);
 
-  bool isDeviceOpen() const {return cm_ != nullptr;}
+  bool isDeviceOpen() const {return isDeviceAttached_;}
 
 private:
-  std::string errorText(int err);
-
   rclcpp::Logger logger_;
 
   const char * deviceName_ = "joint_state_broadcaster";
   unsigned int timeout_ = 10000;
 
-  std::mutex deviceMutex_;
+  mutable std::mutex deviceMutex_;
+  bool isDeviceAttached_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
-  std::unique_ptr<wmx3Api::CoreMotion> cm_;
-  std::unique_ptr<wmx3Api::IO> io_;
+  wmx3Api::CoreMotion cm_;
+  wmx3Api::IO io_;
 };
 
 class JointStateBroadcaster : public rclcpp_lifecycle::LifecycleNode
@@ -84,9 +82,9 @@ public:
 private:
   std::unique_ptr<JointStateBroadcasterApi> api_;
 
-  int jointFeedbackRate_;
-  float gripperCloseValue_;
-  float gripperOpenValue_;
+  int jointFeedbackRate_ = 0;
+  float gripperOpenValue_ = 0.0f;
+  float gripperCloseValue_ = 0.0f;
   std::vector<int64_t> jointAxes_;
   std::vector<std::string> jointNames_;
   std::vector<std::string> gripperJointNames_;
@@ -98,8 +96,9 @@ private:
   std::atomic<bool> isNodeActive_{false};
 
   rclcpp::CallbackGroup::SharedPtr axisClientCbGroup_;
-  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr clearAmpAlarmClient_;
-  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr setServoOnClient_;
+  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr clearAlarmClient_;
+  rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr setAxisOnClient_;
+  rclcpp::Client<wmx_r2_message::srv::GetWmxParams>::SharedPtr getWmxParamsClient_;
 
   rclcpp::TimerBase::SharedPtr encoderJointTimer_;
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::JointState>::SharedPtr encoderJointPub_;
@@ -108,14 +107,21 @@ private:
     gazeboJointPub_;
 
   bool isNodeActive() const;
+  std::string notActiveMessage();
+
+  void setRosParameter();
+
+  void servoOff();
+
   bool callSetAxesService(
     rclcpp::Client<wmx_r2_message::srv::SetAxes>::SharedPtr client,
-    const std::string & service_name,
-    const std::vector<int64_t> & index,
+    const std::string & serviceName,
+    const std::vector<int64_t> & indices,
     const std::vector<int64_t> & data);
-  void servoOff();
+
+  bool getWmxParams(std::string & message);
+
   void publishJointState();
-  void setRosParameter();
 };
 
 #endif  // JOINT_STATE_BROADCASTER_HPP_

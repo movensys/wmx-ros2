@@ -4,14 +4,12 @@
 #ifndef WMX_ETHERCAT_NODE_HPP_
 #define WMX_ETHERCAT_NODE_HPP_
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
-
 #include "lifecycle_msgs/msg/state.hpp"
 
 #include "wmx_r2_message/srv/ecat_get_network_state.hpp"
@@ -95,6 +93,7 @@ private:
   void scanNetworkCallback(
     const std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Request> request,
     std::shared_ptr<wmx_r2_message::srv::EcatScanNetwork::Response> response);
+
   void startHotconnectCallback(
     const std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Request> request,
     std::shared_ptr<wmx_r2_message::srv::EcatStartHotconnect::Response> response);
