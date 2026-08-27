@@ -6,16 +6,16 @@
 // Streams MoveIt Servo joint commands into the WMX3 API buffer, which replays
 // them under the real-time OS at communication-cycle boundaries.
 //
-// This is the buffered alternative to joint_position_controller, which calls
-// StartLinearIntplPos directly from the ROS subscription callback. That path
-// works, but every command crosses from a non-real-time Linux thread straight
-// into the engine, so ROS scheduling jitter lands directly on motion timing and
-// a late thread leaves a gap in the stream. Here the API buffer absorbs that
-// jitter, and its watch function adds a hardware-side safety net.
+// This is the buffered alternative to joint_position_controller. Both issue one
+// StartLinearIntplPos per setpoint from the ROS subscription callback; what this
+// node adds is the API buffer, whose watch function is a hardware-side safety
+// net and whose blocks execute under the RT OS at communication-cycle
+// boundaries. Recording is also non-blocking with respect to motion start,
+// where the direct node's call inherits APIWaitUntilMotionStart.
 //
 // The two nodes subscribe to the same topic and MUST NOT run together.
 //
-//   Servo topic -> ROS ring (latest-wins) -> pump -> API buffer -> engine
+//   Servo topic (QoS depth 1, latest-wins) -> callback -> API buffer -> engine
 //
 // Each setpoint becomes ONE block:
 //   StartLinearIntplPos(6 axes)   coordinated, lands as a FastBlending override
@@ -38,6 +38,15 @@
 // holding a standing depth error of ~7 setpoints, which cost 225-250 ms of
 // latency instead of the intended 50 ms. Dropping the sleep lets each command
 // override its predecessor mid-flight, which is what FastBlending is for.
+//
+// The pump thread went the same way, and for the same reason. With depth pinned
+// at 0-1 the buffer stores no latency, so a pump could not absorb ROS jitter --
+// it could only add its own: a condition-variable wakeup on a non-RT thread and
+// a cyclic GetStatus per setpoint, inserted into a path whose entire error
+// budget is one accel ramp (accel_ratio * period). Recording straight from the
+// subscription callback removes both. Latest-wins still holds, one level down:
+// the subscription is QoS depth 1, so an unread setpoint is overwritten by the
+// newer one in the middleware instead of in a ring of our own.
 //
 // Ride-through no longer comes from queue depth. Each block carries a full
 // period of programmed travel, so a late setpoint continues the previous
@@ -66,21 +75,18 @@
 //     posCmd is self-correcting: the further behind the axis is, the higher the
 //     velocity it asks for. Depth 0-1 is what makes posCmd trustworthy again;
 //     it is one block plus one cycle stale, ~1-2 ms.
-//   - The pump takes the NEWEST setpoint and drops the rest. Feeding a backlog
-//     in would execute every entry within a few cycles, each overriding the
-//     last, leaving the survivor to cover the whole backlog's distance in one
-//     period -- a velocity spike proportional to the backlog.
+//   - The subscription is QoS depth 1, so only the newest setpoint survives.
+//     Raising it would hand the callback a backlog, each entry recorded and
+//     overriding the last, leaving the survivor to cover the whole backlog's
+//     distance in one period -- a velocity spike proportional to the backlog.
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
-#include <condition_variable>
-#include <deque>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -113,9 +119,6 @@ using wmx3Api::WMX3Api;
 
 namespace
 {
-// One block per setpoint: StartLinearIntplPos, nothing else.
-constexpr auto kPumpIdleWait = std::chrono::milliseconds(5);
-
 // remainingBlockCount should sit at 0-1 with no pacing block, so anything
 // standing above this means the engine is not keeping up with arrivals.
 constexpr int kDepthWarnBlocks = 3;
@@ -126,7 +129,7 @@ constexpr int kDepthWarnBlocks = 3;
 constexpr int kStalledPollCount = 3;
 constexpr auto kStatusPollPeriod = std::chrono::milliseconds(100);   // ~10 Hz
 
-// Backoff after the motion channel stops on a fault. Without this the pump
+// Backoff after the motion channel stops on a fault. Without this the callback
 // re-Executes on the very next setpoint, so a PERSISTENT fault (servo off, for
 // one) becomes a 40 Hz Clear/Execute/Stop storm against the engine that never
 // gives up. Doubles per consecutive fault, capped, and resets the moment a
@@ -144,7 +147,7 @@ constexpr auto kHealthyStreamTime = std::chrono::seconds(1);
 // A Stop state read within this window of Execute is not trusted. GetStatus is
 // cyclic, so the first poll after Execute can still be reporting the Stop that
 // the preceding Halt/Clear left behind. Long enough to cover several engine
-// cycles and the pump's own 25 ms cadence, short enough that a genuine
+// cycles and the 25 ms setpoint cadence, short enough that a genuine
 // error-free Stop (an external Halt, say) is still caught promptly.
 constexpr auto kStatusSettleTime = std::chrono::milliseconds(50);
 }  // namespace
@@ -159,8 +162,9 @@ private:
   // --- WMX3 handles -------------------------------------------------------
   // Two devices. StartRecordBufferChannel is DEVICE-wide: while recording,
   // every WMX3 call through that device is recorded instead of executed. The
-  // pump needs CoreMotion::GetStatus and Motion::Stop (both of which WOULD be
-  // recorded), so the recording device is kept strictly separate.
+  // control path needs CoreMotion::GetStatus and Motion::Stop (both of which
+  // WOULD be recorded), so the recording device is kept strictly separate.
+  // Nothing on the ctl device may be called inside a record window.
   WMX3Api wmxRec_;
   WMX3Api wmxCtl_;
   std::unique_ptr<CoreMotion> cmRec_;
@@ -184,7 +188,6 @@ private:
   int channelEstop_ = 1;
   int bufferSizeMb_ = 5;
   int nominalPeriodUs_ = 25000;      // time each segment is given to cover its step
-  int rosQueueDepth_ = 8;
   int starvationTimeoutMs_ = 75;
   double accelRatio_ = 0.3;
   double maxJointVelocity_ = 3.0;    // rad/s ceiling, applied as a uniform scale
@@ -197,16 +200,18 @@ private:
   Motion::LinearIntplCommand intpl_;
 
   // --- streaming state ----------------------------------------------------
-  std::mutex ringMtx_;
-  std::condition_variable ringCv_;
-  std::deque<std::vector<double>> ring_;      // targets, in joint_axes order
-
+  // Everything here is touched only from the executor thread: the trajectory
+  // callback, onExecActive and the status timer all run on it, and rclcpp::spin
+  // is single-threaded. That is what the pump's removal bought -- no ring, no
+  // mutex, no atomics on the streaming path.
   std::vector<double> step_;                  // scratch: target - posCmd, per axis
   unsigned long long setpointSeq_ = 0;        // recorded setpoints, for the trace log
 
-  // Atomic because pollStatus reads it from the executor thread to decide
-  // whether a stalled cumulative block count is worth reporting.
-  std::atomic<bool> streaming_{false};        // buffer Active and being fed
+  bool streaming_ = false;                    // buffer Active and being fed
+
+  // Last setpoint HANDLED, holds included -- a hold is a deliberate no-record,
+  // not a gap in the stream, so it must keep starvation quiet.
+  std::chrono::steady_clock::time_point lastSetpointAt_{};
 
   long long lastErrorCount_ = 0;             // ApiBufferStatus::errorCount is long long
 
@@ -219,12 +224,12 @@ private:
   std::chrono::steady_clock::time_point faultUntil_{};   // suppress restarts until
   std::chrono::steady_clock::time_point streamStartedAt_{};
 
-  std::atomic<bool> inExecution_{false};      // move_group owns the arm
-  std::atomic<bool> running_{true};
-  std::atomic<int> observedDepth_{0};
+  bool inExecution_ = false;                  // move_group owns the arm
+
+  // Atomic: written by the executor thread in onEngineReady, read by the init
+  // thread. The only cross-thread flag left.
   std::atomic<bool> initializing_{false};
 
-  std::thread pumpThread_;
   std::thread initThread_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr engineReadySub_;
@@ -247,7 +252,6 @@ private:
   bool setupBuffers();
   void recordEstopRoutine();
 
-  void pumpLoop();
   bool beginStream();
   void endStream(const char * reason, bool controlled_stop);
   bool recordSetpoint(const std::vector<double> & target);
@@ -277,19 +281,14 @@ ServoStreamController::ServoStreamController()
 
 ServoStreamController::~ServoStreamController()
 {
-  running_ = false;
-  ringCv_.notify_all();
-
-  if (pumpThread_.joinable()) {
-    pumpThread_.join();
-  }
   if (initThread_.joinable()) {
     initThread_.join();
   }
 
   if (initialized_) {
     // Stop issuing blocks, drop what is queued, then bring the axes to rest
-    // with the configured stop profile.
+    // with the configured stop profile. This is endStream's teardown and more,
+    // so there is nothing to gain by routing through it on the way out.
     if (abCtl_) {
       abCtl_->Halt(channelMotion_);
       abCtl_->Clear(channelMotion_);
@@ -329,7 +328,6 @@ void ServoStreamController::setRosParameter()
   this->declare_parameter<int>("estop_buffer_channel", 1);
   this->declare_parameter<int>("api_buffer_size_mb", 5);
   this->declare_parameter<int>("nominal_period_us", 25000);
-  this->declare_parameter<int>("ros_queue_depth", 8);
   this->declare_parameter<int>("starvation_timeout_ms", 75);
   this->declare_parameter<double>("accel_ratio", 0.3);
   this->declare_parameter<double>("max_joint_velocity", 3.0);
@@ -344,7 +342,6 @@ void ServoStreamController::setRosParameter()
   this->get_parameter("estop_buffer_channel", channelEstop_);
   this->get_parameter("api_buffer_size_mb", bufferSizeMb_);
   this->get_parameter("nominal_period_us", nominalPeriodUs_);
-  this->get_parameter("ros_queue_depth", rosQueueDepth_);
   this->get_parameter("starvation_timeout_ms", starvationTimeoutMs_);
   this->get_parameter("accel_ratio", accelRatio_);
   this->get_parameter("max_joint_velocity", maxJointVelocity_);
@@ -404,7 +401,6 @@ void ServoStreamController::setRosParameter()
   RCLCPP_INFO(this->get_logger(), "api_buffer_size_mb: %d", bufferSizeMb_);
   RCLCPP_INFO(
     this->get_logger(), "nominal_period_us: %d (time given to each segment)", nominalPeriodUs_);
-  RCLCPP_INFO(this->get_logger(), "ros_queue_depth: %d (latest-wins)", rosQueueDepth_);
   RCLCPP_INFO(this->get_logger(), "starvation_timeout_ms: %d", starvationTimeoutMs_);
   RCLCPP_INFO(this->get_logger(), "accel_ratio: %.2f", accelRatio_);
   RCLCPP_INFO(this->get_logger(), "max_joint_velocity: %.3f rad/s", maxJointVelocity_);
@@ -685,16 +681,19 @@ void ServoStreamController::runInitSequence()
 
   logMotionParams();
 
-  pumpThread_ = std::thread(&ServoStreamController::pumpLoop, this);
-
   statusTimer_ = this->create_wall_timer(
     kStatusPollPeriod, std::bind(&ServoStreamController::pollStatus, this));
 
+  // Before the subscription, not after: the callback drops setpoints until this
+  // is set, and the subscription can start delivering the moment it exists.
+  initialized_ = true;
+
+  // Depth 1 IS the drop policy now -- see the note at the top of this file.
+  // Raising it hands the callback a backlog and buys a velocity spike.
   jointTrajectorySub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
     jointTrajectoryTopic_, 1,
     std::bind(&ServoStreamController::jointTrajectoryCallback, this, _1));
 
-  initialized_ = true;
   engineReadySub_.reset();
 
   RCLCPP_INFO(this->get_logger(), "servo_stream_controller is ready");
@@ -702,22 +701,20 @@ void ServoStreamController::runInitSequence()
 
 void ServoStreamController::onExecActive(const std_msgs::msg::Bool::SharedPtr msg)
 {
-  if (inExecution_.exchange(msg->data) == msg->data) {
+  if (inExecution_ == msg->data) {
     return;
   }
+  inExecution_ = msg->data;
 
   RCLCPP_INFO(
     this->get_logger(), "Servo stream %s (move_group execution %s)",
     msg->data ? "blocked" : "allowed", msg->data ? "started" : "finished");
 
   if (msg->data) {
-    // move_group is about to move the arm somewhere else: everything queued is
-    // now stale. Drop it and stop the channel. No Motion::Stop here — the
-    // trajectory controller owns the axes from this point.
-    {
-      std::lock_guard<std::mutex> lock(ringMtx_);
-      ring_.clear();
-    }
+    // move_group is about to move the arm somewhere else. Stop the channel; the
+    // callback discards setpoints for as long as inExecution_ holds, so there
+    // is nothing else to drop. No Motion::Stop here — the trajectory controller
+    // owns the axes from this point.
     endStream("move_group execution started", false);
   }
 }
@@ -725,7 +722,7 @@ void ServoStreamController::onExecActive(const std_msgs::msg::Bool::SharedPtr ms
 void ServoStreamController::jointTrajectoryCallback(
   const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
-  if (msg->points.empty() || inExecution_.load() || !initialized_) {
+  if (msg->points.empty() || inExecution_ || !initialized_) {
     return;
   }
 
@@ -780,20 +777,47 @@ void ServoStreamController::jointTrajectoryCallback(
     }
   }
 
-  // Drop-oldest. A stale teleop setpoint is worthless, and the WMX3 ring cannot
-  // be edited once written — so the drop policy has to live on this side.
-  {
-    std::lock_guard<std::mutex> lock(ringMtx_);
-    while (ring_.size() >= static_cast<size_t>(rosQueueDepth_)) {
-      ring_.pop_front();
+  // Holding off after a fault. Discard setpoints rather than restarting the
+  // channel into a condition that is still present.
+  const auto now = std::chrono::steady_clock::now();
+  if (now < faultUntil_) {
+    return;
+  }
+
+  if (!streaming_) {
+    if (!beginStream()) {
+      // Without a holdoff this retries at the arrival rate, which is a 40 Hz
+      // Clear/Execute storm against an engine that is already refusing.
+      faultUntil_ = now + kFaultBackoffBase;
+      return;
+    }
+  } else {
+    // Time between overrides is what predicts smoothness. Each segment starts
+    // decelerating exactly one period in (accel r*T + cruise (1-r)*T = T, for
+    // any accel_ratio), so an override that lands late arrives into the decel
+    // ramp and the axis has already given up speed. Nothing else reports this:
+    // middleware drops are invisible from here, and the buffer is empty by
+    // design, so depth cannot show it either.
+    const auto gap = std::chrono::duration_cast<std::chrono::microseconds>(
+      now - lastSetpointAt_).count();
+    if (gap > (3LL * nominalPeriodUs_) / 2) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 1000,
-        "ROS queue full (%d); dropping oldest setpoint — pump is not keeping up",
-        rosQueueDepth_);
+        "Override %.1f ms late (period %.1f ms); the segment was already decelerating",
+        static_cast<double>(gap) / 1000.0, nominalPeriodUs_ / 1000.0);
     }
-    ring_.push_back(std::move(target));
   }
-  ringCv_.notify_one();
+
+  if (recordSetpoint(target)) {
+    lastSetpointAt_ = std::chrono::steady_clock::now();
+    // Forgive the fault history only once the stream has actually survived a
+    // while. Resetting on a successful record instead would pin the backoff at
+    // its first step forever, since recording succeeds regardless of whether
+    // the engine can execute what was recorded.
+    if (lastSetpointAt_ - streamStartedAt_ > kHealthyStreamTime) {
+      consecutiveFaults_ = 0;
+    }
+  }
 }
 
 bool ServoStreamController::beginStream()
@@ -813,6 +837,10 @@ bool ServoStreamController::beginStream()
   // It belongs to pollStatus alone.
   streaming_ = true;
   streamStartedAt_ = std::chrono::steady_clock::now();
+  // Arm the starvation clock here, not on the first record. Left at its old
+  // value it can already be seconds stale, and the very next status poll would
+  // stop the axes before a single setpoint had been recorded.
+  lastSetpointAt_ = streamStartedAt_;
   RCLCPP_INFO_THROTTLE(
     this->get_logger(), *this->get_clock(), 1000,
     "Stream started (channel %d Active)", channelMotion_);
@@ -828,13 +856,6 @@ void ServoStreamController::endStream(const char * reason, bool controlled_stop)
     return;
   }
   streaming_ = false;
-
-  // The pump only writes observedDepth_ on its success path, so without this
-  // the depth topic keeps republishing the last in-flight count for as long as
-  // the stream stays down -- reporting a healthy backlog at exactly the moment
-  // the buffer is empty and the axes have stopped. Nothing is in flight past
-  // the Clear below, so say so.
-  observedDepth_.store(0);
 
   abCtl_->Halt(channelMotion_);
   abCtl_->Clear(channelMotion_);
@@ -988,105 +1009,66 @@ void ServoStreamController::logSetpoint(const CoreMotionStatus & before, double 
   RCLCPP_INFO(this->get_logger(), "%s", out.c_str());
 }
 
-void ServoStreamController::pumpLoop()
+// Everything that watches the channel rather than feeds it. This used to be
+// split between the pump (fault detection, starvation, depth) and here; with the
+// pump gone it all lives on this timer, which keeps the one cyclic GetStatus off
+// the setpoint path entirely -- the callback's only engine read is the posCmd
+// origin it cannot do without.
+//
+// Surfaces the error log too. The log holds only 10 entries with index 0 newest,
+// so errorCount (not the array length) is what reveals how many were missed.
+void ServoStreamController::pollStatus()
 {
-  const auto starvation = std::chrono::milliseconds(starvationTimeoutMs_);
-  auto last_sent = std::chrono::steady_clock::now();
+  if (!initialized_) {
+    return;
+  }
 
-  while (running_.load() && rclcpp::ok()) {
-    std::vector<double> target;
-    bool have_target = false;
-    size_t skipped = 0;
+  ApiBufferStatus st;
+  if (abCtl_->GetStatus(channelMotion_, &st) != ErrorCode::None) {
+    return;
+  }
 
-    {
-      std::unique_lock<std::mutex> lock(ringMtx_);
-      if (ring_.empty()) {
-        ringCv_.wait_for(lock, kPumpIdleWait, [this] {
-          return !ring_.empty() || !running_.load();
-        });
-      }
-      if (!ring_.empty()) {
-        // Latest wins, and the rest are dropped here rather than fed in. With
-        // no pacing block the engine would execute a whole backlog within a few
-        // cycles, each entry overriding the last, and the survivor would be
-        // asked to cover the backlog's entire distance in one period — a
-        // velocity spike exactly when the system is already behind.
-        target = std::move(ring_.back());
-        skipped = ring_.size() - 1;
-        ring_.clear();
-        have_target = true;
-      }
-    }
+  // One block per setpoint, so this is blocks and setpoints at once. Read from
+  // the status every poll rather than cached from a record, so it stays honest
+  // when the stream is down. It sits at 0-1 in steady state and is a "can the
+  // engine keep up" signal, not a latency dial.
+  const int depth = static_cast<int>(st.remainingBlockCount);
+  std_msgs::msg::Int32 depth_msg;
+  depth_msg.data = depth;
+  depthPub_->publish(depth_msg);
 
-    if (skipped > 0) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 1000,
-        "Pump behind: skipped %zu setpoint(s) to take the newest", skipped);
-    }
+  if (streaming_ && depth > kDepthWarnBlocks) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 1000,
+      "API buffer not draining: %d blocks in flight (expected 0-1)", depth);
+  }
 
-    if (!running_.load()) {
-      break;
-    }
+  // Starvation. Granularity is the poll period now rather than the pump's 5 ms,
+  // which is acceptable because this is a channel-state backstop and not what
+  // stops the arm: a stream that dies leaves the last interpolation to
+  // decelerate to rest within one period on its own, well before this fires.
+  if (streaming_ &&
+    std::chrono::steady_clock::now() - lastSetpointAt_ >
+    std::chrono::milliseconds(starvationTimeoutMs_))
+  {
+    RCLCPP_WARN(
+      this->get_logger(), "Servo stream starved (>%d ms); stopping axes",
+      starvationTimeoutMs_);
+    endStream("stream starved", true);
+  }
 
-    if (!have_target) {
-      // Nothing to send. If we were streaming and the gap has grown past the
-      // starvation window, bring the arm to a controlled rest rather than
-      // letting the buffer simply run dry.
-      if (streaming_ && std::chrono::steady_clock::now() - last_sent > starvation) {
-        RCLCPP_WARN(
-          this->get_logger(), "Servo stream starved (>%d ms); stopping axes",
-          starvationTimeoutMs_);
-        endStream("stream starved", true);
-      }
-      continue;
-    }
+  if (streaming_ && st.state == ApiBufferState::Stop) {
+    // A Stop with nothing recorded against it is not a fault: since GetStatus
+    // is one cycle stale, the first poll after Execute reads back the Stop that
+    // endStream's Halt left behind. Faulting on that tears down the stream just
+    // after starting it, Halt/Clear/Stops the axes on nothing, and escalates
+    // the backoff -- so the next attempt is delayed on evidence that was never
+    // there. Let the status catch up instead.
+    const bool recorded_error = st.watchError || st.errorCount > 0;
+    const bool settled =
+      std::chrono::steady_clock::now() - streamStartedAt_ >= kStatusSettleTime;
 
-    if (inExecution_.load()) {
-      continue;   // move_group owns the arm; discard
-    }
-
-    // Holding off after a fault. Discard setpoints rather than restarting the
-    // channel into a condition that is still present.
-    if (std::chrono::steady_clock::now() < faultUntil_) {
-      continue;
-    }
-
-    if (!streaming_) {
-      if (!beginStream()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        continue;
-      }
-      // Re-arm the starvation clock. last_sent still holds the last time a
-      // setpoint was RECORDED, which on the first stream is the pump's own
-      // start time -- seconds ago if the publisher was slow to appear. Any
-      // iteration that continues before recording (the stale-Stop settle path
-      // below is the normal one) then reaches the starvation check with that
-      // dead timestamp and stops the axes one kPumpIdleWait after Execute,
-      // before a single setpoint has been recorded.
-      last_sent = std::chrono::steady_clock::now();
-    }
-
-    // GetStatus is cyclic (one cycle stale), which is fine for a slow pacing
-    // loop but means freeSize must be read with margin, not exactly.
-    ApiBufferStatus st;
-    if (abCtl_->GetStatus(channelMotion_, &st) != ErrorCode::None) {
-      continue;
-    }
-
-    if (st.state == ApiBufferState::Stop) {
-      // A Stop with nothing recorded against it is not a fault: since GetStatus
-      // is one cycle stale, the first poll after Execute reads back the Stop
-      // that endStream's Halt left behind. Faulting on that tears down the
-      // stream 30 us after starting it, Halt/Clear/Stops the axes on nothing,
-      // and escalates the backoff -- so the next attempt is delayed on evidence
-      // that was never there. Let the status catch up instead.
-      const bool recorded_error = st.watchError || st.errorCount > 0;
-      if (!recorded_error &&
-        std::chrono::steady_clock::now() - streamStartedAt_ < kStatusSettleTime)
-      {
-        continue;
-      }
-
+    if (recorded_error || settled) {
       ++consecutiveFaults_;
       const auto backoff = std::min(
         kFaultBackoffMax,
@@ -1119,53 +1101,7 @@ void ServoStreamController::pumpLoop()
         cause, st.errorCount, consecutiveFaults_, static_cast<long>(backoff.count()));
 
       endStream("channel stopped", true);
-      continue;
     }
-
-    // One block per setpoint, so this is blocks and setpoints at once. It sits
-    // at 0-1 in steady state and is a "can the engine keep up" signal now, not
-    // a latency dial.
-    const int depth = static_cast<int>(st.remainingBlockCount);
-    observedDepth_.store(depth);
-
-    if (depth > kDepthWarnBlocks) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 1000,
-        "API buffer not draining: %d blocks in flight (expected 0-1)", depth);
-    }
-
-    if (recordSetpoint(target)) {
-      last_sent = std::chrono::steady_clock::now();
-      // Forgive the fault history only once the stream has actually survived a
-      // while. Resetting on a successful record instead would pin the backoff
-      // at its first step forever, since recording succeeds regardless of
-      // whether the engine can execute what was recorded.
-      if (last_sent - streamStartedAt_ > kHealthyStreamTime) {
-        consecutiveFaults_ = 0;
-      }
-    }
-  }
-
-  if (streaming_) {
-    endStream("shutting down", true);
-  }
-}
-
-// Surfaces the error log. The log holds only 10 entries with index 0 newest, so
-// errorCount (not the array length) is what reveals how many were missed.
-void ServoStreamController::pollStatus()
-{
-  if (!initialized_) {
-    return;
-  }
-
-  std_msgs::msg::Int32 depth_msg;
-  depth_msg.data = observedDepth_.load();
-  depthPub_->publish(depth_msg);
-
-  ApiBufferStatus st;
-  if (abCtl_->GetStatus(channelMotion_, &st) != ErrorCode::None) {
-    return;
   }
 
   // Liveness. remainingBlockCount is 0-1 by design, so an empty buffer proves
@@ -1174,7 +1110,7 @@ void ServoStreamController::pollStatus()
   // (an axis stuck mid-interpolation, say) shows up here and nowhere else.
   const long long consumed = st.cumulativeBlockCount - lastCumulativeBlocks_;
   lastCumulativeBlocks_ = st.cumulativeBlockCount;
-  if (streaming_.load() && consumed == 0) {
+  if (streaming_ && consumed == 0) {
     if (++stalledPolls_ >= kStalledPollCount) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 1000,

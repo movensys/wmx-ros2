@@ -35,7 +35,6 @@ servo_stream_controller:
     # publisher's actual period.
     nominal_period_us: 25000     # = 40 Hz publisher
 
-    ros_queue_depth: 8           # bounds memory; the pump takes the newest and drops the rest
     starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
     accel_ratio: 0.3             # accel phase spans 30% of a segment; retune with the surge data
     max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against this axis' real limit.

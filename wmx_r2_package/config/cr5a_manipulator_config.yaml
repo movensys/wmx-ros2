@@ -56,7 +56,6 @@ servo_stream_controller:
     # actual publish period.
     nominal_period_us: 25000     # = Servo publish_period 0.025 s
 
-    ros_queue_depth: 8           # bounds memory; the pump takes the newest and drops the rest
     starvation_timeout_ms: 75    # 3x nominal period -> controlled stop
     accel_ratio: 0.3             # accel phase spans 30% of a segment; retune with the surge data
     max_joint_velocity: 3.14     # rad/s ceiling. VERIFY against the arm's real joint limits.
