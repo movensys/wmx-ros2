@@ -24,6 +24,36 @@ sudo --preserve-env=PATH \
 
 Set `use_sim_time:=true` for the HiL run (Isaac Sim publishes the clock).
 
+Two things happen automatically once `wmx_core_motion_node` is up:
+
+| arg | default | what it does |
+|---|---|---|
+| `auto_servo_on` | `true` | clears alarms and enables the servos (WMX3 rejects motion in servo-off) |
+| `auto_home` | `true` | homes with `HomeType CurrentPos` (no motion) so the reported position lands inside the URDF joint limits |
+
+`auto_home` is what makes MoveIt able to plan at all. `axis_z` travels
+[0.012, 0.090] m in the URDF, so the raw encoder reading of `0.000` is *outside*
+the joint limits and every plan aborts with
+
+```
+[check_start_state_bounds]: Joint 'axis_z' from the starting state is outside
+bounds by: [0 ] should be in the range [0.012 ], [0.09 ].
+```
+
+Homing labels the parked position with each axis' `HomePosition` from
+`config/cartesian_wmx_parameters.xml` — `0.012` for axis 2, `0` for the rest —
+which is only correct if the machine is parked at the model's home pose (X/Y
+centred, Z at the bottom of its travel). If it is not, pass `auto_home:=false`,
+put the machine where you want the origin, and home it yourself:
+
+```
+ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis \
+  "{index: [0,1,2,3], data: [0,0,0,0]}"
+```
+
+Homing must also be re-run after any gear ratio change — WMX3 recomputes the
+zero position from it.
+
 # Axis map
 
 | URDF joint | WMX axis | travel (m)        |
@@ -33,13 +63,57 @@ Set `use_sim_time:=true` for the HiL run (Isaac Sim publishes the clock).
 | `axis_z`   | 2        | [ 0.012,  0.090]  |
 | `axis_r`   | 3        | continuous (rad)  |
 
-`joint_trajectory_controller` maps trajectory positions onto axes **by index**,
-not by joint name. MoveIt emits the SRDF chain order `axis_y, axis_x, axis_z`,
-which is why `joint_axes` in `config/cartesian_config.yaml` is `[1, 0, 2]`.
+`joint_trajectory_controller` resolves each column of an incoming trajectory
+through `trajectory.joint_names`, using the `joint_name` / `joint_axes` pair in
+`config/cartesian_config.yaml`. Do not remove `joint_name`: without it the
+columns are taken positionally, and the orders do not agree — Pilz emits
+`axis_x, axis_y, axis_z` while the robot model orders the joints
+`axis_y, axis_x, axis_z`, so X and Y would be driven onto each other's axis with
+nothing in the log to show for it.
+
+The node also refuses a trajectory whose first point is more than
+`start_tolerance` (0.01 m) away from where the axes actually are, instead of
+letting WMX jump to it. That is the symptom a wrong mapping produces.
+
+# Units
+
+The ROS nodes do no unit conversion, so the WMX user unit has to *be* the URDF
+unit: a metre for axes 0/1/2, a radian for axis 3. WMX converts user units to
+servo pulses with the **gear ratio**
+
+```
+pulse = user unit * AxisGearRatioNumerator / AxisGearRatioDenominator
+```
+
+so that ratio is the number of pulses per metre. It is `1000000 / 1` in
+`config/cartesian_wmx_parameters.xml` (1 pulse = 1 um). Left at the WMX default
+of `1 / 1`, a 20 mm move is commanded as `0.02` **pulses**, the axis does not
+move and the feedback stays at `0.000`.
+
+(`AxisUnit` is unrelated — it rounds the *reported* position to a multiple of
+itself and stays `0`, i.e. disabled.)
 
 # Before running on real hardware
 
-`config/cartesian_wmx_parameters.xml` is still a copy of
+`config/cartesian_wmx_parameters.xml` is otherwise still a copy of
 `default_wmx_parameters.xml`. Export the real one from WMX Studio; see the TODO
-block at the top of that file for what has to be right, above all `axisUnit`
-(1 WMX unit must equal 1 metre, because the ROS nodes do no unit conversion).
+block at the top of that file for what has to be right. The gear ratio above is
+a nominal 1 um/pulse placeholder — the real value is (encoder pulses per rev) /
+(ball screw lead in metres), and getting it wrong makes the robot travel a
+completely wrong distance.
+
+# Isaac Sim (HiL)
+
+The scene drives its articulation from a ROS2 Subscribe JointState node on
+`/joint_command`, which is what `isaacsim_joint_topic` in
+`config/cartesian_config.yaml` publishes to.
+
+The scene must **not** publish `/joint_states`. The WMX encoders are the only
+source of joint state; a second publisher makes MoveIt's start state flap
+between the two sources, and planning then fails intermittently for no visible
+reason. Delete the ROS2 Publish JointState node from the scene graph (or point
+it at some other topic) and check with:
+
+```
+ros2 topic info /joint_states     # Publisher count must be 1
+```

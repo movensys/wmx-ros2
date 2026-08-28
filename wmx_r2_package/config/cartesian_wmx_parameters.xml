@@ -1,17 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Parameters ver="1.00">
 <!--
-  TODO: this file is a straight copy of default_wmx_parameters.xml.
-  Replace it with an export from WMX Studio for the real cartesian machine
-  before running on hardware. At minimum these must be set per axis:
-    - axisUnit           : scaling so that 1 WMX unit == 1 metre for axes 0/1/2
-                           (axis 3 = axis_r is rotational)
-    - Motor / encoder resolution, gear ratio, lead of the ball screw
+  Derived from default_wmx_parameters.xml. Axes 0..3 are the cartesian machine
+  (0 = axis_x, 1 = axis_y, 2 = axis_z, 3 = axis_r); axes 4+ are untouched
+  defaults.
+
+  UNITS. WMX converts user units to servo pulses with
+      pulse = user unit * AxisGearRatioNumerator / AxisGearRatioDenominator
+  and the ROS nodes pass positions through 1:1, so the WMX user unit has to be
+  the URDF unit: metres for axes 0/1/2, radians for axis 3. The gear ratio
+  below is set to 1000000 / 1, i.e. 1 user unit = 1 m (1 pulse = 1 um) and
+  1 user unit = 1 rad for axis 3.
+  (AxisUnit is a *rounding* step for reported positions, not a scaling factor.
+  It stays 0 = rounding disabled.)
+
+  ZERO POSITION. axis_z travels [0.012, 0.090] m in the URDF, so the encoder
+  zero (0.0) is not a legal joint value and MoveIt refuses to plan from it
+  ("Joint 'axis_z' from the starting state is outside bounds").
+  HomePosition for axis 2 is therefore 0.012: homing with HomeType CurrentPos
+  labels the parked position 0.012 m instead of 0, which puts the machine
+  inside the URDF range. wmx_r2_cartesian.launch.py does this at bring-up
+  (auto_home:=true) and it assumes the Z stage is parked at the bottom of its
+  travel. Homing must be re-run after any gear ratio change.
+
+  TODO before running on real hardware: replace this file with a WMX Studio
+  export for the actual machine. The gear ratio above is a nominal 1 um/pulse
+  placeholder; the real value is (encoder pulses per rev) / (ball screw lead
+  in metres). Still unset here:
+    - Motor / encoder resolution, gear reduction, lead of the ball screw
     - Software position limits, matching the URDF:
         axis_x [-0.115, 0.100]   axis_y [-0.100, 0.100]   axis_z [0.012, 0.090]
-    - Home parameters (HomeType, direction, offset) per axis
+    - Home parameters (HomeType, direction, switches) per axis
     - EtherCAT node <-> axis assignment, matching the ENI file in wmx-r2/eni/
-  A wrong axisUnit makes the robot travel a completely wrong distance.
+  A wrong gear ratio makes the robot travel a completely wrong distance.
 -->
 	<GlobalParameters>
 		<FlightRecorderParam>
@@ -219,8 +240,8 @@
 		</EmergencyStopParam>
 		<AxisParam>
 			<AxisCommandMode>0</AxisCommandMode>
-			<AxisGearRatioNumerator>8388608.000000</AxisGearRatioNumerator>
-			<AxisGearRatioDenominator>360.000000</AxisGearRatioDenominator>
+			<AxisGearRatioNumerator>1000000.000000</AxisGearRatioNumerator>
+			<AxisGearRatioDenominator>1.000000</AxisGearRatioDenominator>
 			<SingleTurnMode>0</SingleTurnMode>
 			<SingleTurnEncoderCount>65536</SingleTurnEncoderCount>
 			<MaxTrqLimit>300.000000</MaxTrqLimit>
@@ -427,7 +448,7 @@
 		</EmergencyStopParam>
 		<AxisParam>
 			<AxisCommandMode>0</AxisCommandMode>
-			<AxisGearRatioNumerator>1.000000</AxisGearRatioNumerator>
+			<AxisGearRatioNumerator>1000000.000000</AxisGearRatioNumerator>
 			<AxisGearRatioDenominator>1.000000</AxisGearRatioDenominator>
 			<SingleTurnMode>0</SingleTurnMode>
 			<SingleTurnEncoderCount>65536</SingleTurnEncoderCount>
@@ -483,7 +504,7 @@
 			<MaxHSOnAtStartReverseDistance>0.000000</MaxHSOnAtStartReverseDistance>
 			<MaxLSReverseDistance>0.000000</MaxLSReverseDistance>
 			<ZPulseDistanceCheck>0</ZPulseDistanceCheck>
-			<HomePosition>0.000000</HomePosition>
+			<HomePosition>0.012000</HomePosition>
 			<GantryHomingUseSlaveHS>0</GantryHomingUseSlaveHS>
 			<GantryHomingUseSlaveLS>0</GantryHomingUseSlaveLS>
 			<GantryHomingUseSlaveZPulse>0</GantryHomingUseSlaveZPulse>
@@ -635,7 +656,7 @@
 		</EmergencyStopParam>
 		<AxisParam>
 			<AxisCommandMode>0</AxisCommandMode>
-			<AxisGearRatioNumerator>1.000000</AxisGearRatioNumerator>
+			<AxisGearRatioNumerator>1000000.000000</AxisGearRatioNumerator>
 			<AxisGearRatioDenominator>1.000000</AxisGearRatioDenominator>
 			<SingleTurnMode>0</SingleTurnMode>
 			<SingleTurnEncoderCount>65536</SingleTurnEncoderCount>
@@ -843,7 +864,7 @@
 		</EmergencyStopParam>
 		<AxisParam>
 			<AxisCommandMode>0</AxisCommandMode>
-			<AxisGearRatioNumerator>1.000000</AxisGearRatioNumerator>
+			<AxisGearRatioNumerator>1000000.000000</AxisGearRatioNumerator>
 			<AxisGearRatioDenominator>1.000000</AxisGearRatioDenominator>
 			<SingleTurnMode>0</SingleTurnMode>
 			<SingleTurnEncoderCount>65536</SingleTurnEncoderCount>
