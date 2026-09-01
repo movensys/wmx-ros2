@@ -81,7 +81,7 @@ private:
   bool requireEngine_ = true;
   bool nodesAreUp_ = false;
 
-  rclcpp::CallbackGroup::SharedPtr managerCbGroup_;
+  rclcpp::CallbackGroup::SharedPtr oneCbOnlyGroup_;
   rclcpp::CallbackGroup::SharedPtr clientCbGroup_;
 
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr engineStatusClient_;

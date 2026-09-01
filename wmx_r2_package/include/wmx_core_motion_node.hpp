@@ -40,10 +40,10 @@ public:
   WmxCoreMotionNodeApi(const rclcpp::Logger & logger, const Config & config);
   ~WmxCoreMotionNodeApi();
 
-  int attachDevice(std::string & message);
-  void releaseDevice();
+  int createDevice(std::string & message);
+  void closeDevice();
 
-  int readAxisCount();
+  int getNumOfAxes();
   int getStatus(wmx3Api::CoreMotionStatus & status);
 
   int startPos(
@@ -51,7 +51,7 @@ public:
   int startMov(
     int axis, double target, double velocity, double acc, double dec, std::string & message);
   int startVel(int axis, double velocity, double acc, double dec, std::string & message);
-  int stopAxis(int axis);
+  int stop(int axis);
 
   int startJog(
     int axis, double velocity, double acc, double dec, const rclcpp::Time & now,
@@ -60,11 +60,11 @@ public:
   void stopAllJogs();
   void clearJog(int axis);
 
-  int setServoOn(int axis, int on, std::string & message);
+  int setServoOn(int axis, int newStatus, std::string & message);
   int setAxisCommandMode(int axis, int mode, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
   int setAxisPolarity(int axis, int polarity, std::string & message);
-  int setGearRatio(int axis, int numerator, int denominator, std::string & message);
+  int setGearRatio(int axis, double numerator, double denominator, std::string & message);
   int startHome(int axis, std::string & message);
 
 private:
@@ -74,7 +74,7 @@ private:
     rclcpp::Time deadline;
   };
 
-  std::string errorText(int err);
+  std::string errorToString(int err);
 
   rclcpp::Logger logger_;
   Config config_;
@@ -110,7 +110,7 @@ public:
 private:
   std::unique_ptr<WmxCoreMotionNodeApi> api_;
 
-  int axisCount_ = 0;
+  int numOfAxes_ = 0;
   int rate_ = 100;
 
   rclcpp::TimerBase::SharedPtr axesStatusTimer_;
@@ -150,10 +150,8 @@ private:
   rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr setAxisPolarityService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxesGearRatio>::SharedPtr setGearRatioService_;
   rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr startHomeService_;
-  rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr stopAxisService_;
+  rclcpp::Service<wmx_r2_message::srv::SetAxes>::SharedPtr stopService_;
 
-  bool isNodeActive();
-  std::string notActiveMessage();
 
   void axesStatusStep();
   void jogWatchdogStep();
@@ -181,7 +179,7 @@ private:
   void startHomeCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response);
-  void stopAxisCallback(
+  void stopCallback(
     const std::shared_ptr<wmx_r2_message::srv::SetAxes::Request> request,
     std::shared_ptr<wmx_r2_message::srv::SetAxes::Response> response);
 };

@@ -9,9 +9,10 @@ header `differential_drive_controller.hpp`; the node is the ROS/WMX wiring aroun
 ```
 /cmd_vel_safe ──────────▶ ┌──────────────────────────────┐ ──▶ /odom_enc    (Odometry)
                           │ differential_drive_controller │ ──▶ /odom_deltas (TwistStamped)
-lifecycle configure/    ─▶│  single loop @ rate (100 Hz)  │ ──▶ /odom_accel  (AccelStamped)
-activate (manager)        │  WMX3 CoreMotion StartVel /   │ ──▶ /omega_enc   (Float64MultiArray)
-                          │  GetStatus (one per cycle)    │ ──▶ /tf odom→base_link (optional)
+configure / activate ────▶│  (lifecycle node)             │ ──▶ /odom_accel  (AccelStamped)
+ from wmx_engine_node     │  single loop @ rate (100 Hz)  │ ──▶ /omega_enc   (Float64MultiArray)
+                          │  WMX3 CoreMotion StartVel /   │ ──▶ /tf odom→base_link (optional)
+                          │  GetStatus (one per cycle)    │
                           └──────────────────────────────┘
 ```
 
@@ -35,8 +36,12 @@ has no effect on behaviour — restart the node to apply new values.
 | `right_axis` | int | `1` | – | WMX3 axis index of the right wheel. Same caveat as `left_axis`. |
 | `wheel_radius` | double | `0.095` | m | Drive-wheel radius `R`. Guarded: values ≤ 0 fall back to the default (warn). |
 | `wheel_to_wheel` | double | `0.55` | m | Wheel separation `L` (distance between the two drive wheels). Guarded: ≤ 0 falls back to the default (warn). |
-| `pos_unit_scale` | double | `1.0` | rad/user-unit | Converts `actualPos` (WMX user-unit) to wheel **radians** for the position-delta odometry. `1.0` when the loaded WMX param XML already scales to rad (same scaling that makes `actualVelocity` read rad/s — our config). Guarded: non-finite or `0` falls back to `1.0` (warn). |
-| `wmx_param_file_path` | string | `/diff_drive/no_param` | – | WMX parameter XML imported at init via `config->ImportAndSetAll()` (axis gear/feedback/limit setup). The default is a deliberate non-path: the import fails with an ERROR log but the node keeps running with whatever parameters the engine already has. The diffbot launch file overrides it with `config/diffbot_wmx_parameters.xml` resolved at launch time. |
+
+The WMX parameter XML (axis gear/feedback/limit setup) is **not** a parameter of
+this node: it is imported once by `wmx_engine_node` through its
+`wmx_param_file_path` parameter, which the diffbot launch file fills in with
+`config/diffbot_wmx_parameters.xml` resolved at launch time (launch argument
+`wmx_param_file`).
 
 ### B. Motion profile / loop
 
@@ -94,9 +99,9 @@ in the generated node config like any other value.
 **Namespaces.** The five data-topic defaults are *absolute* names, so launching
 the node in a ROS namespace does **not** namespace them — override the topic
 parameters explicitly for multi-robot/namespaced deployments. The lifecycle
-services (`~/change_state`, `~/get_state`) follow the namespace, so
-`wmx_lifecycle_manager_node` must run where it can discover the controller —
-in practice, the **same namespace** — or the controller is never brought up.
+services (`~/change_state`, `~/get_state`) do follow the namespace; the engine
+discovers the controller under its fully-qualified name, and
+`wmx/lifecycle/set_node_state` takes that same name.
 
 ### `/odom_enc` covariance (fixed, not parameterized)
 
@@ -114,14 +119,15 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 - **Long-uptime precision:** pose uses `actualPos` (a `double` user-unit); over very
   long uptime `actualPos` grows large and `actualPos − prev` loses low-order bits
   (catastrophic cancellation of two large near-equal doubles). The exact-integer
-  alternative is `CoreMotionAxisStatus.accumulatedEncoderFeedback` (`long long`)
+  alternative is `CoreMotionAxesStatus.accumulatedEncoderFeedback` (`long long`)
   differenced as integers then scaled — switch to it if this ever surfaces.
 - **`/odom_deltas` during engine downtime:** motion that happens while
   `engineState != Communicating` is not accumulated (the baseline re-anchors on
   recovery). Correct — it was unobservable — but a change from the old `|v|·dt`
   accumulation that ran whenever the engine was communicating.
-- **Per-axis unit scaling:** the rad assumption (`pos_unit_scale`) requires both
-  axes to share identical WMX user-unit scaling; verify in the WMX param XML / sim.
+- **Per-axis unit scaling:** `actualPos` and `actualVelocity` are taken to be wheel
+  radians and rad/s. The loaded WMX param XML must scale both axes that way;
+  verify in the XML / sim. There is no node-side conversion.
 - **Jump-guard trip:** when the guard trips it drops that cycle's contribution to
   **both** the `/odom` pose and `/odom_deltas` (re-baselines instead of integrating
   the jump). Intended for homing/rollover; the EKF is unaffected (twist only), but
@@ -134,14 +140,15 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 - Command: `linear.x` [m/s], `angular.z` [rad/s]; positive `angular.z` = CCW (REP-103).
 - Wheel velocity (`StartVel` target and `actualVelocity` feedback) is the wheel
   angular velocity in **rad/s**. The WMX axis user-unit scaling (encoder counts,
-  gear ratio) must be configured WMX-side — via the `wmx_param_file_path` XML —
+  gear ratio) must be configured WMX-side — via the engine's
+  `wmx_param_file_path` XML —
   so that one axis velocity unit = 1 rad/s at the wheel. There is no gear-ratio
   parameter in the node.
 - Kinematics (`diff_drive::DiffDriveModel`):
   - inverse: `ωl = (2v − ωL)/(2R)`, `ωr = (2v + ωL)/(2R)`
   - forward: `v = R(ωr + ωl)/2`, `ω = R(ωr − ωl)/L`
 - **Odometry** (pose + `/odom_deltas`) is dead-reckoned from per-wheel encoder
-  **position deltas** `Δφ = (actualPos − prev)·pos_unit_scale` (dt-free; exact-arc
+  **position deltas** `Δφ = actualPos − prev` (dt-free; exact-arc
   via the sinc midpoint form). This is more precise than `velocity·dt` — no
   constant-velocity-over-`dt` assumption and no `dt`-jitter sensitivity.
 - **Twist** (`/odom_enc.twist`, `/odom_accel`, `/omega_enc`) comes from the servo's
@@ -154,32 +161,41 @@ authoritative for the no-EKF fallback where this odometry feeds Nav2 directly.
 
 ## Lifecycle and runtime behaviour
 
-**Startup.** The node is a managed lifecycle node: it comes up `unconfigured` and
-does nothing until `wmx_lifecycle_manager_node` transitions it (the manager waits
-for the engine to report `Communicating` first). See "Node Lifecycle" in
-`reference_wmx_r2_general_nodes.md`.
+**Startup.** This is a managed (lifecycle) node. It starts `unconfigured` and
+does nothing until `wmx_engine_node` drives it — automatically once the engine
+communicates, or on demand through `wmx/lifecycle/set_node_state` /
+`ros2 lifecycle set`.
 
 `on_configure`:
 
 1. `CreateDevice(WMX3_SDK_PATH, DeviceTypeNormal, 10 s)` — any error fails the
-   transition and leaves the node `unconfigured`.
+   transition and leaves the node `unconfigured` (the engine logs it).
 2. `SetDeviceName("differential_drive_controller")`.
-3. `ImportAndSetAll(wmx_param_file_path)` — failure is logged but non-fatal.
-4. Create publishers/subscriber and the control timer, with the timer cancelled.
 
-`on_activate` clears the odometry baselines and starts the control timer.
-`on_deactivate` stops the timer and commands both wheels to zero velocity;
-`on_cleanup` destroys the interfaces and closes the device.
+The WMX parameter XML is not imported here — `wmx_engine_node` does that once,
+right after it creates the device, from its `wmx_param_file_path` parameter.
 
-A failed `configure` is not terminal: the transition returns `FAILURE`, the node
-stays `unconfigured`, and the manager retries on its next discovery sweep. The
-process never exits with an error code on a failed transition — it stays alive
-and inert (no topics, no timer). Supervise via `wmx/lifecycle/get_node_states` or
-topic liveness (`/odom_enc` at `rate` Hz), not exit codes.
+`on_activate` creates the publishers, the `cmd_vel` subscription and the control
+timer, and re-baselines the odometry and command state (encoders may have moved
+while inactive). `on_deactivate` drops the timer, commands both wheels to zero and
+destroys those interfaces — while inactive the node publishes nothing and accepts
+no commands. `on_cleanup` closes the device.
+
+A failed `configure` is not terminal: the node stays alive and `unconfigured`,
+and the transition can be retried at any time. The process never exits
+with an error code on init failure — it stays alive and inert (no topics, no
+timer). Supervise via logs or topic liveness (`/odom_enc` at `rate` Hz), not
+exit codes.
 
 The node does **not** start communication, clear alarms, or switch servos on —
 that is owned by the engine/general nodes (see
 `reference_wmx_r2_general_nodes.md` for the service sequence).
+
+**Manual vs. controller arbitration.** While this node is ACTIVE it owns the wheel
+axes: `wmx_core_motion_node` rejects `start_pos`, `start_mov`, `start_vel`, `start_jog`
+and `start_home` for as long as it stays active (it is listed in that node's
+`motion_controllers`). `wmx/axes/stop` is never blocked. See
+`reference_general_nodes.md`.
 
 **Control loop** (every `1/rate`, single `GetStatus` per cycle):
 
@@ -219,13 +235,16 @@ A deployment consists of two files plus the launch wiring
 (example: `launch/wmx_r2_diffbot_navigation.launch.py`):
 
 1. **ROS parameter YAML** — `config/diffbot_navigation_config.yaml`, key
-   `differential_drive_controller.ros__parameters` (all tables above).
+   `differential_drive_controller.ros__parameters` (all tables above), plus the
+   `wmx_engine_node` key (`core`, `affinity_mask`, `wmx_param_file_path`) and
+   the other general-node keys.
 2. **WMX parameter XML** — `config/diffbot_wmx_parameters.xml`: axis-level
    gear/feedback/limit/e-stop setup imported at node init. This is where the
    "axis unit = wheel rad/s" scaling and the hardware-level motion limits live.
 3. **Launch** — starts the general WMX nodes (engine etc.), the
-   `joint_state_broadcaster`, and this node; injects `wmx_param_file_path`
-   (resolved from the package share at launch time) and `use_sim_time`.
+   `joint_state_broadcaster`, and this node; injects the engine's
+   `wmx_param_file_path` (resolved from the package share at launch time) and
+   `use_sim_time`.
 
 ```yaml
 differential_drive_controller:
@@ -248,7 +267,12 @@ differential_drive_controller:
     encoder_omega_topic: /omega_enc
     odom_deltas_topic: /odom_deltas
     odom_accel_topic: /odom_accel
-    wmx_param_file_path: ""  # injected by launch
+
+wmx_engine_node:
+  ros__parameters:
+    core: -1                # RT engine CPU core (-1 = SDK default)
+    affinity_mask: 0        # CPU affinity bitmask (0 = SDK default)
+    wmx_param_file_path: "" # injected by launch
 ```
 
 ---
@@ -258,14 +282,15 @@ differential_drive_controller:
 What the Toolkit needs to template per robot / per deployment:
 
 - **Always per robot:** `left_axis`, `right_axis`, `wheel_radius`,
-  `wheel_to_wheel`, and the WMX parameter XML (`wmx_param_file_path`).
+  `wheel_to_wheel`, and the WMX parameter XML (the engine's
+  `wmx_param_file_path`).
 - **Per deployment config:** `publish_tf` — must be `true` exactly when the
   localization EKF is *not* running (the EKF launches only with an IMU
   configured); otherwise two publishers would fight over `odom → base_link`.
 - **Usually defaults:** topic names (already the autonomy contract), frames, `rate`,
   `cmd_vel_timeout`, `accel_publish_rate`, `accel_alpha`, `acc_time`/`dec_time`.
-- **Not parameterized (by design):** the lifecycle gate (the manager owns it), the
-  `/odom_enc` covariance values, servo-on/alarm-clear handling (engine/general
+- **Not parameterized (by design):** the lifecycle gate (`wmx_engine_node` owns it),
+  the `/odom_enc` covariance values, servo-on/alarm-clear handling (engine/general
   nodes own these), and any gear-ratio scaling (WMX XML owns it).
 
 ## Build

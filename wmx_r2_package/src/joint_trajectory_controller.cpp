@@ -19,13 +19,16 @@ using wmx3Api::ErrorCode;
 
 namespace
 {
+constexpr int kGoalStopTimeoutMs = 2000;
+constexpr int kGoalStopPollMs = 10;
+
 struct ScopeExit
 {
   std::function<void()> fn;
   ~ScopeExit() {fn();}
 };
 
-std::string errorText(int err)
+std::string errorToString(int err)
 {
   char errString[256] = {};
   AdvancedMotion::ErrorToString(err, errString, sizeof(errString));
@@ -40,14 +43,14 @@ JointTrajectoryControllerApi::JointTrajectoryControllerApi(const rclcpp::Logger 
 
 JointTrajectoryControllerApi::~JointTrajectoryControllerApi()
 {
-  releaseDevice();
+  closeDevice();
 }
 
-int JointTrajectoryControllerApi::attachDevice(std::string & message)
+int JointTrajectoryControllerApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (isDeviceAttached_) {
+  if (isDeviceCreated_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
@@ -58,7 +61,7 @@ int JointTrajectoryControllerApi::attachDevice(std::string & message)
       message = "Failed to attach to device (lock busy). Is the engine communicating?";
     } else {
       message = "Failed to attach to device. Error=" + std::to_string(err) +
-        " (" + errorText(err) + ")";
+        " (" + errorToString(err) + ")";
     }
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
@@ -67,7 +70,7 @@ int JointTrajectoryControllerApi::attachDevice(std::string & message)
   err = wmx3Lib_.SetDeviceName(deviceName_);
   if (err != ErrorCode::None) {
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
+      std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     wmx3Lib_.CloseDevice();
     return err;
@@ -82,14 +85,14 @@ int JointTrajectoryControllerApi::attachDevice(std::string & message)
     return err;
   }
 
-  isDeviceAttached_ = true;
+  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
   return ErrorCode::None;
 }
 
-void JointTrajectoryControllerApi::releaseDevice()
+void JointTrajectoryControllerApi::closeDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
@@ -97,11 +100,12 @@ void JointTrajectoryControllerApi::releaseDevice()
 
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
-    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    RCLCPP_INFO(logger_, "Device closed");
-    isDeviceAttached_ = false;
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorToString(err).c_str());
+    return;
   }
+
+  RCLCPP_INFO(logger_, "Device closed");
+  isDeviceCreated_ = false;
 }
 
 int JointTrajectoryControllerApi::createSplineBuffer(std::string & message)
@@ -110,7 +114,7 @@ int JointTrajectoryControllerApi::createSplineBuffer(std::string & message)
   if (err != ErrorCode::None) {
     message = "Failed to create the spline buffer on channel " +
       std::to_string(kSplineChannel) + ". Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
+      " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -125,11 +129,11 @@ void JointTrajectoryControllerApi::freeSplineBuffer()
   const int err = am_.advMotion->FreeSplineBuffer(kSplineChannel);
   if (err != ErrorCode::None) {
     RCLCPP_ERROR(
-      logger_, "Failed to free the spline buffer. Error=%d (%s)", err, errorText(err).c_str());
+      logger_, "Failed to free the spline buffer. Error=%d (%s)", err, errorToString(err).c_str());
   }
 }
 
-int JointTrajectoryControllerApi::setAxes(
+int JointTrajectoryControllerApi::setAxisSelection(
   const std::vector<int64_t> & axes, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
@@ -175,7 +179,7 @@ int JointTrajectoryControllerApi::startCSplinePos(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot start the trajectory. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -215,7 +219,7 @@ int JointTrajectoryControllerApi::startCSplinePos(
     splinePoints_.data(), splineTimesMs_.data());
   if (err != ErrorCode::None) {
     message = "StartCSplinePos failed. Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
+      " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -230,7 +234,7 @@ int JointTrajectoryControllerApi::getInPos(bool & inPos, std::string & message)
 
   inPos = false;
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -238,7 +242,7 @@ int JointTrajectoryControllerApi::getInPos(bool & inPos, std::string & message)
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
   if (err != ErrorCode::None) {
-    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -253,20 +257,20 @@ int JointTrajectoryControllerApi::getInPos(bool & inPos, std::string & message)
   return ErrorCode::None;
 }
 
-int JointTrajectoryControllerApi::stopAxes(std::string & message)
+int JointTrajectoryControllerApi::stop(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
   int err = cm_.motion->Stop(&axisSel_);
   if (err != ErrorCode::None) {
-    message = "Stop failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "Stop failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
   err = cm_.motion->Wait(&axisSel_);
   if (err != ErrorCode::None) {
-    message = "Wait failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "Wait failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -292,15 +296,16 @@ JointTrajectoryController::~JointTrajectoryController()
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller stopped");
 }
 
-bool JointTrajectoryController::isNodeActive() const
+void JointTrajectoryController::waitForGoalToFinish()
 {
-  return isNodeActive_.load();
-}
+  for (int i = 0; i < kGoalStopTimeoutMs / kGoalStopPollMs && goalRunning_.load(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(kGoalStopPollMs));
+  }
 
-std::string JointTrajectoryController::notActiveMessage()
-{
-  return "joint_trajectory_controller is not active (state: " +
-         this->get_current_state().label() + ").";
+  if (goalRunning_.load()) {
+    RCLCPP_WARN(
+      this->get_logger(), "Trajectory execution did not stop within %d ms", kGoalStopTimeoutMs);
+  }
 }
 
 void JointTrajectoryController::setRosParameter()
@@ -327,15 +332,22 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
   RCLCPP_INFO(this->get_logger(), "Configuring joint_trajectory_controller...");
 
   std::string message;
-  if (api_->attachDevice(message) != ErrorCode::None) {
+  if (api_->createDevice(message) != ErrorCode::None) {
     return CallbackReturn::FAILURE;
   }
 
-  if (api_->setAxes(jointAxes_, message) != ErrorCode::None) {
-    api_->releaseDevice();
+  if (api_->setAxisSelection(jointAxes_, message) != ErrorCode::None) {
+    api_->closeDevice();
     return CallbackReturn::FAILURE;
   }
 
+  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
   servoNodeResetPub_ = this->create_publisher<control_msgs::msg::JointJog>(
     "/servo_node/delta_joint_cmds", 10);
 
@@ -349,13 +361,6 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_configur
     std::bind(&JointTrajectoryController::handleCancel, this, _1),
     std::bind(&JointTrajectoryController::handleAccepted, this, _1));
 
-  RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is configured");
-  return CallbackReturn::SUCCESS;
-}
-
-JointTrajectoryController::CallbackReturn JointTrajectoryController::on_activate(
-  const rclcpp_lifecycle::State & previous_state)
-{
   LifecycleNode::on_activate(previous_state);
   isNodeActive_ = true;
 
@@ -370,9 +375,19 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_deactiva
 {
   isNodeActive_ = false;
 
+  std::string message;
+  api_->stop(message);
+
+  waitForGoalToFinish();
+
   publishExecActive(false);
 
   LifecycleNode::on_deactivate(previous_state);
+
+  actionServer_.reset();
+  execActivePub_.reset();
+  servoNodeResetPub_.reset();
+
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is inactive");
   return CallbackReturn::SUCCESS;
 }
@@ -382,11 +397,9 @@ JointTrajectoryController::CallbackReturn JointTrajectoryController::on_cleanup(
 {
   isNodeActive_ = false;
 
-  actionServer_.reset();
-  execActivePub_.reset();
-  servoNodeResetPub_.reset();
+  waitForGoalToFinish();
 
-  api_->releaseDevice();
+  api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_controller is cleaned up");
   return CallbackReturn::SUCCESS;
@@ -404,11 +417,6 @@ rclcpp_action::GoalResponse JointTrajectoryController::handleGoal(
 {
   (void)uuid;
   (void)goal;
-
-  if (!isNodeActive()) {
-    RCLCPP_WARN(this->get_logger(), "Goal rejected: %s", notActiveMessage().c_str());
-    return rclcpp_action::GoalResponse::REJECT;
-  }
 
   RCLCPP_INFO(this->get_logger(), "Received goal request");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -510,11 +518,13 @@ void JointTrajectoryController::executeGoal(std::shared_ptr<GoalHandleFJT> goalH
   const auto goal = goalHandle->get_goal();
   const auto & trajectory = goal->trajectory;
 
+  goalRunning_ = true;
   publishExecActive(true);
   const auto servoJointNames = trajectory.joint_names;
   ScopeExit onExit{[this, servoJointNames]() {
       publishExecActive(false);
       resetServo(servoJointNames);
+      goalRunning_ = false;
     }};
 
   RCLCPP_INFO(
@@ -555,8 +565,17 @@ void JointTrajectoryController::executeGoal(std::shared_ptr<GoalHandleFJT> goalH
   }
 
   while (true) {
+    if (!isNodeActive_.load()) {
+      api_->stop(message);
+      result->error_code = FollowJointTrajectory::Result::INVALID_GOAL;
+      result->error_string = "joint_trajectory_controller was deactivated";
+      goalHandle->abort(result);
+      RCLCPP_WARN(this->get_logger(), "Goal aborted: node deactivated, axes stopped");
+      return;
+    }
+
     if (goalHandle->is_canceling()) {
-      api_->stopAxes(message);
+      api_->stop(message);
       result->error_code = FollowJointTrajectory::Result::SUCCESSFUL;
       goalHandle->canceled(result);
       RCLCPP_INFO(this->get_logger(), "Goal canceled, axes stopped");

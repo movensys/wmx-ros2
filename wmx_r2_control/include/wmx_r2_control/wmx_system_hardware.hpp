@@ -53,8 +53,8 @@ public:
   WmxSystemHardwareApi(const rclcpp::Logger & logger, const Config & config);
   ~WmxSystemHardwareApi();
 
-  int attachDevice(std::string & message);
-  void releaseDevice();
+  int createDevice(std::string & message);
+  void closeDevice();
 
   int importAndSetAll(const std::string & path, std::string & message);
 
@@ -63,10 +63,10 @@ public:
     bool & communicating, std::string & message);
 
   int startVel(int axis, double omega, std::string & message);
-  int setServoOn(int axis, int on, std::string & message);
+  int setServoOn(int axis, int newStatus, std::string & message);
   int clearAmpAlarm(int axis, std::string & message);
 
-  bool isDeviceOpen() const {return isDeviceAttached_;}
+  bool isDeviceCreated() const {return isDeviceCreated_;}
 
 private:
   rclcpp::Logger logger_;
@@ -76,7 +76,7 @@ private:
   unsigned int servoOnTimeout_ = 2000;
 
   mutable std::mutex deviceMutex_;
-  bool isDeviceAttached_ = false;
+  bool isDeviceCreated_ = false;
 
   wmx3Api::WMX3Api wmx3Lib_;
   wmx3Api::CoreMotion cm_;

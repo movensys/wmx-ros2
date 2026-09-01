@@ -7,7 +7,6 @@ differential_drive_controller:
     dec_time: 1.0
     wheel_radius: 0.095
     wheel_to_wheel: 0.55
-    pos_unit_scale: 1.0
     jump_guard_tol: 0.5
     cmd_vel_timeout: 0.25
     accel_publish_rate: 10.0
@@ -32,8 +31,8 @@ joint_state_broadcaster:
 
 wmx_engine_node:
   ros__parameters:
-    engine_core: -1           # CPU core for the RT engine (-1 = SDK default)
-    engine_affinity_mask: 0   # CPU affinity bitmask (0 = SDK default)
+    core: -1           # CPU core for the RT engine (-1 = SDK default)
+    affinity_mask: 0   # CPU affinity bitmask (0 = SDK default)
     wmx_param_file_path: ""
 
 wmx_core_motion_node:

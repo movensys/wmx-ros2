@@ -3,6 +3,8 @@
 
 #include "differential_drive_controller.hpp"
 
+#include <thread>
+
 #include <chrono>
 #include <cmath>
 #include <functional>
@@ -23,13 +25,18 @@ namespace ddl = diff_drive;
 
 namespace
 {
-std::string errorText(int err)
+std::chrono::nanoseconds periodFromRate(int rate)
+{
+  return std::chrono::nanoseconds(static_cast<int64_t>(1e9 / static_cast<double>(rate)));
+}
+
+std::string errorToString(int err)
 {
   char errString[256] = {};
   CoreMotion::ErrorToString(err, errString, sizeof(errString));
   return errString;
 }
-}
+}  // namespace
 
 DifferentialDriveControllerApi::DifferentialDriveControllerApi(
   const rclcpp::Logger & logger, const Config & config)
@@ -39,14 +46,14 @@ DifferentialDriveControllerApi::DifferentialDriveControllerApi(
 
 DifferentialDriveControllerApi::~DifferentialDriveControllerApi()
 {
-  releaseDevice();
+  closeDevice();
 }
 
-int DifferentialDriveControllerApi::attachDevice(std::string & message)
+int DifferentialDriveControllerApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (isDeviceAttached_) {
+  if (isDeviceCreated_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
@@ -57,7 +64,7 @@ int DifferentialDriveControllerApi::attachDevice(std::string & message)
       message = "Failed to attach to device (lock busy). Is the engine communicating?";
     } else {
       message = "Failed to attach to device. Error=" + std::to_string(err) +
-        " (" + errorText(err) + ")";
+        " (" + errorToString(err) + ")";
     }
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
@@ -66,31 +73,32 @@ int DifferentialDriveControllerApi::attachDevice(std::string & message)
   err = wmx3Lib_.SetDeviceName(deviceName_);
   if (err != ErrorCode::None) {
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
+      std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     wmx3Lib_.CloseDevice();
     return err;
   }
 
   cm_ = CoreMotion(&wmx3Lib_);
-  isDeviceAttached_ = true;
+  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
   return ErrorCode::None;
 }
 
-void DifferentialDriveControllerApi::releaseDevice()
+void DifferentialDriveControllerApi::closeDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
-    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    RCLCPP_INFO(logger_, "Device closed");
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorToString(err).c_str());
+    return;
   }
-  isDeviceAttached_ = false;
+
+  RCLCPP_INFO(logger_, "Device closed");
+  isDeviceCreated_ = false;
 }
 
 int DifferentialDriveControllerApi::getStatus(
@@ -102,7 +110,7 @@ int DifferentialDriveControllerApi::getStatus(
 
   communicating = false;
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -119,7 +127,7 @@ int DifferentialDriveControllerApi::getStatus(
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
   if (err != ErrorCode::None) {
-    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     return err;
   }
 
@@ -137,7 +145,7 @@ int DifferentialDriveControllerApi::startVel(int axis, double omega, std::string
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot move axis " + std::to_string(axis) + ". Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -152,7 +160,7 @@ int DifferentialDriveControllerApi::startVel(int axis, double omega, std::string
   const int err = cm_.velocity->StartVel(&velCommand);
   if (err != ErrorCode::None) {
     message = "Failed to move motor " + std::to_string(axis) + ". Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
+      std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -188,27 +196,23 @@ DifferentialDriveController::~DifferentialDriveController()
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller stopped");
 }
 
-bool DifferentialDriveController::isNodeActive() const
-{
-  return isNodeActive_.load();
-}
-
-std::string DifferentialDriveController::notActiveMessage()
-{
-  return "differential_drive_controller is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_configure(
   const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(this->get_logger(), "Configuring differential_drive_controller...");
 
   std::string message;
-  if (api_->attachDevice(message) != ErrorCode::None) {
+  if (api_->createDevice(message) != ErrorCode::None) {
     return CallbackReturn::FAILURE;
   }
 
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is configured");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
+{
   encoderOmegaPub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
     encoderOmegaTopic_, 1);
   encoderOdometryPub_ = this->create_publisher<nav_msgs::msg::Odometry>(
@@ -224,26 +228,14 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_conf
   cmdVelStampedSub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
     cmdVelTopic_, 1, std::bind(&DifferentialDriveController::cmdStampedCallback, this, _1));
 
-  auto period = std::chrono::milliseconds(1000 / rate_);
-  controlTimer_ = this->create_wall_timer(
-    period, std::bind(&DifferentialDriveController::controlStep, this));
-  controlTimer_->cancel();
-
-  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is configured");
-  return CallbackReturn::SUCCESS;
-}
-
-DifferentialDriveController::CallbackReturn DifferentialDriveController::on_activate(
-  const rclcpp_lifecycle::State & previous_state)
-{
   LifecycleNode::on_activate(previous_state);
-  isNodeActive_ = true;
 
   havePrev_ = false;
   haveCmd_ = false;
   lastSentValid_ = false;
 
-  controlTimer_->reset();
+  controlTimer_ = this->create_wall_timer(
+    periodFromRate(rate_), std::bind(&DifferentialDriveController::controlStep, this));
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is active");
   return CallbackReturn::SUCCESS;
@@ -252,24 +244,14 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_acti
 DifferentialDriveController::CallbackReturn DifferentialDriveController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  isNodeActive_ = false;
-  controlTimer_->cancel();
+  controlTimer_.reset();
 
-  setVelocity(leftAxis_, 0.0);
-  setVelocity(rightAxis_, 0.0);
+  startVel(leftAxis_, 0.0);
+  startVel(rightAxis_, 0.0);
   lastSentValid_ = false;
 
   LifecycleNode::on_deactivate(previous_state);
-  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is inactive");
-  return CallbackReturn::SUCCESS;
-}
 
-DifferentialDriveController::CallbackReturn DifferentialDriveController::on_cleanup(
-  const rclcpp_lifecycle::State &)
-{
-  isNodeActive_ = false;
-
-  controlTimer_.reset();
   cmdVelStampedSub_.reset();
   tfBroadcaster_.reset();
   encoderOmegaPub_.reset();
@@ -277,7 +259,14 @@ DifferentialDriveController::CallbackReturn DifferentialDriveController::on_clea
   odomDeltasPub_.reset();
   odomAccelPub_.reset();
 
-  api_->releaseDevice();
+  RCLCPP_INFO(this->get_logger(), "differential_drive_controller is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+DifferentialDriveController::CallbackReturn DifferentialDriveController::on_cleanup(
+  const rclcpp_lifecycle::State &)
+{
+  api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "differential_drive_controller is cleaned up");
   return CallbackReturn::SUCCESS;
@@ -331,8 +320,8 @@ void DifferentialDriveController::controlStep()
 
   if (havePrev_) {
     const double dt = (now - prevLoopTime_).seconds();
-    const double dPhiLeft = (left.actualPos - prevPosLeft_) * posUnitScale_;
-    const double dPhiRight = (right.actualPos - prevPosRight_) * posUnitScale_;
+    const double dPhiLeft = left.actualPos - prevPosLeft_;
+    const double dPhiRight = right.actualPos - prevPosRight_;
     const bool finiteDt = std::isfinite(dt) && dt > 0.0;
     const bool jumped = finiteDt &&
       (std::abs(dPhiLeft - left.actualVelocity * dt) > jumpGuardTol_ ||
@@ -387,8 +376,8 @@ void DifferentialDriveController::commandWheels(double omegaLeft, double omegaRi
     return;
   }
 
-  const bool okLeft = setVelocity(leftAxis_, omegaLeft);
-  const bool okRight = setVelocity(rightAxis_, omegaRight);
+  const bool okLeft = startVel(leftAxis_, omegaLeft);
+  const bool okRight = startVel(rightAxis_, omegaRight);
   if (okLeft && okRight) {
     lastSentLeft_ = omegaLeft;
     lastSentRight_ = omegaRight;
@@ -398,7 +387,7 @@ void DifferentialDriveController::commandWheels(double omegaLeft, double omegaRi
   }
 }
 
-bool DifferentialDriveController::setVelocity(int axis, double omega)
+bool DifferentialDriveController::startVel(int axis, double omega)
 {
   std::string message;
   return api_->startVel(axis, omega, message) == ErrorCode::None;
@@ -523,7 +512,6 @@ void DifferentialDriveController::setRosParameter()
   publishTf_ = this->declare_parameter<bool>("publish_tf", false);
   odomFrame_ = this->declare_parameter<std::string>("odom_frame", "odom");
   baseFrame_ = this->declare_parameter<std::string>("base_frame", "base_link");
-  posUnitScale_ = this->declare_parameter<double>("pos_unit_scale", 1.0);
   jumpGuardTol_ = this->declare_parameter<double>("jump_guard_tol", 0.5);
 
   cmdVelTopic_ = this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel_safe");
@@ -549,12 +537,6 @@ void DifferentialDriveController::setRosParameter()
     RCLCPP_WARN(this->get_logger(), "accel_publish_rate must be >= 0; falling back to 10.0");
     accelPublishRate_ = 10.0;
   }
-  if (!std::isfinite(posUnitScale_) || posUnitScale_ == 0.0) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "pos_unit_scale must be finite and non-zero; falling back to 1.0");
-    posUnitScale_ = 1.0;
-  }
   if (!(jumpGuardTol_ > 0.0)) {
     RCLCPP_WARN(this->get_logger(), "jump_guard_tol must be > 0; falling back to 0.5");
     jumpGuardTol_ = 0.5;
@@ -574,9 +556,7 @@ void DifferentialDriveController::setRosParameter()
   RCLCPP_INFO(
     this->get_logger(), "odom_frame: %s, base_frame: %s",
     odomFrame_.c_str(), baseFrame_.c_str());
-  RCLCPP_INFO(
-    this->get_logger(), "pos_unit_scale: %f, jump_guard_tol: %f",
-    posUnitScale_, jumpGuardTol_);
+  RCLCPP_INFO(this->get_logger(), "jump_guard_tol: %f", jumpGuardTol_);
   RCLCPP_INFO(this->get_logger(), "cmd_vel_topic: %s", cmdVelTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_omega_topic: %s", encoderOmegaTopic_.c_str());
   RCLCPP_INFO(this->get_logger(), "encoder_odometry_topic: %s", encoderOdometryTopic_.c_str());

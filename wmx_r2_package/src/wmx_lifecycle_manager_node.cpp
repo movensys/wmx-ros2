@@ -392,7 +392,7 @@ WmxLifecycleManagerNode::WmxLifecycleManagerNode()
 
   lifecycle_ = std::make_unique<LifecycleManager>(this, managedNodes);
 
-  managerCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  oneCbOnlyGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   clientCbGroup_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
   engineStatusClient_ = this->create_client<std_srvs::srv::Trigger>(
@@ -401,17 +401,17 @@ WmxLifecycleManagerNode::WmxLifecycleManagerNode()
   setNodeStateService_ = this->create_service<wmx_r2_message::srv::SetNodeState>(
     "wmx/lifecycle/set_node_state",
     std::bind(&WmxLifecycleManagerNode::setNodeStateCallback, this, _1, _2),
-    servicesQos(), managerCbGroup_);
+    servicesQos(), oneCbOnlyGroup_);
 
   getNodeStatesService_ = this->create_service<wmx_r2_message::srv::GetNodeStates>(
     "wmx/lifecycle/get_node_states",
     std::bind(&WmxLifecycleManagerNode::getNodeStatesCallback, this, _1, _2),
-    servicesQos(), managerCbGroup_);
+    servicesQos(), oneCbOnlyGroup_);
 
   discoveryTimer_ = this->create_wall_timer(
     std::chrono::duration<double>(period),
     std::bind(&WmxLifecycleManagerNode::discoveryStep, this),
-    managerCbGroup_);
+    oneCbOnlyGroup_);
 
   RCLCPP_INFO(this->get_logger(), "wmx_lifecycle_manager_node is ready");
 }

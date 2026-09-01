@@ -24,6 +24,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetAxes.srv"
   "srv/SetAxesGearRatio.srv"
   "srv/GetIoBit.srv"
+  "srv/GetIoBits.srv"
   "srv/GetIoByte.srv"
   "srv/GetIoBytes.srv"
   "srv/SetIoBit.srv"
@@ -31,14 +32,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetIoByte.srv"
   "srv/SetIoBytes.srv"
 
-  "srv/EcatGetNetworkState.srv"
+  "srv/EcatGetMasterInfo.srv"
   "srv/EcatRegisterRead.srv"
   "srv/EcatResetStatistics.srv"
   "srv/EcatScanNetwork.srv"
   "srv/EcatStartHotconnect.srv"
 
-  "srv/LoadWmxParams.srv"
-  "srv/GetWmxParams.srv"
+  "srv/ImportAndSetAll.srv"
+  "srv/GetAxisParam.srv"
 
   "msg/AxesVelocity.msg"
   "msg/AxesStatus.msg"

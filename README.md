@@ -35,17 +35,17 @@ Full environment setup, dependencies, and `~/.bashrc` configuration are in [doc/
 ```bash
 # 1. Build (messages first, then the rest)
 cd ~/workspaces/movensys_ws
-colcon build --packages-select wmx_ros2_message
+colcon build --packages-select wmx_r2_message
 source install/setup.bash
 colcon build && source install/setup.bash
 
-# 2. Launch the low-level nodes (engine, lifecycle manager, core motion, IO, EtherCAT)
-ros2 launch wmx_ros2_package wmx_ros2_general_nodes.launch.py
+# 2. Launch the low-level nodes (engine, core motion, IO, EtherCAT)
+ros2 launch wmx_r2_package wmx_r2_general_nodes.launch.py
 
 # 3. Bring axes online and command a move
-ros2 service call /wmx/axes/set_servo_on wmx_ros2_message/srv/SetAxes "{indices: [0,1], data: [1,1]}"
-ros2 topic pub --once /wmx/axes/start_pos wmx_ros2_message/msg/AxesPose \
-  "{indices: [0,1], positions: [8388608, 10000], velocities: [1000000, 5000], accelerations: [100000, 1000], decelerations: [100000, 1000]}"
+ros2 service call /wmx/axes/set_servo_on wmx_r2_message/srv/SetAxes "{axis: [0,1], data: [1,1]}"
+ros2 topic pub --once /wmx/axes/start_pos wmx_r2_message/msg/AxesPose \
+  "{axis: [0,1], target: [8388608, 10000], velocity: [1000000, 5000], acc: [100000, 1000], dec: [100000, 1000]}"
 ```
 
 The full startup sequence and the complete service/topic catalog are documented in
@@ -61,19 +61,52 @@ title: Low-level Control
 ---
 flowchart LR;
     A[ROS2 Services/Topics] --> B[wmx_engine_node];
-    A --> H[wmx_lifecycle_manager_node];
-    A --> C[wmx_core_motion_node];
-    A --> D[wmx_io_node];
-    A --> E[wmx_ethercat_node];
-    H -.->|configure / activate| C;
-    H -.->|configure / activate| D;
-    H -.->|configure / activate| E;
+    A --> M[wmx_lifecycle_manager_node];
+    A --> C["wmx_core_motion_node (lifecycle)"];
+    A --> D["wmx_io_node (lifecycle)"];
+    A --> E["wmx_ethercat_node (lifecycle)"];
+    B -->|engine status| M;
+    M -->|configure / activate| C;
+    M -->|configure / activate| D;
+    M -->|configure / activate| E;
     B --> F[WMX3 API];
     C --> F;
     D --> F;
     E --> F;
     F --> G[WMX Engine];
 ```
+
+`wmx_engine_node` owns the WMX3 engine and nothing else.
+`wmx_lifecycle_manager_node` watches it and drives every other WMX node, each a
+[managed (lifecycle) node](https://design.ros2.org/articles/node_lifecycle.html)
+that starts `unconfigured` and only attaches to the device at `configure`.
+
+**The managed nodes follow the engine.** While the engine is communicating, every
+node found on the graph is brought up to `active` — a node that joins late or
+respawns is picked up on a later sweep. When the engine stops or its device is
+closed, they are all deactivated and cleaned back to `unconfigured` (their device
+handles are dead), and brought up again when the engine returns. This is not
+limited to WMX nodes: any managed node in the same namespace (a lifecycle
+`joint_state_publisher`, a nav2 node, your own) is driven the same way. Order it
+with the manager's `managed_nodes` parameter, or drive nodes by hand:
+
+```bash
+# Lifecycle nodes the manager can see, and their states
+ros2 service call /wmx/lifecycle/get_node_states wmx_r2_message/srv/GetNodeStates "{}"
+
+# Drive one node by name
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: 'wmx_io_node', transition: 'deactivate'}"
+
+# Drive every node at once: leave node_name empty
+ros2 service call /wmx/lifecycle/set_node_state wmx_r2_message/srv/SetNodeState \
+  "{node_name: '', transition: 'bringdown'}"
+```
+
+`transition` is one of `configure`, `activate`, `deactivate`, `cleanup`,
+`shutdown`, `bringup` (configure + activate) or `bringdown` (deactivate).
+Transitions that take nodes down are applied in reverse bring-up order. The
+standard `ros2 lifecycle` CLI works on the nodes directly as well.
 
 ### Trajectory Control ([wmx_r2_cr3a_manipulator.launch.py](wmx_r2_package/launch/wmx_r2_cr3a_manipulator.launch.py))
 
@@ -106,15 +139,16 @@ flowchart LR;
 
 | Node | Role |
 |------|------|
-| `wmx_engine_node` | Engine and device initialization, overall state management |
-| `wmx_lifecycle_manager_node` | Discovers the managed lifecycle nodes and drives them up once the engine is communicating, down when it stops |
-| `wmx_core_motion_node` | Core motion control and trajectory execution |
-| `wmx_io_node` | IO control for input/output bits and bytes |
-| `wmx_ethercat_node` | EtherCAT master operations and slave management |
-| `joint_trajectory_controller` | Receives trajectory actions and executes via WMX3 C-Spline |
-| `joint_position_controller` | Follows MoveIt Servo's streamed `JointTrajectory` via WMX3 linear interpolation, so every axis arrives at the same instant |
-| `joint_state_broadcaster` | Publishes joint feedback from the WMX3 encoder to `/joint_states` |
-| `gripper_controller` | Gripper command handling for manipulators |
+| `wmx_engine_node` | Engine and device initialization; owns the WMX3 engine and reports its status |
+| `wmx_lifecycle_manager_node` | Drives every lifecycle node below, following the engine's status |
+| `wmx_core_motion_node` | Core motion control and trajectory execution (lifecycle) |
+| `wmx_io_node` | IO control for input/output bits and bytes (lifecycle) |
+| `wmx_ethercat_node` | EtherCAT master operations, network scan and slave management (lifecycle) |
+| `joint_trajectory_controller` | Receives trajectory actions and executes via WMX3 C-Spline (lifecycle) |
+| `joint_position_controller` | Follows MoveIt Servo's streamed `JointTrajectory` via WMX3 linear interpolation, so every axis arrives at the same instant (lifecycle) |
+| `differential_drive_controller` | Differential-drive command and odometry loop (lifecycle) |
+| `joint_state_broadcaster` | Publishes joint feedback from the WMX3 encoder to `/joint_states`; clears alarms and switches the servos on when activated (lifecycle) |
+| `gripper_controller` | Gripper command handling for manipulators (lifecycle) |
 
 ## Launch Files
 
@@ -128,9 +162,9 @@ flowchart LR;
 
 | Robot | Type | Launch file | WMX parameters | Guide |
 |-------|------|-------------|----------------|-------|
-| Dobot CR3A | 6-axis manipulator | `wmx_ros2_cr3a_manipulator.launch.py` | `config/cr3a_wmx_parameters.xml` | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) |
-| Dobot CR5A | 6-axis manipulator | `wmx_ros2_cr5a_manipulator.launch.py` | `config/cr5a_wmx_parameters.xml` | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) |
-| Diffbot | Differential-drive base | `wmx_ros2_general_nodes.launch.py` | `config/diffbot_wmx_parameters.xml` | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) |
+| Dobot CR3A | 6-axis manipulator | `wmx_r2_cr3a_manipulator.launch.py` | `config/cr3a_wmx_parameters.xml` | [doc/launch_dobot_cr3a_manipulator.md](doc/launch_dobot_cr3a_manipulator.md) |
+| Dobot CR5A | 6-axis manipulator | `wmx_r2_cr5a_manipulator.launch.py` | `config/cr5a_wmx_parameters.xml` | [doc/launch_dobot_cr5a_manipulator.md](doc/launch_dobot_cr5a_manipulator.md) |
+| Diffbot | Differential-drive base | `wmx_r2_general_nodes.launch.py` | `config/diffbot_wmx_parameters.xml` | [doc/launch_wmx_r2_general_nodes.md](doc/launch_wmx_r2_general_nodes.md) |
 
 ## MoveIt2 Integration
 

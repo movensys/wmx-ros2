@@ -3,6 +3,10 @@
 
 #include "joint_position_controller.hpp"
 
+#include <thread>
+
+#include <chrono>
+
 #include <cmath>
 
 using std::placeholders::_1;
@@ -16,13 +20,13 @@ using wmx3Api::ProfileType;
 
 namespace
 {
-std::string errorText(int err)
+std::string errorToString(int err)
 {
   char errString[256] = {};
   CoreMotion::ErrorToString(err, errString, sizeof(errString));
   return errString;
 }
-}
+}  // namespace
 
 JointPositionControllerApi::JointPositionControllerApi(const rclcpp::Logger & logger)
 : logger_(logger)
@@ -31,14 +35,14 @@ JointPositionControllerApi::JointPositionControllerApi(const rclcpp::Logger & lo
 
 JointPositionControllerApi::~JointPositionControllerApi()
 {
-  releaseDevice();
+  closeDevice();
 }
 
-int JointPositionControllerApi::attachDevice(std::string & message)
+int JointPositionControllerApi::createDevice(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (isDeviceAttached_) {
+  if (isDeviceCreated_) {
     message = "Already attached to the WMX3 device";
     return ErrorCode::None;
   }
@@ -49,7 +53,7 @@ int JointPositionControllerApi::attachDevice(std::string & message)
       message = "Failed to attach to device (lock busy). Is the engine communicating?";
     } else {
       message = "Failed to attach to device. Error=" + std::to_string(err) +
-        " (" + errorText(err) + ")";
+        " (" + errorToString(err) + ")";
     }
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
@@ -58,34 +62,35 @@ int JointPositionControllerApi::attachDevice(std::string & message)
   err = wmx3Lib_.SetDeviceName(deviceName_);
   if (err != ErrorCode::None) {
     message = "Failed to name the device '" + std::string(deviceName_) + "'. Error=" +
-      std::to_string(err) + " (" + errorText(err) + ")";
+      std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     wmx3Lib_.CloseDevice();
     return err;
   }
 
   cm_ = CoreMotion(&wmx3Lib_);
-  isDeviceAttached_ = true;
+  isDeviceCreated_ = true;
 
   message = "Attached to WMX3 device";
   RCLCPP_INFO(logger_, "%s", message.c_str());
   return ErrorCode::None;
 }
 
-void JointPositionControllerApi::releaseDevice()
+void JointPositionControllerApi::closeDevice()
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
   const int err = wmx3Lib_.CloseDevice();
   if (err != ErrorCode::None) {
-    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorText(err).c_str());
-  } else {
-    RCLCPP_INFO(logger_, "Device closed");
+    RCLCPP_ERROR(logger_, "Failed to close device. Error=%d (%s)", err, errorToString(err).c_str());
+    return;
   }
-  isDeviceAttached_ = false;
+
+  RCLCPP_INFO(logger_, "Device closed");
+  isDeviceCreated_ = false;
 }
 
-int JointPositionControllerApi::setAxes(
+int JointPositionControllerApi::setAxisSelection(
   const std::vector<int64_t> & axes, std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
@@ -126,7 +131,7 @@ int JointPositionControllerApi::getPosCmd(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot read the axis status. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -134,7 +139,7 @@ int JointPositionControllerApi::getPosCmd(
   CoreMotionStatus status;
   const int err = cm_.GetStatus(&status);
   if (err != ErrorCode::None) {
-    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "GetStatus failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -162,7 +167,7 @@ int JointPositionControllerApi::startLinearIntplPos(
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot start the interpolation. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
@@ -198,7 +203,7 @@ int JointPositionControllerApi::startLinearIntplPos(
   const int err = cm_.motion->StartLinearIntplPos(&intpl);
   if (err != ErrorCode::None) {
     message = "StartLinearIntplPos failed. Error=" + std::to_string(err) +
-      " (" + errorText(err) + ")";
+      " (" + errorToString(err) + ")";
     return err;
   }
 
@@ -206,25 +211,25 @@ int JointPositionControllerApi::startLinearIntplPos(
   return ErrorCode::None;
 }
 
-int JointPositionControllerApi::stopAxes(std::string & message)
+int JointPositionControllerApi::stop(std::string & message)
 {
   std::lock_guard<std::mutex> lock(deviceMutex_);
 
-  if (!isDeviceAttached_) {
+  if (!isDeviceCreated_) {
     message = "Cannot stop the axes. Device is not attached.";
     return ErrorCode::DeviceIsNull;
   }
 
   int err = cm_.motion->Stop(&axisSel_);
   if (err != ErrorCode::None) {
-    message = "Stop failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "Stop failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
 
   err = cm_.motion->Wait(&axisSel_);
   if (err != ErrorCode::None) {
-    message = "Wait failed. Error=" + std::to_string(err) + " (" + errorText(err) + ")";
+    message = "Wait failed. Error=" + std::to_string(err) + " (" + errorToString(err) + ")";
     RCLCPP_ERROR(logger_, "%s", message.c_str());
     return err;
   }
@@ -250,17 +255,6 @@ JointPositionController::~JointPositionController()
   RCLCPP_INFO(this->get_logger(), "joint_position_controller stopped");
 }
 
-bool JointPositionController::isNodeActive() const
-{
-  return isNodeActive_.load();
-}
-
-std::string JointPositionController::notActiveMessage()
-{
-  return "joint_position_controller is not active (state: " +
-         this->get_current_state().label() + ").";
-}
-
 void JointPositionController::setRosParameter()
 {
   jointAxes_ = this->declare_parameter<std::vector<int64_t>>("joint_axes", std::vector<int64_t>{});
@@ -282,6 +276,13 @@ void JointPositionController::setRosParameter()
     jointAxesText += std::to_string(jointAxes_[i]);
   }
 
+  if (!std::isfinite(accelRatio_) || accelRatio_ <= 0.0) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "accel_ratio must be finite and > 0, got %f. Falling back to 0.5.", accelRatio_);
+    accelRatio_ = 0.5;
+  }
+
   RCLCPP_INFO(this->get_logger(), "===== ROS2 Parameters =====");
   RCLCPP_INFO(this->get_logger(), "joint_axes: [%s]", jointAxesText.c_str());
   RCLCPP_INFO(this->get_logger(), "joint_trajectory_topic: %s", jointTrajectoryTopic_.c_str());
@@ -297,22 +298,14 @@ JointPositionController::CallbackReturn JointPositionController::on_configure(
   RCLCPP_INFO(this->get_logger(), "Configuring joint_position_controller...");
 
   std::string message;
-  if (api_->attachDevice(message) != ErrorCode::None) {
+  if (api_->createDevice(message) != ErrorCode::None) {
     return CallbackReturn::FAILURE;
   }
 
-  if (api_->setAxes(jointAxes_, message) != ErrorCode::None) {
-    api_->releaseDevice();
+  if (api_->setAxisSelection(jointAxes_, message) != ErrorCode::None) {
+    api_->closeDevice();
     return CallbackReturn::FAILURE;
   }
-
-  execActiveSub_ = this->create_subscription<std_msgs::msg::Bool>(
-    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local(),
-    std::bind(&JointPositionController::execActiveCallback, this, _1));
-
-  jointTrajectorySub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
-    jointTrajectoryTopic_, 1,
-    std::bind(&JointPositionController::jointTrajectoryCallback, this, _1));
 
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is configured");
   return CallbackReturn::SUCCESS;
@@ -321,8 +314,15 @@ JointPositionController::CallbackReturn JointPositionController::on_configure(
 JointPositionController::CallbackReturn JointPositionController::on_activate(
   const rclcpp_lifecycle::State & previous_state)
 {
+  execActiveSub_ = this->create_subscription<std_msgs::msg::Bool>(
+    "/moveit2_trajectory/execution_active", rclcpp::QoS(1).transient_local(),
+    std::bind(&JointPositionController::execActiveCallback, this, _1));
+
+  jointTrajectorySub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
+    jointTrajectoryTopic_, 1,
+    std::bind(&JointPositionController::jointTrajectoryCallback, this, _1));
+
   LifecycleNode::on_activate(previous_state);
-  isNodeActive_ = true;
 
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is active");
   return CallbackReturn::SUCCESS;
@@ -331,12 +331,14 @@ JointPositionController::CallbackReturn JointPositionController::on_activate(
 JointPositionController::CallbackReturn JointPositionController::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
-  isNodeActive_ = false;
-
   std::string message;
-  api_->stopAxes(message);
+  api_->stop(message);
 
   LifecycleNode::on_deactivate(previous_state);
+
+  jointTrajectorySub_.reset();
+  execActiveSub_.reset();
+
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is inactive");
   return CallbackReturn::SUCCESS;
 }
@@ -344,12 +346,7 @@ JointPositionController::CallbackReturn JointPositionController::on_deactivate(
 JointPositionController::CallbackReturn JointPositionController::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  isNodeActive_ = false;
-
-  jointTrajectorySub_.reset();
-  execActiveSub_.reset();
-
-  api_->releaseDevice();
+  api_->closeDevice();
 
   RCLCPP_INFO(this->get_logger(), "joint_position_controller is cleaned up");
   return CallbackReturn::SUCCESS;
@@ -448,7 +445,7 @@ bool JointPositionController::buildCommand(
 void JointPositionController::jointTrajectoryCallback(
   const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
-  if (!isNodeActive() || msg->points.empty() || inExecution_.load()) {
+  if (msg->points.empty() || inExecution_.load()) {
     return;
   }
 

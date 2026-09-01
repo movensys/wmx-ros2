@@ -1,4 +1,4 @@
-int32[] indices        # axis index per entry
-float64[] velocities
-float64[] accelerations
-float64[] decelerations
+int32[] axis           # axis index per entry
+float64[] velocity
+float64[] acc
+float64[] dec
