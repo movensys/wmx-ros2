@@ -22,7 +22,7 @@ ros2 service call /wmx/axis/set_gear_ratio wmx_r2_message/srv/SetAxisGearRatio \
 ## 2a. Jog with the keyboard
 ```
 ros2 run wmx_r2_package jog_keyboard_node --ros-args \
-  -p axis:=0 -p velocity:=10000.0 -p acc:=100000.0 -p dec:=100000.0
+  -p axis:=0 -p velocity:=1000.0 -p acc:=10000.0 -p dec:=10000.0
 ```
 `a` = negative, `d` = positive, `q` = quit. Run it from a terminal, not a launch file.
 
@@ -42,22 +42,6 @@ xset r rate 150 30    # on your own PC (660 ms -> 150 ms)
 xset r rate           # restore the default
 ```
 macOS and Windows expose the same setting in their keyboard control panel.
-
-## 2b. Jog from the CLI
-```
-# Positive direction. Ctrl-C acts as the release.
-ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
-  "{index: [0], velocity: [10000], acc: [100000], dec: [100000]}"
-
-# Negative direction
-ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
-  "{index: [0], velocity: [-10000], acc: [100000], dec: [100000]}"
-```
-
-## 3. Stop
-```
-ros2 service call /wmx/axis/stop wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
-```
 
 ## Parameters
 
