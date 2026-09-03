@@ -12,6 +12,11 @@ ros2 service call /wmx/axis/homing    wmx_r2_message/srv/SetAxis "{index: [0], d
 
 # Jog requires Position mode (0)
 ros2 service call /wmx/axis/set_mode  wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+
+# Set Gear Ratio
+## Panasonic MADLNO5BE servo driver
+ros2 service call /wmx/axis/set_gear_ratio wmx_r2_message/srv/SetAxisGearRatio \
+  "{index: [0], numerator: [8388608.0], denominator: [360.0]}"
 ```
 
 ## 2a. Jog with the keyboard
