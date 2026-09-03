@@ -528,6 +528,9 @@ void JointStateBroadcaster::publishJointState()
       const size_t i = static_cast<size_t>(std::distance(jointAxes_.begin(), it));
       gazeboJointMsg.data.push_back(i < feedback.size() ? feedback[i].actualPos : 0.0);
     }
+    for (size_t i = feedback.size(); i < encoderJointMsg.position.size(); ++i) {
+      gazeboJointMsg.data.push_back(encoderJointMsg.position[i]);
+    }
     gazeboPositionPub_->publish(gazeboJointMsg);
   }
 }
