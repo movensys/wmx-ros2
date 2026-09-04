@@ -58,11 +58,11 @@ ros2 service call /wmx/axes/set_axis_command_mode wmx_r2_message/srv/SetAxes \
 ```
 # Positive direction. Ctrl-C acts as the release.
 ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
-    "{axis: [0], velocity: [10000], acc: [100000], dec: [100000]}"
+    "{axis: [0], velocity: [1000], acc: [10000], dec: [10000]}"
 
 # Negative direction
 ros2 topic pub -r 20 /wmx/axes/start_jog wmx_r2_message/msg/AxesVelocity \
-    "{axis: [0], velocity: [-10000], acc: [100000], dec: [100000]}"
+    "{axis: [0], velocity: [-1000], acc: [10000], dec: [10000]}"
 ```
 
 #### Stop
