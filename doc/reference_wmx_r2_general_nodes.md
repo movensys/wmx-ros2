@@ -1,24 +1,46 @@
 # WMX R2 General Nodes Reference
+After installing and building WMX R2, follow the typical procedure below to control a servo motor via EtherCAT.
 
 ## Typical Startup Sequence
 ```
-# 1. Verify engine is communicating
+# 1. Engine communicating The launch file already started the EtherCAT
+#    cycle, so this should report "Communicating".
 ros2 service call /wmx/engine/get_status std_srvs/srv/Trigger "{}"
 
-# 2. Load axis parameters from file
-ros2 service call /wmx/params/load wmx_r2_message/srv/LoadWmxParams \
-  "{file_path: '/home/$USER/movensys_ws/install/wmx_r2_package/share/wmx_r2_package/config/cr3a_wmx_parameters.xml'}"
+# 1b. Only if it is not — start the cycle by hand
+ros2 service call /wmx/engine/set_comm std_srvs/srv/SetBool "{data: true}"
+
+# 2. Set the gear ratio, which fixes the user units of every command below.
+#    23-bit encoder / 360 => one command unit is one degree.
+ros2 service call /wmx/axis/set_gear_ratio wmx_r2_message/srv/SetAxisGearRatio \
+  "{index: [0], numerator: [8388608.0], denominator: [360.0]}"
 
 # 3. Clear any amp alarms
-ros2 service call /wmx/axis/clear_alarm wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
+ros2 service call /wmx/axis/clear_alarm wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
 
-# 4. Enable servos
-ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [1,1,1,1,1,1]}"
+# 4. Enable the servo
+ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis "{index: [0], data: [1]}"
 
-# 5. Home all axes (sets current position as home)
-ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis "{index: [0,1,2,3,4,5], data: [0,0,0,0,0,0]}"
+# 5. Home — the current encoder position becomes zero
+ros2 service call /wmx/axis/homing wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+
+# 6. Position mode (0). Required by both position moves and jog.
+ros2 service call /wmx/axis/set_mode wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+
+# 7. First move: +10 degrees relative, slowly
+ros2 topic pub --once /wmx/axis/position/relative wmx_r2_message/msg/AxisPose \
+  "{index: [0], target: [10], velocity: [30], acc: [100], dec: [100]}"
+
+# 8. Or jog it by hand instead — hold-to-move, Ctrl+C releases
+ros2 topic pub -r 20 /wmx/axis/jog wmx_r2_message/msg/AxisVelocity \
+  "{index: [0], velocity: [30], acc: [100], dec: [100]}"
+
+# 9. Stop
+ros2 service call /wmx/axis/stop wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
+
+# 10. Servo off — always before stopping communication
+ros2 service call /wmx/axis/set_on wmx_r2_message/srv/SetAxis "{index: [0], data: [0]}"
 ```
-
 
 ---
 
